@@ -1,0 +1,15 @@
+{
+  "type": "placement",
+  "seeds": [
+    42,
+    7,
+    2026
+  ],
+  "models": [
+    "gold_lgb_model_s42.txt",
+    "gold_lgb_model_s7.txt",
+    "gold_lgb_model_s2026.txt"
+  ],
+  "recency_tau_days": 120.0,
+  "mode": "warm-start-continue"
+}
