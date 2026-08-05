@@ -675,7 +675,7 @@ def main():
                          # as the model ensemble.
     CALIB_PATH = f"{BASE}/models/calibration.json"
     def maybe_reload_model():
-        nonlocal models, dir_models, spec_models, model_mtime, feats, dir_feats, cal_knots, cal_by_rr, cal_mtime
+        nonlocal models, dir_models, spec_models, model_mtime, spec_mtime, feats, dir_feats, cal_knots, cal_by_rr, cal_mtime
         try:
             m = os.path.getmtime(ENSEMBLE_CFG)
             dm = os.path.getmtime(DIR_ENSEMBLE_CFG)
