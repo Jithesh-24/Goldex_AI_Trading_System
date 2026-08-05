@@ -24,10 +24,22 @@ TP_RATIOS = [1.3, 1.8, 2.5, 3.0]
 DIRS = ["BUY", "SELL"]
 
 
-def pava_bins(p, y, n_bins=100):
-    """Bin p, PAVA-pool violators, return monotone (ps, ys)."""
+def pava_bins(p, y, n_bins=100, min_support=2000):
+    """Bin p, PAVA-pool violators, return monotone (ps, ys).
+
+    v7.11 (2026-08-05) MIN-SUPPORT SHRINKAGE: a quantile bin with tiny
+    support (few rows) can carry an extreme observed rate — e.g. the
+    SELL_1.3 tail reached knots_y=0.999 (raw 0.83 → calibrated 99.9%)
+    on a setup whose true 6yr base rate is ~38%. That fabricated the
+    P=92% SELL into the 08-04 rally. Any bin with fewer than
+    min_support rows has its rate shrunk toward the overall base rate
+    (empirical-Bayes style): y' = (y*n + base*n0)/(n + n0) with
+    n0 = min_support. Data-driven, not a cap — a tail with real support
+    keeps its true rate.
+    """
     p = np.asarray(p, dtype=np.float64)
     y = np.asarray(y, dtype=np.float64)
+    base = float(y.mean())
     qs = np.unique(np.quantile(p, np.linspace(0, 1, n_bins + 1)))
     bin_ids = np.clip(np.searchsorted(qs, p, side="right") - 1, 0, len(qs) - 2)
     agg = {}
@@ -38,6 +50,10 @@ def pava_bins(p, y, n_bins=100):
     ps = np.array([agg[b][0] for b in bs])
     ys = np.array([agg[b][1] for b in bs])
     ws = np.array([agg[b][2] for b in bs], dtype=np.float64)
+    # v7.11: shrink low-support bins toward the base rate BEFORE pooling
+    for i in range(len(ys)):
+        if ws[i] < min_support:
+            ys[i] = (ys[i] * ws[i] + base * min_support) / (ws[i] + min_support)
     blocks = [[ps[i], ys[i], ws[i]] for i in range(len(ps))]
     i = 0
     while i < len(blocks) - 1:

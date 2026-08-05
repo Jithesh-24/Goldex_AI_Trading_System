@@ -1,0 +1,26 @@
+{
+  "_note": "Empirical P(close[t+5] > close[t]) per regime, measured over 133,136 3-min bars (2020-03-20 to 2026-08-04, 6.4yr) from gold_features.csv. Gold mean-reverts at this scale: strong up tends to reverse down, strong down tends to reverse up. Measured 2026-08-05 by direct stream of the training matrix (one row per timestamp).",
+  "horizon_bars": 5,
+  "bar_seconds": 180,
+  "n_bars": 133136,
+  "P_up_by_regime": {
+    "STRONG_UP": 0.476,
+    "UP": 0.488,
+    "DOWN": 0.508,
+    "STRONG_DOWN": 0.525,
+    "RANGE_TIGHT": 0.516,
+    "RANGE_WIDE": 0.521,
+    "HIGH_VOL": 0.504,
+    "QUIET_LOW_VOL": 0.490
+  },
+  "P_down_by_regime": {
+    "STRONG_UP": 0.524,
+    "UP": 0.512,
+    "DOWN": 0.492,
+    "STRONG_DOWN": 0.475,
+    "RANGE_TIGHT": 0.484,
+    "RANGE_WIDE": 0.479,
+    "HIGH_VOL": 0.496,
+    "QUIET_LOW_VOL": 0.510
+  }
+}

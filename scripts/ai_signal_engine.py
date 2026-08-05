@@ -382,9 +382,36 @@ def direction_prior(dir_models, dir_feats, fx):
                 base_maj = max(_bu, 1 - _bu) if _bu is not None else None
         except Exception:
             acc = None
-        # v7.4 gate: persistence acc <= 0.53 → coin flip → neutral.
-        if acc is not None and acc <= 0.53:
+        # v7.11 (2026-08-05): EMPIRICAL REGIME PRIOR. The flat 0.5 was itself
+        # information-free — it let the placement model's geometry statistics
+        # decide the side, and in a HIGH_VOL-mislabeled rally the fade
+        # specialist fired SELL at P=92% into a +$47 trend (the 'trading
+        # inversely' reported). Measured over the full 6.4yr matrix (133,136
+        # 3-min bars), gold MEAN-REVERTS at this scale: P(up) after STRONG_UP
+        # = 0.476, after STRONG_DOWN = 0.525, RANGE_TIGHT 0.516, HIGH_VOL
+        # 0.504. So the regime-conditional empirical P(up) from the training
+        # data becomes the prior when the ML direction model has no edge —
+        # the market condition the model was trained on steers the side.
+        # Data-driven (measured), not a gate, not hardcoded.
+        def _empirical_prior():
+            try:
+                import json as _j
+                with open(f"{BASE}/models/regime_dir_prior.json") as _f2:
+                    _p = _j.load(_f2)
+                reg = None
+                try:
+                    from features import regime_bin
+                    reg = regime_bin(fx)
+                except Exception:
+                    reg = None
+                if reg and reg in _p.get("P_up_by_regime", {}):
+                    return float(_p["P_up_by_regime"][reg])
+            except Exception:
+                pass
             return 0.5
+        # v7.4 gate: persistence acc <= 0.53 → coin flip → empirical prior.
+        if acc is not None and acc <= 0.53:
+            return _empirical_prior()
         # v7.6b gate (2026-08-04): the engine consumes p_up as P(PRICE up),
         # but the label measures H1-trend PERSISTENCE — trivially learnable
         # and saturating (p_up pinned ~0.00 in any falling H1 regime). A
@@ -397,9 +424,9 @@ def direction_prior(dir_models, dir_feats, fx):
         # a gate on entries — it only stops a saturating label from
         # overriding placement's real call).
         if acc_price is not None and base_maj is not None and acc_price <= base_maj + 0.02:
-            return 0.5
+            return _empirical_prior()
         if acc_price is not None and acc_price <= 0.53:
-            return 0.5
+            return _empirical_prior()
         # model has an edge → use its P(up), softly clipped so neither side mutes
         X = np.array([[fx.get(c, 0.0) for c in dir_feats]], dtype=np.float32)
         p_up = float(np.mean([mdl.predict(X)[0] for mdl in dir_models]))

@@ -83,7 +83,19 @@ built-up.
   price moves ≥0.5×ATR or regime flips; exp>0 is the real-signal gate.
 - v7.10 INCREMENTAL MATRIX: EOD appends only new bars (~30s) instead of the
   full 6.39M-row rebuild (58 CPU-min, timeout at 3600s). Verified on real data.
-- Next EOD learning: tomorrow 15:00 IST (uses incremental path).
+- v7.11 EMPIRICAL REGIME PRIOR (2026-08-05): measured P(close[t+5]>close[t])
+  per regime from the 133,136-bar 6.4yr matrix — gold MEAN-REVERTS at 3-min
+  scale (STRONG_UP→P(down)=52.4%, STRONG_DOWN→P(up)=52.5%). When the ML
+  direction model has no edge (acc_price 0.508 vs 0.507 majority), the engine
+  now uses this data-driven regime prior instead of a dead flat 0.50. The
+  "SELL at P=87% into a +$47 rally" disease was: dead prior + calibration
+  curves that extrapolated raw 0.83→0.999 (np.interp past last knot) + curves
+  fit Aug 3 on the base model's OOF applied to Aug 4 specialists.
+- v7.11 CALIBRATION HONESTY: apply_calibration flat-clamps at boundary knots
+  (no linear extrapolation to 0.999/>1.0); fit_calibration_by_rr.py shrinks
+  low-support tail bins toward the base rate (min_support=2000) so a tiny
+  tail sample can never fabricate 99% confidence.
+- Next EOD learning: today 15:00 IST (incremental path + honest calibration).
 
 ## 8. Reliability / supervision
 - Engine watchdog (every 5m): engine journal freshness ≤120s, ticker state

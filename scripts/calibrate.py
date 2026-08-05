@@ -76,12 +76,27 @@ def fit_calibration(p, y, n_bins=100):
 
 
 def apply_calibration(p, knots):
-    """Piecewise-linear (monotone) interpolation of raw p through the knots."""
+    """Piecewise-linear (monotone) interpolation of raw p through the knots.
+
+    v7.11 (2026-08-05): FLAT-CLAMP the tails. np.interp linearly extrapolates
+    past the last knot — a raw P=0.83 on the SELL_1.3 curve extrapolated to a
+    calibrated 0.999, and raw ~0.9 became >1.0. That is how the engine printed
+    P=92% SELL into a +$47 rally whose true 6yr base rate is ~52%. The
+    calibration curve's reliability ends at the last observed knot; beyond it
+    the honest answer is "no better than the best empirically-observed rate",
+    not an invented extrapolation. Values below the first knot clamp to the
+    first knot's calibrated rate (never below), values above the last knot
+    clamp to the last knot's rate (never above). Still fully data-driven —
+    the curve itself is unchanged.
+    """
     kp = np.asarray(knots["knots_p"], dtype=np.float64)
     ky = np.asarray(knots["knots_y"], dtype=np.float64)
     scalar = np.isscalar(p) or (hasattr(p, "ndim") and p.ndim == 0)
     p = np.asarray(p, dtype=np.float64)
     out = np.interp(p, kp, ky)
+    # v7.11 tail clamp: no extrapolation beyond the fitted knot range.
+    out = np.where(p < kp[0], ky[0], out)
+    out = np.where(p > kp[-1], ky[-1], out)
     if scalar:
         return float(out)
     return out
