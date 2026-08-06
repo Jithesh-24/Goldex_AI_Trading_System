@@ -229,11 +229,35 @@ def main():
         pct = 100.0 * coverage[n] / max(total, 1)
         print(f"  {n:15s} {coverage[n]:>10,} rows ({pct:4.1f}%)", flush=True)
 
-    # PASS 2: train one 3-seed ensemble per non-empty regime
+    # PASS 2: train one 3-seed ensemble per non-empty regime.
+    # v7.7c (2026-08-06): RESUMABLE. If all 3 seed files for a regime exist
+    # AND are newer than the bucket start, skip re-training (gateway
+    # shutdowns killed this run twice; completed regimes must not be wasted).
+    # The per-regime OOF calibration is also skipped if already saved.
     spec_map = {}
     for n in F.REGIME_NAMES:
         if n not in nonempty:
             print(f"  {n}: EMPTY — skip", flush=True)
+            continue
+        key = n.lower()
+        seed_files = [f"{MODEL_DIR}/spec_{key}_s{s}.txt" for s in SEEDS]
+        cal_file = f"{MODEL_DIR}/calibration_by_drr_spec_{key}.json"
+        try:
+            # Fresh = written within the last 24h (today's retrain), NOT older
+            # than the old Aug 4 deployment. Using t_bucket_done would reject
+            # seeds written in a PREVIOUS (killed) run of today's retrain.
+            all_fresh = all(
+                os.path.exists(p) and os.path.getmtime(p) >= time.time() - 86400
+                for p in seed_files)
+            cal_ok = os.path.exists(cal_file)
+        except Exception:
+            all_fresh = False
+            cal_ok = False
+        if all_fresh and cal_ok:
+            print(f"  {n}: SKIP (already trained with fixes, calibration present)",
+                  flush=True)
+            spec_map[n] = {"models": [os.path.basename(p) for p in seed_files],
+                           "seeds": SEEDS, "rows": coverage[n]}
             continue
         regime, files, rows = train_regime_from_file(
             n, os.path.join(TMP_DIR, f"{n}.csv"), feats, MODEL_DIR, t0)
