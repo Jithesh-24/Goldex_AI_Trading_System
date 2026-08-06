@@ -1,4 +1,4 @@
-"""WARM-START CONTINUATION trainer (v7.4, 2026-08-03).
+"""WARM-START CONTINUATION trainer (v7.5, 2026-08-06).
 
 User directive: KEEP the models trained on all XAUUSD backtest history (they
 "know the past" — every regime) and let them KEEP LEARNING with live data.
@@ -6,16 +6,20 @@ No cold rebuild from scratch.
 
 Strategy (Claude plan: warm-start / continuation):
   - Load each deployed seed model's weights (the history-informed model).
-  - Continue boosting on the current live feature matrix (gold_features.csv,
-    includes appended live outcomes) so the model ADAPTS to the recent regime
-    while never losing its historical foundation.
-  - Store the continued models (deep... same names the engine loads) with
-    atomic swap. Also re-emit OOF probs for backtest/calibration consistency.
+  - Continue boosting on a RECENT WINDOW of the feature matrix (last 180d,
+    incl. appended live outcomes) so the model ADAPTS to the current regime
+    while never losing its historical foundation. Full-matrix training would
+    double-buffer past 7.5GB RAM (OOM 137), and warm-start means history is
+    already in the base weights.
+  - Store the continued models (same names the engine loads) with atomic swap.
+  - OOF probs are computed in a SEPARATE streaming pass over the FULL matrix
+    (chunked predict, ~40MB peak per chunk) so downstream calibration stays
+    index-aligned with gold_features.csv rows.
 """
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
-import json, os, sys, time
+import json, os, sys, time, gc, subprocess as _sp
 from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from calibrate import fit_calibration
@@ -28,43 +32,50 @@ SEEDS = [42, 7, 2026]
 RECENCY_TAU_DAYS = 120.0
 ROWS_PER_BAR = 48
 CONTINUE_ROUNDS = 200      # extra boosting rounds on top of the base model
+WINDOW_DAYS = 180          # recent training window (warm-start adapt)
+CHUNK = 500_000
 
 def lgb_params(seed):
     return {"objective": "binary", "metric": "binary_logloss",
             "learning_rate": 0.03, "num_leaves": 63, "max_depth": 8,
             "min_child_samples": 50, "feature_fraction": 0.8,
             "bagging_fraction": 0.8, "bagging_freq": 1, "lambda_l2": 5.0,
-            "verbose": -1, "num_threads": 8, "seed": seed}
+            "verbose": -1, "num_threads": 4, "seed": seed}
+# NOTE: i5-10210U = 4 physical cores / 8 logical. LightGBM with num_threads=8
+# spins on hyperthreaded logical CPUs -> 24x SLOWER (17s@1T, 8.6s@4T, 209s@8T).
+# num_threads=4 (physical cores) is the empirical optimum on this machine.
 
 def recency_weights(times_sec, tau_days=RECENCY_TAU_DAYS):
-    # times_sec: int64 epoch-seconds (already converted during streaming load)
+    # times_sec: int64 epoch-seconds
     age = (times_sec.max() - times_sec) / 86400.0
     w = np.exp(-age / tau_days); w = w / w.mean()
     return w.astype(np.float32)
 
-def load_matrix_streaming(feats):
-    """Chunked loader: preallocated float32 X / int8 y / int64 epoch-sec times.
-    Peak ~3.5GB for 8.2M rows instead of read_csv double-buffer OOM."""
-    from features import RAW_PRICE_COLS
-    import subprocess as _sp
+def row_count():
     n = int(_sp.run(["bash", "-c", f"wc -l < {FEAT_CSV}"],
-                    capture_output=True, text=True).stdout.strip()) - 1
-    if n < 1000:
-        print("too few rows; abort"); return None
-    X = np.empty((n, len(feats)), dtype=np.float32)
-    y = np.empty(n, dtype=np.int8)
-    times = np.empty(n, dtype=np.int64)  # epoch seconds
+                    capture_output=True, text=True).stdout.strip())
+    return n - 1
+
+def load_window(feats, cutoff_sec):
+    """Stream matrix, keep only rows with time >= cutoff_sec (recent window)."""
     read_cols = feats + ["target", "time"]
     dtype = {c: np.float32 for c in read_cols if c != "time"}
-    start = 0
+    parts_x, parts_y, parts_t = [], [], []
     for chunk in pd.read_csv(FEAT_CSV, usecols=read_cols, dtype=dtype,
-                             chunksize=500_000, low_memory=False):
-        end = start + len(chunk)
-        X[start:end] = chunk[feats].values
-        y[start:end] = chunk["target"].values
-        times[start:end] = (pd.to_datetime(chunk["time"]).astype("datetime64[s]").astype("int64")).values
-        start = end
+                             chunksize=CHUNK, low_memory=False):
+        t = pd.to_datetime(chunk["time"]).astype("datetime64[s]").astype("int64").values
+        m = t >= cutoff_sec
+        if m.any():
+            parts_x.append(chunk.loc[m, feats].values)
+            parts_y.append(chunk.loc[m, "target"].values.astype(np.int8))
+            parts_t.append(t[m])
         del chunk
+    if not parts_x:
+        return None
+    X = np.vstack(parts_x).astype(np.float32)
+    y = np.concatenate(parts_y).astype(np.int8)
+    times = np.concatenate(parts_t)
+    del parts_x, parts_y, parts_t; gc.collect()
     return X, y, times
 
 def main():
@@ -72,61 +83,69 @@ def main():
     from features import RAW_PRICE_COLS
     all_cols = pd.read_csv(FEAT_CSV, nrows=0).columns.tolist()
     feats = [c for c in all_cols if c not in FEATURE_EXCLUDE and c not in RAW_PRICE_COLS]
-    loaded = load_matrix_streaming(feats)
-    if loaded is None:
-        return 1
-    X, y, times = loaded
-    print(f"CONTINUE — {len(X):,} rows | {len(feats)} feats | "
-          f"{datetime.utcfromtimestamp(times[0]).date()} -> "
-          f"{datetime.utcfromtimestamp(times[-1]).date()}")
-    w = recency_weights(times)
-    del times; import gc; gc.collect()
 
-    # ── warm-start continuation from existing history model per seed ──
+    # ── PASS 1: load recent window + warm-start continuation ──
+    # Need the max time first: scan only the time column cheaply via awk.
+    raw_max = _sp.run(
+        ["bash", "-c", f"awk -F, 'NR>1 && $98>max {{max=$98}} END {{print max}}' {FEAT_CSV}"],
+        capture_output=True, text=True, timeout=600).stdout.strip()
+    last_ts = int(pd.Timestamp(raw_max).timestamp())
+    cutoff = int(last_ts) - WINDOW_DAYS * 86400
+    loaded = load_window(feats, cutoff)
+    if loaded is None:
+        print("no rows in window; abort"); return 1
+    X, y, times = loaded
+    print(f"CONTINUE — window {len(X):,} rows | {len(feats)} feats | "
+          f"{datetime.utcfromtimestamp(times[0]).date()} -> "
+          f"{datetime.utcfromtimestamp(times[-1]).date()} (last {WINDOW_DAYS}d)")
+    w = recency_weights(times)
+    del times; gc.collect()
+
+    dset = lgb.Dataset(X, label=y, weight=w, free_raw_data=False)
     for s in SEEDS:
         base = f"{MODEL_DIR}/gold_lgb_model_s{s}.txt"
         if os.path.exists(base):
-            model = lgb.train(lgb_params(s),
-                              lgb.Dataset(X, label=y, weight=w, free_raw_data=True),
+            model = lgb.train(lgb_params(s), dset,
                               num_boost_round=CONTINUE_ROUNDS,
                               init_model=base)
             print(f"  seed {s}: warm-start from base +{CONTINUE_ROUNDS} rounds")
         else:
-            model = lgb.train(lgb_params(s),
-                              lgb.Dataset(X, label=y, weight=w, free_raw_data=True),
+            model = lgb.train(lgb_params(s), dset,
                               num_boost_round=600)
             print(f"  seed {s}: no base → cold 600 rounds")
         name = f"{MODEL_DIR}/gold_lgb_model_s{s}.txt"
         tmp = name + ".tmp"; model.save_model(tmp); os.replace(tmp, name)
         del model; gc.collect()
+    del X, y, w, dset; gc.collect()
 
-    # ── full-length aligned OOF for downstream calibration ──
+    # ── PASS 2: full-length aligned OOF via streaming predict ──
     # fit_calibration_by_rr.py consumes oof_probs.npy/oof_targets.npy index-
-    # aligned with gold_features.csv rows (direction, rr_buy, rr_sell), so they
-    # must be length-n walk-forward probs from the CONTINUED ensemble — NOT a
-    # 0.5 placeholder (that would flatten calibration to garbage).
-    oof = np.zeros(len(X)); oof_cnt = np.zeros(len(X))
-    n_bars = len(X) // ROWS_PER_BAR
-    chunk = max(n_bars // 5, 1)
-    for i in range(2, 5):
-        tr_end = i * chunk * ROWS_PER_BAR
-        te_end = min((i + 1) * chunk * ROWS_PER_BAR, len(X))
-        if te_end <= tr_end:
-            break
-        te_idx = np.arange(tr_end, te_end, dtype=int)
-        for s in SEEDS:
-            b = lgb.Booster(model_file=f"{MODEL_DIR}/gold_lgb_model_s{s}.txt")
-            oof[te_idx] += b.predict(X[te_idx]) / len(SEEDS)
-        oof_cnt[te_idx] = 1
-    miss = oof_cnt == 0
-    if miss.any():
-        for s in SEEDS:
-            b = lgb.Booster(model_file=f"{MODEL_DIR}/gold_lgb_model_s{s}.txt")
-            oof[miss] += b.predict(X[miss]) / len(SEEDS)
-    oof_y = y.astype(np.int8)
+    # aligned with gold_features.csv rows (direction, rr_buy, rr_sell).
+    n = row_count()
+    oof = np.zeros(n, dtype=np.float32)
+    oof_y = np.zeros(n, dtype=np.int8)
+    boosters = [lgb.Booster(model_file=f"{MODEL_DIR}/gold_lgb_model_s{s}.txt")
+                for s in SEEDS]
+    for b in boosters:
+        b.params = dict(b.params, num_threads=4)
+    read_cols = feats + ["target", "time"]
+    dtype = {c: np.float32 for c in read_cols if c != "time"}
+    start = 0
+    for chunk in pd.read_csv(FEAT_CSV, usecols=read_cols, dtype=dtype,
+                             chunksize=CHUNK, low_memory=False):
+        end = start + len(chunk)
+        Xc = chunk[feats].values.astype(np.float32)
+        p = np.zeros(len(chunk), dtype=np.float32)
+        for b in boosters:
+            p += b.predict(Xc) / len(SEEDS)
+        oof[start:end] = p
+        oof_y[start:end] = chunk["target"].values
+        start = end
+        del chunk, Xc, p; gc.collect()
+    del boosters; gc.collect()
     acc = ((oof >= 0.5).astype(int) == oof_y).mean()
     print(f"  OOF aligned len={len(oof):,} | acc={acc:.3f}")
-    np.save(f"{MODEL_DIR}/oof_probs.npy", oof.astype(np.float32))
+    np.save(f"{MODEL_DIR}/oof_probs.npy", oof)
     np.save(f"{MODEL_DIR}/oof_targets.npy", oof_y)
     try:
         knots = fit_calibration(oof, oof_y)

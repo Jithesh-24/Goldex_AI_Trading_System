@@ -287,22 +287,37 @@ def load_specialists(cfg_path, fallback_single):
     regime_specialists.json. Returns a dict regime->list-of-Boosters, or None
     if no specialist config exists (engine falls back to the global ensemble).
     Lightweight — one Booster per regime file, loaded once and hot-reloaded
-    whenever the config mtime changes (mirrors load_ensemble)."""
+    whenever the config mtime changes (mirrors load_ensemble).
+
+    v7.7b (2026-08-06): also loads per-regime calibration curves
+    (calibration_by_drr_spec_<regime>.json, emitted by train_regime_spec).
+    Returns (models, calib): calib[regime] = {dir_RR: knots} so the router
+    calibrates specialist probabilities with the specialist's OWN OOF curves
+    instead of the base model's."""
     try:
         with open(cfg_path) as f:
             cfg = json.load(f)
         if not isinstance(cfg, dict) or "bins" not in cfg:
-            return None
+            return None, None
         out = {}
+        calib = {}
         for regime, meta in (cfg.get("bins") or {}).items():
             try:
                 out[regime] = [lgb.Booster(model_file=f"{BASE}/models/{m}")
                                for m in meta["models"]]
             except Exception:
                 out[regime] = None
-        return out if out else None
+            # v7.7b: per-regime calibration (optional — fallback to base)
+            _cp = f"{BASE}/models/calibration_by_drr_spec_{regime.lower()}.json"
+            try:
+                if os.path.exists(_cp):
+                    with open(_cp) as f:
+                        calib[regime] = json.load(f)
+            except Exception:
+                calib[regime] = None
+        return (out if out else None), (calib if calib else None)
     except Exception:
-        return None
+        return None, None
 
 # ── LEARNED SL/TP PLACEMENT (v4 2026-08-01) ──
 # NO hardcoded geometry. The model was trained over a grid of placements
@@ -515,7 +530,7 @@ def main():
     dir_models, dir_seeds = load_ensemble(DIR_ENSEMBLE_CFG, MODEL)
     # v7.7 REGIME ROUTER: try to load the 8 specialist ensembles. If present,
     # the engine routes each tick to the specialist for the current regime.
-    spec_models = load_specialists(SPEC_CFG, MODEL)
+    spec_models, spec_cal = load_specialists(SPEC_CFG, MODEL)
     if spec_models:
         print(f"[{ts()}] REGIME ROUTER: {len(spec_models)} specialists loaded "
               f"({', '.join(sorted(spec_models.keys()))})")
@@ -702,7 +717,7 @@ def main():
                          # as the model ensemble.
     CALIB_PATH = f"{BASE}/models/calibration.json"
     def maybe_reload_model():
-        nonlocal models, dir_models, spec_models, model_mtime, spec_mtime, feats, dir_feats, cal_knots, cal_by_rr, cal_mtime
+        nonlocal models, dir_models, spec_models, spec_cal, model_mtime, spec_mtime, feats, dir_feats, cal_knots, cal_by_rr, cal_mtime
         try:
             m = os.path.getmtime(ENSEMBLE_CFG)
             dm = os.path.getmtime(DIR_ENSEMBLE_CFG)
@@ -724,7 +739,7 @@ def main():
         try:
             sm = os.path.getmtime(SPEC_CFG)
             if spec_mtime is not None and sm > spec_mtime:
-                spec_models = load_specialists(SPEC_CFG, MODEL)
+                spec_models, spec_cal = load_specialists(SPEC_CFG, MODEL)
                 if spec_models:
                     print(f"[{ts()}] 🔄 REGIME ROUTER hot-reloaded: {len(spec_models)} specialists")
                 else:
@@ -975,6 +990,7 @@ def main():
             # fall back to the global ensemble. Safe: never crashes the sweep.
             route_models = models
             route_regime = None
+            route_cal = None   # v7.7b: per-regime calibration (specialist OOF)
             if spec_models:
                 try:
                     from features import regime_bin
@@ -982,6 +998,7 @@ def main():
                     rmod = spec_models.get(route_regime)
                     if rmod:
                         route_models = rmod
+                        route_cal = (spec_cal or {}).get(route_regime)
                 except Exception:
                     route_models = models
                 if route_regime:
@@ -990,8 +1007,9 @@ def main():
                     _rr = " [global ensemble]"
             else:
                 _rr = ""
-            buy = best_placement(route_models, feats, fx, atr, xm_spread, "BUY", cal_knots, cal_by_rr)
-            sell = best_placement(route_models, feats, fx, atr, xm_spread, "SELL", cal_knots, cal_by_rr)
+            _cal_used = route_cal if route_cal is not None else cal_by_rr
+            buy = best_placement(route_models, feats, fx, atr, xm_spread, "BUY", cal_knots, _cal_used)
+            sell = best_placement(route_models, feats, fx, atr, xm_spread, "SELL", cal_knots, _cal_used)
 
             # ── SAME-IDEA SUPPRESSION (2026-08-04, v7.9: MARKET-STATE based) ──
             # A resolved trade frees the engine to re-evaluate — and in a flat

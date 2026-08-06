@@ -25,9 +25,13 @@ MODEL_DIR = f"{BASE}/models"
 FEAT_CSV = f"{BASE}/gold_features.csv"
 FEATURE_EXCLUDE = {"time", "target", "fwd_return"}
 SEEDS = [42, 7, 2026]
-N_THREADS = 8
+# 2026-08-06 FIX: i5-10210U = 4 physical cores / 8 logical. num_threads=8
+# spins on hyperthreaded logical CPUs -> 24x SLOWER (17s@1T, 8.6s@4T, 209s@8T).
+N_THREADS = 4
 ROWS_PER_BAR = 48
 RECENCY_TAU_DAYS = 120.0
+CAL_SPLIT = 0.9   # calibration OOF: train on first 90% (by time), hold out 10%
+CAL_ROUNDS = 300  # calibration pass early-stops; deployment keeps 600
 
 
 def lgb_params(seed):
@@ -63,7 +67,7 @@ def stream_bucket(FEAT_CSV, TMP_DIR):
     # resolve feature list from header once
     hdr = pd.read_csv(FEAT_CSV, nrows=0).columns.tolist()
     feats = [c for c in hdr if c not in FEATURE_EXCLUDE and c not in F.RAW_PRICE_COLS]
-    read_cols = feats + ["target", "direction", "time"]
+    read_cols = feats + ["target", "direction", "rr_buy", "rr_sell", "time"]
     dt = {c: np.float32 for c in read_cols if c != "time"}
 
     handles = {}
@@ -96,8 +100,53 @@ def stream_bucket(FEAT_CSV, TMP_DIR):
     return feats, coverage, nonempty
 
 
+def rr_bucket_spec(rr):
+    """Map an effective RR to the nearest grid ratio."""
+    from features import TP_RATIOS
+    return min(TP_RATIOS, key=lambda t: abs(rr - t))
+
+
+def _fit_spec_calibration(regime, oof, oofy, drr, min_support=5000):
+    """Fit per-dir × per-RR calibration for ONE regime from its own OOF.
+
+    Mirrors fit_calibration_by_rr.py but on the SPECIALIST's honest OOF,
+    so the deployed probability scale matches the model that produced it.
+    """
+    from features import TP_RATIOS
+    from fit_calibration_by_rr import pava_bins
+    import numpy as _np
+    out = {}
+    dirs = ["BUY", "SELL"]
+    for di, dname in enumerate(dirs):
+        for ri, t in enumerate(TP_RATIOS):
+            key = f"{dname}_{t}"
+            # direction>0.5 → BUY (use rr_buy bucket); else SELL
+            d_mask = (drr > 0.5) if dname == "BUY" else (drr <= 0.5)
+            m = d_mask & (np.array([rr_bucket_spec(r) for r in drr]) == t)
+            if m.sum() < min_support:
+                continue
+            ps, ys = pava_bins(oof[m], oofy[m])
+            out[key] = {"knots_p": ps.tolist(), "knots_y": ys.tolist(),
+                        "n": int(m.sum())}
+    if out:
+        path = f"{MODEL_DIR}/calibration_by_drr_spec_{regime.lower()}.json"
+        with open(path + ".tmp", "w") as f:
+            json.dump(out, f, indent=2)
+        os.replace(path + ".tmp", path)
+    return out
+
+
 def train_regime_from_file(regime, tmp_file, feats, MODEL_DIR, t0):
-    """Train one regime's 3-seed placement ensemble from its temp CSV."""
+    """Train one regime's 3-seed placement ensemble from its temp CSV.
+
+    v7.7b (2026-08-06): ALSO emit a per-regime OOF + per-dir×RR calibration.
+    Previously specialists were calibrated with the BASE model's curves
+    (calibration_by_drr.json) — wrong model, wrong probability scale.
+    Now: train a calibration pass on the first 90% of the regime's rows
+    (by time), predict the held-out 10% → honest specialist OOF → fit
+    calibration_by_drr_spec_<regime>.json. The engine picks the specialist
+    curve when it routes to this regime (fallback: base curves).
+    """
     df = pd.read_csv(tmp_file)
     times = pd.to_datetime(df["time"]).values
     w = recency_weights(times)
@@ -116,6 +165,45 @@ def train_regime_from_file(regime, tmp_file, feats, MODEL_DIR, t0):
         del model
         gc.collect()
     rows = len(df)
+
+    # ── v7.7b per-regime OOF + calibration ──
+    # Time-ordered 90/10 split; train calibration seeds on the EARLY 90%,
+    # predict the RECENT 10% (the regime the engine will actually face).
+    try:
+        order = np.argsort(times.astype("datetime64[s]").astype(np.int64))
+        cut = int(len(order) * CAL_SPLIT)
+        tr = order[:cut]
+        va = order[cut:]
+        if len(tr) > 20000 and len(va) > 5000:
+            Xva = X[va]
+            yva = y[va]
+            oof = np.zeros(len(va), dtype=np.float32)
+            for s in SEEDS:
+                cal_params = dict(lgb_params(s))
+                cal_params.pop("early_stopping_rounds", None)
+                md = lgb.train(
+                    cal_params,
+                    lgb.Dataset(X[tr], label=y[tr], weight=w[tr],
+                                free_raw_data=True),
+                    num_boost_round=CAL_ROUNDS,
+                    valid_sets=[lgb.Dataset(Xva, label=yva, weight=w[va])],
+                    callbacks=[lgb.early_stopping(50, verbose=False)])
+                oof += md.predict(Xva, num_iteration=md.best_iteration or CAL_ROUNDS)
+                del md
+                gc.collect()
+            oof /= len(SEEDS)
+            np.save(f"{MODEL_DIR}/oof_spec_{regime.lower()}.npy", oof)
+            np.save(f"{MODEL_DIR}/oofy_spec_{regime.lower()}.npy", yva)
+            # per-row direction + effective RR → fit per-dir×RR curves
+            drr = np.where(df["direction"].values[va] > 0.5,
+                           df["rr_buy"].values[va], df["rr_sell"].values[va])
+            np.save(f"{MODEL_DIR}/drr_spec_{regime.lower()}.npy", drr)
+            _fit_spec_calibration(regime, oof, yva, drr)
+            print(f"  {regime}: OOF n={len(va):,} | WR {yva.mean():.1%} | "
+                  f"calibration saved", flush=True)
+    except Exception as e:
+        print(f"  {regime}: ⚠ OOF/calibration skipped: {e}", flush=True)
+
     del df, X, y, w, times
     gc.collect()
     print(f"  {regime}: trained {len(files)} seeds n={rows:,} ({time.time()-t0:.0f}s)",

@@ -912,13 +912,11 @@ def regime_bin(fx):
         rsi = float(fx.get("rsi_14", 50.0))
         volr = abs(float(fx.get("m1_d1_vol_ratio", 1.0)))
 
-        # Volatility overlays FIRST (news-shock / quiet trump trend labels)
-        if vs > 2.0 or ns > 0.4 or ap > 0.85:
-            return "HIGH_VOL"
-        if ap < 0.15 and ns < 0.2:
-            return "QUIET_LOW_VOL"
-
-        # Trend bins (signed trend_ema in ATR units, slope-aligned)
+        # Trend bins FIRST (signed trend_ema in ATR units, slope-aligned).
+        # 2026-08-06 FIX: vol overlays previously fired before trend detection,
+        # stealing trending bars into HIGH_VOL/QUIET bins -> wrong specialist
+        # routing (prior 0.504 vs 0.476 on clean trend bins). Docstring always
+        # said "trend first, then comp/vol overlays override" — code now matches.
         if te > 1.2 and ts * te > 0:
             return "STRONG_UP"
         if te > 0.4:
@@ -927,6 +925,12 @@ def regime_bin(fx):
             return "STRONG_DOWN"
         if te < -0.4:
             return "DOWN"
+
+        # Volatility overlays for NON-TREND bars (news-shock / quiet trump range)
+        if vs > 2.0 or ns > 0.4 or ap > 0.85:
+            return "HIGH_VOL"
+        if ap < 0.15 and ns < 0.2:
+            return "QUIET_LOW_VOL"
 
         # Range bins by compression width
         if bb < 0.35:
