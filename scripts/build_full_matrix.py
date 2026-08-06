@@ -27,7 +27,7 @@ Incremental pipeline:
   3. append ONLY rows strictly newer than the matrix's last timestamp
   4. write matrix.schema.json sidecar with the feature-engine fingerprint
 """
-import os, sys, time, json, hashlib, shutil
+import os, sys, time, json, hashlib, shutil, subprocess
 import numpy as np
 import pandas as pd
 
@@ -60,7 +60,15 @@ def _count_rows(path):
 
 def _last_matrix_time(OUT):
     """Return the newest 'time' already in the built matrix (header-aware:
-    'time' is NOT column 0 in this matrix — it lives at the header position)."""
+    'time' is NOT column 0 in this matrix — it lives at the header position).
+
+    FIX (2026-08-05): the old implementation read only the LAST LINE of the
+    file. The closed-loop merge appends LIVE-OUTCOME rows (OLD timestamps) at
+    the end of the matrix, so the last line is NOT the max time — the next
+    incremental run then re-appended every seed bar after that stale cut, and
+    duplicated ~16k rows per run. Now we stream the time column and take the
+    true max across the whole matrix (~2 min on 8.3M rows, at 3am EOD this is
+    negligible vs the multi-hour train)."""
     # find the time column index from the header
     ti = None
     with open(OUT, "rb") as f:
@@ -71,18 +79,12 @@ def _last_matrix_time(OUT):
             break
     if ti is None:
         return None
-    with open(OUT, "rb") as f:
-        f.seek(0, 2)
-        size = f.tell()
-        if size > 8192:
-            f.seek(size - 8192)
-        tail = f.read().decode("utf-8", "replace").splitlines()
-    for ln in reversed(tail):
-        s = ln.strip()
-        if s and not s.lower().startswith("time,"):
-            parts = s.split(",")
-            if len(parts) > ti:
-                return pd.to_datetime(parts[ti])
+    mx = None
+    for chunk in pd.read_csv(OUT, usecols=["time"], chunksize=1_000_000):
+        m = pd.to_datetime(chunk["time"]).max()
+        if mx is None or m > mx:
+            mx = m
+    return mx
     return None
 
 

@@ -36,30 +36,51 @@ def lgb_params(seed):
             "bagging_fraction": 0.8, "bagging_freq": 1, "lambda_l2": 5.0,
             "verbose": -1, "num_threads": 8, "seed": seed}
 
-def recency_weights(times, tau_days=RECENCY_TAU_DAYS):
-    ts = times.astype("datetime64[s]").astype(np.int64)
-    age = (ts.max() - ts) / 86400.0
+def recency_weights(times_sec, tau_days=RECENCY_TAU_DAYS):
+    # times_sec: int64 epoch-seconds (already converted during streaming load)
+    age = (times_sec.max() - times_sec) / 86400.0
     w = np.exp(-age / tau_days); w = w / w.mean()
     return w.astype(np.float32)
+
+def load_matrix_streaming(feats):
+    """Chunked loader: preallocated float32 X / int8 y / int64 epoch-sec times.
+    Peak ~3.5GB for 8.2M rows instead of read_csv double-buffer OOM."""
+    from features import RAW_PRICE_COLS
+    import subprocess as _sp
+    n = int(_sp.run(["bash", "-c", f"wc -l < {FEAT_CSV}"],
+                    capture_output=True, text=True).stdout.strip()) - 1
+    if n < 1000:
+        print("too few rows; abort"); return None
+    X = np.empty((n, len(feats)), dtype=np.float32)
+    y = np.empty(n, dtype=np.int8)
+    times = np.empty(n, dtype=np.int64)  # epoch seconds
+    read_cols = feats + ["target", "time"]
+    dtype = {c: np.float32 for c in read_cols if c != "time"}
+    start = 0
+    for chunk in pd.read_csv(FEAT_CSV, usecols=read_cols, dtype=dtype,
+                             chunksize=500_000, low_memory=False):
+        end = start + len(chunk)
+        X[start:end] = chunk[feats].values
+        y[start:end] = chunk["target"].values
+        times[start:end] = (pd.to_datetime(chunk["time"]).astype("datetime64[s]").astype("int64")).values
+        start = end
+        del chunk
+    return X, y, times
 
 def main():
     t0 = time.time()
     from features import RAW_PRICE_COLS
     all_cols = pd.read_csv(FEAT_CSV, nrows=0).columns.tolist()
     feats = [c for c in all_cols if c not in FEATURE_EXCLUDE and c not in RAW_PRICE_COLS]
-    read_cols = feats + ["target", "direction", "time"]
-    df = pd.read_csv(FEAT_CSV, usecols=read_cols,
-                     dtype={c: np.float32 for c in read_cols if c != "time"})
-    df["time"] = pd.to_datetime(df["time"])
-    times = df["time"].values
-    if len(df) < 1000:
-        print("too few rows; abort"); return 1
-    print(f"CONTINUE — {len(df):,} rows | {len(feats)} feats | "
-          f"{pd.Timestamp(times[0]).date()} -> {pd.Timestamp(times[-1]).date()}")
-    X = df[feats].values
-    y = df["target"].values.astype(np.int8)
+    loaded = load_matrix_streaming(feats)
+    if loaded is None:
+        return 1
+    X, y, times = loaded
+    print(f"CONTINUE — {len(X):,} rows | {len(feats)} feats | "
+          f"{datetime.utcfromtimestamp(times[0]).date()} -> "
+          f"{datetime.utcfromtimestamp(times[-1]).date()}")
     w = recency_weights(times)
-    del df; import gc; gc.collect()
+    del times; import gc; gc.collect()
 
     # ── warm-start continuation from existing history model per seed ──
     for s in SEEDS:

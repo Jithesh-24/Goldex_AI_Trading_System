@@ -76,6 +76,14 @@ def merge_live_outcomes_appended(feat_csv):
     non_feat = set(["time", "target", "fwd_return"]) | set(RAW_PRICE_COLS)
     feats_cols = [c for c in header if c not in non_feat]
     rows = []
+    merged_path = f"{OUTDIR}/live_outcomes_merged.json"
+    merged = set()
+    if os.path.exists(merged_path):
+        try:
+            with open(merged_path) as f:
+                merged = set(json.load(f))
+        except Exception:
+            merged = set()
     with open(outcomes_path) as f:
         for line in f:
             try:
@@ -91,6 +99,9 @@ def merge_live_outcomes_appended(feat_csv):
             # would 0.0-fill the 12 new regime features → biased rows. Skip.
             if "trend_ema" not in feats or "bb_pctile" not in feats:
                 continue
+            uid = f"{r.get('t')}|{r.get('dir')}"
+            if uid in merged:
+                continue  # idempotent: already merged in a prior EOD run
             row = {c: (feats.get(c) if c in feats_cols else None) for c in header}
             if "direction" not in feats and r.get("dir") in ("BUY", "SELL"):
                 row["direction"] = 1.0 if r["dir"] == "BUY" else 0.0
@@ -98,10 +109,14 @@ def merge_live_outcomes_appended(feat_csv):
             row["target"] = 1.0 if r.get("result") == "TP" else 0.0
             row["fwd_return"] = 0.0
             rows.append(row)
+            merged.add(uid)
     if not rows:
         return 0, n_rows
     extra = pd.DataFrame(rows, columns=header).fillna(0.0)
     extra.to_csv(feat_csv, mode="a", header=False, index=False)  # append
+    # persist merged UIDs so a re-run never re-appends (closed-loop idempotency)
+    with open(merged_path, "w") as f:
+        json.dump(sorted(merged), f)
     return len(rows), n_rows + len(rows)
 
 def _count_file_lines(path):
