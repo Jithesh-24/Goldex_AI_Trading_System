@@ -28,7 +28,9 @@ from calibrate import fit_calibration
 BASE = "/home/jith/.hermes/profiles/trading/scripts"
 MODEL_DIR = f"{BASE}/models"
 FEAT_CSV = os.environ.get("FEAT_CSV", f"{BASE}/gold_features.csv")
-FEATURE_EXCLUDE = {"time", "target", "fwd_return"}
+FEATURE_EXCLUDE = {"time", "target", "fwd_return", "mfe_atr", "mfa_atr"}
+# v8: mfe/mfa are forward-looking (measured at resolution) — placement-prior
+# calibration inputs, NEVER model features (lookahead leak otherwise).
 SEEDS = [42, 7, 2026]
 RECENCY_TAU_DAYS = 120.0
 ROWS_PER_BAR = 48
@@ -86,9 +88,16 @@ def main():
     feats = [c for c in all_cols if c not in FEATURE_EXCLUDE and c not in RAW_PRICE_COLS]
 
     # ── PASS 1: load recent window + warm-start continuation ──
-    # Need the max time first: scan only the time column cheaply via awk.
+    # Need the max time first: locate the time column position in the header
+    # (M1 matrix: col 98; M5 matrix: col 104 — NEVER hardcode, scan it).
+    hdr = _sp.run(["bash", "-c", f"head -1 {FEAT_CSV}"],
+                  capture_output=True, text=True, timeout=60).stdout.strip()
+    _col_time = [i for i, c in enumerate(hdr.split(","), 1) if c.strip() == "time"]
+    if not _col_time:
+        print("no time column in header; abort"); return 1
+    _tpos = _col_time[0]
     raw_max = _sp.run(
-        ["bash", "-c", f"awk -F, 'NR>1 && $98>max {{max=$98}} END {{print max}}' {FEAT_CSV}"],
+        ["bash", "-c", f"awk -F, 'NR>1 && ${_tpos}>max {{max=${_tpos}}} END {{print max}}' {FEAT_CSV}"],
         capture_output=True, text=True, timeout=600).stdout.strip()
     last_ts = int(pd.Timestamp(raw_max).timestamp())
     cutoff = int(last_ts) - WINDOW_DAYS * 86400
@@ -105,7 +114,17 @@ def main():
     dset = lgb.Dataset(X, label=y, weight=w, free_raw_data=False)
     for s in SEEDS:
         base = f"{MODEL_DIR}/gold_lgb_model_s{s}.txt"
+        _can_warm = False
         if os.path.exists(base):
+            try:
+                _b = lgb.Booster(model_file=base)
+                _can_warm = _b.num_feature() == len(feats)
+                if not _can_warm:
+                    print(f"  seed {s}: base has {_b.num_feature()} feats vs "
+                          f"matrix {len(feats)} — cold start (v8 M5 switch)")
+            except Exception:
+                _can_warm = False
+        if _can_warm:
             model = lgb.train(lgb_params(s), dset,
                               num_boost_round=CONTINUE_ROUNDS,
                               init_model=base)

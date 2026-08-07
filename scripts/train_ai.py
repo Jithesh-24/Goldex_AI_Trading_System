@@ -26,11 +26,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from calibrate import fit_calibration, save_calibration, apply_calibration
 
 BASE = "/home/jith/.hermes/profiles/trading/scripts"
-FEAT_CSV = f"{BASE}/gold_features.csv"
+FEAT_CSV = os.environ.get("FEAT_CSV", f"{BASE}/gold_features.csv")
 MODEL_DIR = f"{BASE}/models"
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-FEATURE_EXCLUDE = {"time", "target", "fwd_return"}
+FEATURE_EXCLUDE = {"time", "target", "fwd_return", "mfe_atr", "mfa_atr"}
+# v8: mfe/mfa are forward-looking (measured at resolution) — placement-prior
+# calibration inputs, NEVER model features (lookahead leak otherwise).
 SEEDS = [42, 7, 2026]          # ensemble seeds
 RECENCY_TAU_DAYS = 120.0       # exp(−age_days/120) sample weight
 ROWS_PER_BAR = 48              # 2 dir × 6 sl × 4 tp (must match features.py)
@@ -199,7 +201,9 @@ def main():
     with open(f"{MODEL_DIR}/ensemble.json", "w") as f:
         json.dump({"type": "placement", "seeds": SEEDS,
                    "models": [f"gold_lgb_model_s{s}.txt" for s in SEEDS],
-                   "recency_tau_days": RECENCY_TAU_DAYS}, f, indent=2)
+                   "recency_tau_days": RECENCY_TAU_DAYS,
+                   "base_tf": os.environ.get("PRIOR_BAR_SECS", "180") == "300" and "m5" or "m1"},
+                  f, indent=2)
     with open(f"{MODEL_DIR}/metrics.json", "w") as f:
         json.dump({k: (float(v) if isinstance(v, (int, float, np.floating)) else v)
                    for k, v in res.items()}, f, indent=2)

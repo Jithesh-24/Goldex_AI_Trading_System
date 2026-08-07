@@ -3,7 +3,10 @@
 Runs the complete v8 M5 pipeline AFTER build_m5_matrix.py finishes:
   1. fit_placement_prior.py   — learned SL/TP from MFE/MFA (6yr excursions)
   2. fit_signal_rating.py     — rating weights + fire threshold (learned)
-  3. train_continue.py        — base ensemble at M5 (warm-start continuation)
+  3. train_ai.py              — base ensemble at M5 (FULL 6yr cold start:
+                               feature count changed 108→116, so no warm-start;
+                               walk-forward OOF + calibration. Subsequent daily
+                               EOD uses train_continue.py warm-start on 180d.)
   4. train_direction_htf.py   — direction model at M5
   5. fit_calibration_by_rr.py — base per-dir×RR calibration at M5
   6. train_regime_spec.py     — all 8 regime specialists at M5
@@ -24,7 +27,7 @@ LOG = "/tmp/retrain_m5.log"
 STEPS = [
     ("fit_placement_prior.py",      "placement_prior.json",  "learned SL/TP from MFE/MFA"),
     ("fit_signal_rating.py",        "signal_rating.json",    "rating weights + fire threshold"),
-    ("train_continue.py",           "ensemble.json",         "base ensemble (M5)"),
+    ("train_ai.py",                 "ensemble.json",         "base ensemble (M5, full 6yr cold)"),
     ("train_direction_htf.py",      "direction_metrics.json","direction model (M5)"),
     ("fit_calibration_by_rr.py",    "calibration_by_drr.json","base per-dir×RR calibration"),
     ("train_regime_spec.py",        "regime_specialists.json","8 regime specialists (M5)"),
