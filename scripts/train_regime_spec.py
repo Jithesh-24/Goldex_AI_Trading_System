@@ -106,23 +106,33 @@ def rr_bucket_spec(rr):
     return min(TP_RATIOS, key=lambda t: abs(rr - t))
 
 
-def _fit_spec_calibration(regime, oof, oofy, drr, min_support=5000):
+def _fit_spec_calibration(regime, oof, oofy, drr, dirs, min_support=5000):
     """Fit per-dir × per-RR calibration for ONE regime from its own OOF.
 
     Mirrors fit_calibration_by_rr.py but on the SPECIALIST's honest OOF,
     so the deployed probability scale matches the model that produced it.
+
+    v7.7c FIX (2026-08-07): the old version derived the direction mask from
+    `drr` (the RR VALUE, always 1.3-3.0) — `drr > 0.5` matched EVERY row, so
+    all rows were fitted into BUY curves and SELL calibration was NEVER
+    written. At signal time SELL fell back to raw (overconfident) model
+    probability while BUY was calibrated → the placement sweep systematically
+    favored SELL (bot shorted every uptrend, 6 SL / 1 TP in 40 min). Now the
+    true direction mask is passed in explicitly and saved alongside.
     """
     from features import TP_RATIOS
     from fit_calibration_by_rr import pava_bins
     import numpy as _np
     out = {}
-    dirs = ["BUY", "SELL"]
-    for di, dname in enumerate(dirs):
+    dirs = _np.asarray(dirs, dtype=bool)
+    dirs_buy = dirs                 # TRUE = BUY row (direction feature > 0.5)
+    dirs_sell = ~dirs               # FALSE = SELL row
+    _np.save(f"{MODEL_DIR}/dirmask_spec_{regime.lower()}.npy", dirs)
+    for di, dname in enumerate(["BUY", "SELL"]):
+        d_mask = dirs_buy if dname == "BUY" else dirs_sell
         for ri, t in enumerate(TP_RATIOS):
             key = f"{dname}_{t}"
-            # direction>0.5 → BUY (use rr_buy bucket); else SELL
-            d_mask = (drr > 0.5) if dname == "BUY" else (drr <= 0.5)
-            m = d_mask & (np.array([rr_bucket_spec(r) for r in drr]) == t)
+            m = d_mask & (_np.array([rr_bucket_spec(r) for r in drr]) == t)
             if m.sum() < min_support:
                 continue
             ps, ys = pava_bins(oof[m], oofy[m])
@@ -198,7 +208,8 @@ def train_regime_from_file(regime, tmp_file, feats, MODEL_DIR, t0):
             drr = np.where(df["direction"].values[va] > 0.5,
                            df["rr_buy"].values[va], df["rr_sell"].values[va])
             np.save(f"{MODEL_DIR}/drr_spec_{regime.lower()}.npy", drr)
-            _fit_spec_calibration(regime, oof, yva, drr)
+            dirs_va = df["direction"].values[va] > 0.5  # v7.7c: TRUE=BUY mask
+            _fit_spec_calibration(regime, oof, yva, drr, dirs_va)
             print(f"  {regime}: OOF n={len(va):,} | WR {yva.mean():.1%} | "
                   f"calibration saved", flush=True)
     except Exception as e:
