@@ -15,6 +15,7 @@ sys.path.insert(0, '.')
 import features as F
 
 HORIZONS = [5, 20, 60]   # 15min / 60min / 180min (M1 default)
+RECENT_WINDOW_DAYS = 90  # v8.3: direction prior adapts to the trailing 90d market
 # v8 M5: matrix bars are 300s. The trade horizon (180 min) = 36 M5 bars.
 # Env override keeps one script for both timeframes:
 #   PRIOR_BAR_SECS=300 PRIOR_HORIZONS="3,12,36" → M5 (15/60/180 min)
@@ -57,17 +58,34 @@ for n in F.REGIME_NAMES:
     t, c = t[o], c[o]
     out[n] = {}
     for h in HORIZONS:
-        tgt = t + h * BAR_SECS
-        j = np.searchsorted(t, tgt, side='left')
-        valid = j < len(t)
-        i = np.arange(len(t))[valid]
-        jj = j[valid]
-        ups = int((c[jj] > c[i]).sum())
-        tot = len(i)
-        out[n][f'h{h}'] = round(ups / max(tot, 1), 4)
-        out[n][f'n{h}'] = int(tot)
-        print(f'  {n:15s} h={h:>3} ({h*BAR_SECS//60:>4}min): P(up)={out[n][f"h{h}"]:.4f}  n={tot:,}',
-              flush=True)
+        def _pup(tt, cc):
+            tgt = tt + h * BAR_SECS
+            j = np.searchsorted(tt, tgt, side='left')
+            valid = j < len(tt)
+            i = np.arange(len(tt))[valid]
+            jj = j[valid]
+            ups = int((cc[jj] > cc[i]).sum())
+            return ups / max(len(i), 1), len(i)
+        # FULL-HISTORY prior (6yr secular average) — reference only
+        p_full, n_full = _pup(t, c)
+        # v8.3 (2026-08-07): RECENT-WINDOW prior — the deployed direction tilt
+        # must adapt to the CURRENT market, not a static 6yr secular-bull
+        # average. A 6yr P(up)=0.85 average kept buying dips through any
+        # real turn (the engine's #1 structural loss factor). Measure P(up)
+        # over the trailing window (default 90 days); shrink toward the
+        # full-history value when the recent sample is thin (empirical-Bayes,
+        # data-driven — not a gate).
+        t_max = float(t[-1])
+        recent = t >= (t_max - RECENT_WINDOW_DAYS * 86400.0)
+        p_rec, n_rec = _pup(t[recent], c[recent]) if recent.sum() > 50 else (p_full, 0)
+        w = min(n_rec / 500.0, 1.0)          # full weight at >=500 recent rows
+        p_up = w * p_rec + (1 - w) * p_full  # shrink thin samples to history
+        out[n][f'h{h}'] = round(p_up, 4)
+        out[n][f'n{h}'] = int(n_full)
+        out[n][f'n_rec{h}'] = int(n_rec)
+        out[n][f'p_full_h{h}'] = round(p_full, 4)
+        print(f'  {n:15s} h={h:>3} ({h*BAR_SECS//60:>4}min): P(up)={p_up:.4f} '
+              f'(recent n={n_rec:,}, full={p_full:.4f}/{n_full:,})', flush=True)
 
 # trade-horizon key: h60 (M1, 180min) or h36 (M5, 180min)
 _trade_key = "h60" if BAR_SECS == 180 else f"h{HORIZONS[-1]}"
