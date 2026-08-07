@@ -358,38 +358,51 @@ def add_htf_context(df):
 
     h1 = _htf_features("1h", 12, 48)
     d1 = _htf_features("1D", 5, 20)
+    m15 = _htf_features("15min", 12, 48)   # v8 M15 context layer (M5 base)
 
-    # Reindex back to M1 (ffill: the value holds until the next completed
-    # H1/D1 bar). ALWAYS extract .values immediately — the reindexed
+    # Reindex back to base TF (ffill: the value holds until the next completed
+    # HTF bar). ALWAYS extract .values immediately — the reindexed
     # Series carries a DatetimeIndex and any later pandas arithmetic with
     # the RangeIndex'd df would silently union them (length doubling).
     h1_trend = h1["trend"].reindex(s.index, method="ffill").values
     h1_range = h1["range"].reindex(s.index, method="ffill").values
     d1_trend = d1["trend"].reindex(s.index, method="ffill").values
     d1_range = d1["range"].reindex(s.index, method="ffill").values
+    m15_trend = m15["trend"].reindex(s.index, method="ffill").values
+    m15_range = m15["range"].reindex(s.index, method="ffill").values
     h1_hi = h1["high"].reindex(s.index, method="ffill").values
     h1_lo = h1["low"].reindex(s.index, method="ffill").values
     d1_hi = d1["high"].reindex(s.index, method="ffill").values
     d1_lo = d1["low"].reindex(s.index, method="ffill").values
+    m15_hi = m15["high"].reindex(s.index, method="ffill").values
+    m15_lo = m15["low"].reindex(s.index, method="ffill").values
 
     df["h1_trend"] = h1_trend                       # + = H1 uptrend
     df["d1_trend"] = d1_trend                       # + = D1 uptrend
-    # M1 volatility vs H1/D1 volatility — 1.0 = typical, >1 = fast minute
+    df["m15_trend"] = m15_trend                     # + = M15 uptrend (v8)
+    # base-TF volatility vs HTF volatility — 1.0 = typical, >1 = fast bars
     df["m1_h1_vol_ratio"] = atr / (h1_range / 60 + 1e-9)
     df["m1_d1_vol_ratio"] = atr / (d1_range / 1440 + 1e-9)
-    # H1/D1 momentum: M1 close relative to completed H1/D1 high-low range
+    df["m15_m1_vol_ratio"] = m15_range / (atr * 3 + 1e-9)   # v8: M15 vs 3×base-ATR
+    # HTF momentum: base close relative to completed HTF high-low range
     df["h1_pos"] = (c - h1_lo) / (h1_hi - h1_lo + 1e-9)   # 0..1
     df["d1_pos"] = (c - d1_lo) / (d1_hi - d1_lo + 1e-9)
-    # Distance to H1 high/low in M1-ATR units (tradeable reference levels)
+    df["m15_pos"] = (c - m15_lo) / (m15_hi - m15_lo + 1e-9)   # v8
+    # Distance to H1 high/low in base-ATR units (tradeable reference levels)
     df["dist_h1_hi"] = (h1_hi - c) / (atr + 1e-9)
     df["dist_h1_lo"] = (c - h1_lo) / (atr + 1e-9)
-    # HTF confluence: M1 and H1 trend agree? 1 = aligned up, -1 = aligned down
+    df["dist_m15_hi"] = (m15_hi - c) / (atr + 1e-9)   # v8
+    df["dist_m15_lo"] = (c - m15_lo) / (atr + 1e-9)   # v8
+    # HTF confluence: base and M15 trend agree? 1 = aligned up, -1 = aligned down
     df["htf_align"] = np.sign(df["h1_trend"]) * np.sign(df["d1_trend"])
-    # First bars of a period have no completed H1/D1 → neutral
-    df[["h1_trend", "d1_trend", "m1_h1_vol_ratio", "m1_d1_vol_ratio",
-        "h1_pos", "d1_pos", "dist_h1_hi", "dist_h1_lo", "htf_align"]] = \
-        df[["h1_trend", "d1_trend", "m1_h1_vol_ratio", "m1_d1_vol_ratio",
-            "h1_pos", "d1_pos", "dist_h1_hi", "dist_h1_lo", "htf_align"]].fillna(0.0)
+    df["m15_align"] = np.sign(df["m15_trend"]) * np.sign(df["h1_trend"])  # v8
+    # First bars of a period have no completed HTF → neutral
+    df[["h1_trend", "d1_trend", "m15_trend", "m1_h1_vol_ratio", "m1_d1_vol_ratio",
+        "m15_m1_vol_ratio", "h1_pos", "d1_pos", "m15_pos", "dist_h1_hi",
+        "dist_h1_lo", "dist_m15_hi", "dist_m15_lo", "htf_align", "m15_align"]] = \
+        df[["h1_trend", "d1_trend", "m15_trend", "m1_h1_vol_ratio", "m1_d1_vol_ratio",
+            "m15_m1_vol_ratio", "h1_pos", "d1_pos", "m15_pos", "dist_h1_hi",
+            "dist_h1_lo", "dist_m15_hi", "dist_m15_lo", "htf_align", "m15_align"]].fillna(0.0)
     return df
 
 
@@ -648,6 +661,14 @@ def add_trade_target(df, max_bars=MAX_TARGET_BARS, sl_dist=None, tp_dist=None, d
         mid = grid[len(grid) // 2]
         sl_dist, tp_dist = mid[0], mid[1]
     targets = np.full(n, np.nan)
+    # v8 MFE/MFA: max favorable / max adverse excursion (in ATR units) reached
+    # BEFORE the first-touch resolution, per placement. These columns let the
+    # placement model learn "in this regime, winners run X ATR favorable and
+    # losers dip Y ATR adverse" → SL/TP placement is LEARNED from excursion
+    # distributions, never hardcoded. NaN where no forward path exists.
+    atr = df["atr_14"].values
+    mfe = np.full(n, np.nan)   # max favorable excursion (toward TP), in ATR
+    mfa = np.full(n, np.nan)   # max adverse excursion (toward SL), in ATR
     sl_dist_a = np.asarray(sl_dist, dtype=float)
     tp_dist_a = np.asarray(tp_dist, dtype=float)
     scalar_sl = sl_dist_a.ndim == 0
@@ -696,7 +717,34 @@ def add_trade_target(df, max_bars=MAX_TARGET_BARS, sl_dist=None, tp_dist=None, d
         else:
             # truly unresolved: compare final close vs ENTRY (not vs close)
             targets[i] = 1.0 if closes[j_end2 - 1] > entry else 0.0
+        # v8 excursion: over the window UP TO the first-touch resolution bar
+        # (or the extended window when neither hit), measure max favorable /
+        # adverse in ATR units. Defines the LEARNED placement: in this regime,
+        # winners run X ATR favorable, losers dip Y ATR adverse → SL/TP from
+        # excursion distributions, never hardcoded.
+        if sl_hit.size and tp_hit.size:
+            j_res = i + 1 + int(min(sl_hit[0], tp_hit[0]))
+        elif sl_hit.size:
+            j_res = i + 1 + int(sl_hit[0])
+        elif tp_hit.size:
+            j_res = i + 1 + int(tp_hit[0])
+        else:
+            j_res = j_end2
+        if j_res > i + 1:
+            seg_hi_f = highs[i + 1:j_res]
+            seg_lo_f = lows[i + 1:j_res]
+            if direction == "BUY":
+                fav = (seg_hi_f - entry)
+                adv = (entry - seg_lo_f)
+            else:
+                fav = (entry - seg_lo_f)
+                adv = (seg_hi_f - entry)
+            a = atr[i] if atr[i] > 0 else 1.0
+            mfe[i] = float(np.max(fav) / a)
+            mfa[i] = float(np.max(adv) / a)
     df["target"] = targets
+    df["mfe_atr"] = mfe
+    df["mfa_atr"] = mfa
     df["fwd_return"] = df["close"] - df["close"].shift(1)
     return df
 

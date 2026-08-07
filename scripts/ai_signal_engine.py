@@ -155,36 +155,55 @@ class FeatureComputer:
         return np.array(arr, dtype=float)
 
     def features(self, geometry=None):
-        """Compute MARKET features (v7: 95) by delegating to features.py —
-        IDENTICAL pipeline to training. geometry-awareness features are added
-        PER-CANDIDATE at signal time (learned placement sweep), not here.
+        """Compute MARKET features (v8: M5 base) by delegating to features.py —
+        IDENTICAL pipeline to the M5 training matrix. The M1 bar buffer is
+        aggregated into M5 OHLCV first (open=first, high=max, low=min,
+        close=last, vol=sum) — same resample the matrix builder uses.
 
-        CACHED by last-bar ts: HTF/session/event features only change when a
-        bar COMPLETES (once/min), not on every 10s poll. Full recompute is
-        ~9s on 43k bars — cache makes the hot path instant."""
+        CACHED by last M5-bar ts: HTF/session/event features only change when
+        a bar COMPLETES (once/5min), not on every 3s poll."""
         if len(self.times) < 200:
             return None
         try:
-            last_ts = self.times[-1]
+            last_m5 = int(self.times[-1] // 300) * 300
         except Exception:
-            last_ts = None
-        if getattr(self, "_fx_cache_ts", None) == last_ts and getattr(self, "_fx_cache", None) is not None:
+            last_m5 = None
+        if getattr(self, "_fx_cache_ts", None) == last_m5 and getattr(self, "_fx_cache", None) is not None:
             return self._fx_cache
         import sys
         sys.path.insert(0, "/home/jith/.hermes/profiles/trading/scripts")
         from features import _feature_block
+        # ── M1 → M5 aggregation (matches build_m5_matrix.to_m5 exactly) ──
+        m5_times, m5_o, m5_h, m5_l, m5_c, m5_v = [], [], [], [], [], []
+        cur = None
+        for t, o, h, l, c, v in zip(self.times, self.opens, self.highs,
+                                    self.lows, self.closes, self.vols):
+            b = int(t // 300) * 300
+            if cur is None or b != cur[0]:
+                if cur is not None:
+                    m5_times.append(cur[0]); m5_o.append(cur[1]); m5_h.append(cur[2])
+                    m5_l.append(cur[3]); m5_c.append(cur[4]); m5_v.append(cur[5])
+                cur = [b, o, h, l, c, v]
+            else:
+                cur[2] = max(cur[2], h); cur[3] = min(cur[3], l)
+                cur[4] = c; cur[5] += v
+        if cur is not None:
+            m5_times.append(cur[0]); m5_o.append(cur[1]); m5_h.append(cur[2])
+            m5_l.append(cur[3]); m5_c.append(cur[4]); m5_v.append(cur[5])
+        if len(m5_times) < 200:
+            return None
         df = pd.DataFrame({
-            "time": [datetime.utcfromtimestamp(t).strftime("%Y-%m-%d %H:%M:%S") for t in self.times],
-            "open": self.opens, "high": self.highs, "low": self.lows,
-            "close": self.closes, "tick_volume": self.vols,
-            "spread": [self.spreads[-1]] * len(self.times) if self.spreads else [20] * len(self.times),
-            "real_volume": [0] * len(self.times),
+            "time": [datetime.utcfromtimestamp(t).strftime("%Y-%m-%d %H:%M:%S") for t in m5_times],
+            "open": m5_o, "high": m5_h, "low": m5_l,
+            "close": m5_c, "tick_volume": m5_v,
+            "spread": [self.spreads[-1]] * len(m5_times) if self.spreads else [20] * len(m5_times),
+            "real_volume": [0] * len(m5_times),
         })
         df["time"] = pd.to_datetime(df["time"])
         df = _feature_block(df)
         fx = {col: float(df.iloc[-1][col]) for col in df.columns if col not in ("time", "spread")}
         self._fx_cache = fx
-        self._fx_cache_ts = last_ts
+        self._fx_cache_ts = last_m5
         return fx
 
     def placement_row(self, fx, atr, spread, direction, sl_mult, tp_ratio):
@@ -325,7 +344,7 @@ def load_specialists(cfg_path, fallback_single):
 # At signal time we evaluate EVERY candidate, compute expected value, and fire
 # the best one. The model's learned probability surface decides where SL/TP
 # go — the search space is data (sampling), not a deployed rule.
-def best_placement(models, feats, fx, atr, spread, direction, cal_knots=None, cal_by_rr=None):
+def best_placement(models, feats, fx, atr, spread, direction, cal_knots=None, cal_by_rr=None, regime=None):
     """Evaluate all (sl_mult, tp_ratio) candidates for one direction using the
     ENSEMBLE's averaged P(win | market + placement), return the best
     (sl_dist, tp_dist, conf, ev, exp, sl_mult, tp_ratio) or None.
@@ -334,33 +353,48 @@ def best_placement(models, feats, fx, atr, spread, direction, cal_knots=None, ca
         Exp = P × RR − (1−P)   where RR = TP / (SL+spread)
     conf = CALIBRATED ensemble P (raw model P is overconfident; v5 fixes it).
     v7.3c: PER-RR calibration — each TP ratio has its OWN honest P(win) curve.
-    The old single curve saturated at ~0.43 for all geometries, so RR 3.0
-    always won the EV sweep (every trade RR 3.00). Per-RR curves let the
-    model see which geometry the CURRENT market state actually favors →
-    ADAPTIVE trade management (1:2 today, 1:8 when the market pays it)."""
+    v8 (2026-08-07): the sweep is ANCHORED by the learned placement prior —
+    placement_prior.json (fit from 6yr MFE/MFA excursion distributions) gives
+    the regime's institutional SL/TP. The grid search still runs (the model
+    must confirm the learned placement beats other geometries), but the
+    learned candidate is ALWAYS in the set, so a hardcoded grid can never
+    dictate placement. regime=None → grid-only (backward compat)."""
     from features import SL_MULTS, TP_RATIOS
     from calibrate import apply_calibration
     fc = FeatureComputer(maxlen=2)
     best = None
-    for m in SL_MULTS:
-        for r in TP_RATIOS:
-            row, sl_dist, tp_dist = fc.placement_row(fx, atr, spread, direction, m, r)
-            X = np.array([[row.get(c, 0.0) for c in feats]], dtype=np.float32)
-            # 3-seed ensemble: average raw probs, THEN calibrate once.
-            p_raw = float(np.mean([mdl.predict(X)[0] for mdl in models]))
-            if cal_by_rr is not None:
-                # v7.3e per-dir×RR curve: honest P(win) for THIS geometry+direction
-                knots = cal_by_rr.get(f"{direction}_{r}")
-                p = apply_calibration(p_raw, knots) if knots else p_raw
-            else:
-                p = apply_calibration(p_raw, cal_knots) if cal_knots else p_raw
-            # Entry AND exit eat spread → true risk = SL + spread.
-            true_sl = sl_dist + spread
-            rr = tp_dist / (true_sl + 1e-9)
-            exp = p * rr - (1 - p)          # expectancy per $ risked
-            ev = p * tp_dist - (1 - p) * true_sl  # dollar EV (reporting only)
-            if best is None or exp > best[4]:
-                best = (sl_dist, tp_dist, p, ev, exp, m, r)
+    candidates = [(m, r) for m in SL_MULTS for r in TP_RATIOS]
+    # v8: inject the learned placement (regime × direction) into the sweep
+    try:
+        if regime:
+            with open(f"{BASE}/models/placement_prior.json") as f:
+                pp = json.load(f)
+            pd_ = pp.get("regimes", {}).get(regime, {}).get(direction, {})
+            learned_sl = pd_.get("sl_atr")
+            learned_tp = pd_.get("tp_ratio")
+            if learned_sl and learned_tp:
+                # learned SL in ATR units + learned TP ratio — anchored candidate
+                candidates.insert(0, (float(learned_sl), float(learned_tp)))
+    except Exception:
+        pass
+    for m, r in candidates:
+        row, sl_dist, tp_dist = fc.placement_row(fx, atr, spread, direction, m, r)
+        X = np.array([[row.get(c, 0.0) for c in feats]], dtype=np.float32)
+        # 3-seed ensemble: average raw probs, THEN calibrate once.
+        p_raw = float(np.mean([mdl.predict(X)[0] for mdl in models]))
+        if cal_by_rr is not None:
+            # v7.3e per-dir×RR curve: honest P(win) for THIS geometry+direction
+            knots = cal_by_rr.get(f"{direction}_{r}")
+            p = apply_calibration(p_raw, knots) if knots else p_raw
+        else:
+            p = apply_calibration(p_raw, cal_knots) if cal_knots else p_raw
+        # Entry AND exit eat spread → true risk = SL + spread.
+        true_sl = sl_dist + spread
+        rr = tp_dist / (true_sl + 1e-9)
+        exp = p * rr - (1 - p)          # expectancy per $ risked
+        ev = p * tp_dist - (1 - p) * true_sl  # dollar EV (reporting only)
+        if best is None or exp > best[4]:
+            best = (sl_dist, tp_dist, p, ev, exp, m, r)
     return best
 
 
@@ -528,8 +562,22 @@ def main():
 
     models, ens_seeds = load_ensemble(ENSEMBLE_CFG, MODEL)
     dir_models, dir_seeds = load_ensemble(DIR_ENSEMBLE_CFG, MODEL)
-    # v7.7 REGIME ROUTER: try to load the 8 specialist ensembles. If present,
-    # the engine routes each tick to the specialist for the current regime.
+    # v8 M5 TF GUARD (boot): only load configs stamped base_tf=m5. Legacy M1
+    # configs (no base_tf) load into an M5 feature space → silent mismatch →
+    # garbage probabilities. Refuse and run model-less (no signals) until the
+    # M5 retrain deploys. Same rule the hot-reload path enforces.
+    ENGINE_TF = "m5"
+    def _base_tf_ok(path):
+        try:
+            with open(path) as f:
+                return json.load(f).get("base_tf", "m1") == ENGINE_TF
+        except Exception:
+            return False
+    if not (_base_tf_ok(ENSEMBLE_CFG) and _base_tf_ok(DIR_ENSEMBLE_CFG)):
+        print(f"[{ts()}] 🛑 v8 TF GUARD: model configs are not base_tf=m5 "
+              f"(engine={ENGINE_TF}) — refusing M1 models. No signals until the "
+              f"M5 retrain (retrain_m5.py) deploys M5-stamped configs.")
+        models, dir_models = [], []
     spec_models, spec_cal = load_specialists(SPEC_CFG, MODEL)
     if spec_models:
         print(f"[{ts()}] REGIME ROUTER: {len(spec_models)} specialists loaded "
@@ -716,12 +764,20 @@ def main():
                          # picked it up (only a restart did it). Hot-reload same
                          # as the model ensemble.
     CALIB_PATH = f"{BASE}/models/calibration.json"
+    # (v8 TF guard: ENGINE_TF / _base_tf_ok defined at boot above — shared by
+    # the hot-reload path below. A silent TF mismatch is catastrophic; the boot
+    # guard refuses M1 configs and the reload guard does the same.)
     def maybe_reload_model():
         nonlocal models, dir_models, spec_models, spec_cal, model_mtime, spec_mtime, feats, dir_feats, cal_knots, cal_by_rr, cal_mtime
         try:
             m = os.path.getmtime(ENSEMBLE_CFG)
             dm = os.path.getmtime(DIR_ENSEMBLE_CFG)
             if model_mtime is not None and max(m, dm) > model_mtime:
+                if not (_base_tf_ok(ENSEMBLE_CFG) and _base_tf_ok(DIR_ENSEMBLE_CFG)):
+                    print(f"[{ts()}] ⚠️ ENSEMBLE RELOAD REFUSED — base_tf mismatch "
+                          f"(engine={ENGINE_TF}, model files not M5). Keeping last valid models.")
+                    model_mtime = max(m, dm)
+                    return
                 models, _ = load_ensemble(ENSEMBLE_CFG, MODEL)
                 dir_models, _ = load_ensemble(DIR_ENSEMBLE_CFG, MODEL)
                 with open(FEATURES) as f:
@@ -929,16 +985,22 @@ def main():
                         append_outcome({"t": time.time(), "dir": d, "entry": active["entry"],
                                         "sl": active["sl"], "tp": active["tp"], "pnl": pnl,
                                         "result": r_kind, "conf": active["conf"],
+                                        "regime": active.get("regime", ""),
+                                        "sl_atr": active.get("sl_atr", None),
                                         "feats": active.get("feats", {})})
                     except Exception:
                         pass
                     # SELF-ANALYSIS: on a loss (SL hit OR negative TIME drift),
-                    # run the audit (root-cause + lesson)
+                    # run the audit (root-cause + lesson). v8 passes the regime
+                    # and SL-in-ATR so the classifier can compare against the
+                    # learned MFE/MFA excursion band (EXCURSION_STOP diagnosis).
                     if pnl < 0 and active.get("feats"):
                         try:
                             from trade_audit import audit_trade
                             audit_trade({"dir": d, "entry": active["entry"], "sl": active["sl"],
                                          "tp": active["tp"], "pnl": pnl, "conf": active["conf"],
+                                         "regime": active.get("regime", ""),
+                                         "sl_atr": active.get("sl_atr", None),
                                          "feats": active.get("feats", {})})
                         except Exception as e:
                             print(f"[{ts()}] audit warn: {e}")
@@ -1008,8 +1070,8 @@ def main():
             else:
                 _rr = ""
             _cal_used = route_cal if route_cal is not None else cal_by_rr
-            buy = best_placement(route_models, feats, fx, atr, xm_spread, "BUY", cal_knots, _cal_used)
-            sell = best_placement(route_models, feats, fx, atr, xm_spread, "SELL", cal_knots, _cal_used)
+            buy = best_placement(route_models, feats, fx, atr, xm_spread, "BUY", cal_knots, _cal_used, route_regime)
+            sell = best_placement(route_models, feats, fx, atr, xm_spread, "SELL", cal_knots, _cal_used, route_regime)
 
             # ── SAME-IDEA SUPPRESSION (2026-08-04, v7.9: MARKET-STATE based) ──
             # A resolved trade frees the engine to re-evaluate — and in a flat
@@ -1076,14 +1138,29 @@ def main():
                 sl_dist = tp_dist = conf = ev = exp = sl_mult = tp_ratio = None; direction = None
 
             if direction is not None and exp > 0:
-                # v7.1 (2026-08-02): NO selectivity floor. The v5.3 gate that
-                # blocked trades below a confidence threshold was a RESTRICTION
-                # — the user's mandate is harness, not harden. The model's
-                # learned expectancy (exp > 0, computed by the ensemble over the
-                # full grid) IS its own calculation: when buying in a downtrend
-                # loses, the retrain merges that loss (target=0) into training,
-                # and the model's own EV surface shifts so that setup stops
-                # being profitable — no gate needed, the learning does it.
+                # ── v8 SIGNAL RATING GATE (2026-08-07) ──
+                # "Not every trade it sees should be taken" — institutional
+                # quality score. The rating combines calibrated P(win),
+                # expectancy, regime confidence and MFE/MFA excursion headroom
+                # with WEIGHTS LEARNED from 6yr data (signal_rating.json). Fire
+                # only when rating >= learned threshold (the rating decile where
+                # historical realized expectancy turns positive). Pure learning,
+                # no hardcoded selectivity floor. If no rating config exists yet
+                # (pre-training), the fallback never blocks (rating always
+                # passes) so the engine behaves exactly like v7.
+                try:
+                    from signal_rating import rate_signal, rating_threshold
+                    rating, rating_parts = rate_signal(
+                        fx, direction, conf, exp,
+                        float(sl_dist / max(atr, 1e-9)), route_regime)
+                    rating_gate = float(rating_threshold())
+                    if rating < rating_gate:
+                        print(f"[{ts()}] ⭐ rating {rating:.1f} < threshold {rating_gate:.1f} "
+                              f"— quality gate holds ({direction}, regime {route_regime})")
+                        time.sleep(poll); continue
+                except Exception as e:
+                    rating, rating_parts, rating_gate = None, {}, 0.0
+                    print(f"[{ts()}] rating warn: {e}")
                 if direction == "BUY":
                     entry = xm_ask          # pay the spread to enter
                     sl = entry - sl_dist - xm_spread
@@ -1115,6 +1192,8 @@ def main():
                           "tp": round(tp, 2), "conf": conf, "time": time.time(),
                           "entry_bar_ts": fc.times[-1] if fc.times else time.time(),
                           "p_up": p_up,
+                          "regime": route_regime,   # v8: regime for loss self-analysis
+                          "sl_atr": float(sl_dist / max(atr, 1e-9)),  # v8: SL in ATR units
                           "feats": {k: _row.get(k, 0.0) for k in feats}}
                 save_active(active)
                 # record this fired signal for same-idea suppression (next fire)
@@ -1154,12 +1233,13 @@ def main():
                    f"🛑 <b>SL:</b> ${sl:.2f} (${sl_dist:.2f} away)\n"
                    f"✅ <b>TP:</b> ${tp:.2f} (${tp_dist:.2f} away) | R:R {rr:.2f}\n"
                    f"📊 <b>P(win):</b> {conf:.0%} | <b>P(dir):</b> {dir_pct} | <b>Exp:</b> {exp:+.2f}\n"
+                   f"⭐ <b>Rating:</b> {rating if rating is not None else '—'}/100\n"
                    f"🌍 <b>Market:</b> {reg}\n"
                    f"{news_line}"
                    f"━━━━━━━━━━━━━━━\n"
                    f"ATR {atr:.2f} | XM bid/ask ${xm_bid:.2f}/${xm_ask:.2f} | spread ${xm_spread:.2f}\n"
                    f"<i>Closed-loop: outcome will be learned &amp; audited.</i>")
-                print(f"[{ts()}] 🔥 AI {direction} @ {entry:.2f} | P={conf:.0%} | P(dir)={p_up:.2f} | Exp={exp:+.2f} | SL {sl} TP {tp} | {reg}{_rr}")
+                print(f"[{ts()}] 🔥 AI {direction} @ {entry:.2f} | P={conf:.0%} | P(dir)={p_up:.2f} | Exp={exp:+.2f} | ⭐{rating if rating is not None else '—'} | SL {sl} TP {tp} | {reg}{_rr}")
                 time.sleep(1)
 
             time.sleep(poll)

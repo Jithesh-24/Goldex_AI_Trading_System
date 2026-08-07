@@ -10,11 +10,18 @@ at the 180-min trade horizon in EVERY regime (secular bull). This file makes
 the direction tilt match reality. Also emits the 15-min column for reference.
 """
 import pandas as pd, numpy as np, sys, json
+import os
 sys.path.insert(0, '.')
 import features as F
 
-HORIZONS = [5, 20, 60]   # 15min / 60min / 180min
-CSV = 'gold_features.csv'
+HORIZONS = [5, 20, 60]   # 15min / 60min / 180min (M1 default)
+# v8 M5: matrix bars are 300s. The trade horizon (180 min) = 36 M5 bars.
+# Env override keeps one script for both timeframes:
+#   PRIOR_BAR_SECS=300 PRIOR_HORIZONS="3,12,36" → M5 (15/60/180 min)
+BAR_SECS = int(os.environ.get("PRIOR_BAR_SECS", "180"))
+if os.environ.get("PRIOR_HORIZONS"):
+    HORIZONS = [int(x) for x in os.environ["PRIOR_HORIZONS"].split(",")]
+CSV = os.environ.get('FEAT_CSV', 'gold_features.csv')
 OUT = "/home/jith/.hermes/profiles/trading/scripts/models/regime_dir_prior.json"
 
 regime_rows = {n: {'t': [], 'c': []} for n in F.REGIME_NAMES}
@@ -50,7 +57,7 @@ for n in F.REGIME_NAMES:
     t, c = t[o], c[o]
     out[n] = {}
     for h in HORIZONS:
-        tgt = t + h * 180
+        tgt = t + h * BAR_SECS
         j = np.searchsorted(t, tgt, side='left')
         valid = j < len(t)
         i = np.arange(len(t))[valid]
@@ -62,21 +69,24 @@ for n in F.REGIME_NAMES:
         print(f'  {n:15s} h={h:>3} ({h*3:>4}min): P(up)={out[n][f"h{h}"]:.4f}  n={tot:,}',
               flush=True)
 
+# trade-horizon key: h60 (M1, 180min) or h36 (M5, 180min)
+_trade_key = "h60" if BAR_SECS == 180 else f"h{HORIZONS[-1]}"
 deploy = {
-    "_note": ("Regenerated 2026-08-06 with CURRENT trend-first regime_bin at the "
-              "TRADE horizon. Old file (Aug 5) used the vol-first classifier and a "
-              "broken method, claiming mean reversion (STRONG_UP P(up)=0.476) -> "
-              "engine shorted strength, 5 SL / 1 TP in 38 min while gold climbed "
-              "4234->4244. Fresh stream of the same 6.4yr matrix: P(up)=0.76-0.77 "
-              "at 180 min in every regime (secular gold bull). Engine uses h60 as "
-              "the direction tilt; h5 kept for reference."),
-    "horizon_bars": 60,
-    "bar_seconds": 180,
-    "source": "gold_features.csv stream, trend-first regime_bin, one row/timestamp",
-    "measured": "2026-08-06",
-    "P_up_by_regime": {n: out[n]['h60'] for n in out},
-    "P_up_15min": {n: out[n]['h5'] for n in out},
-    "n": {n: out[n]['n60'] for n in out},
+    "_note": (f"Regenerated {time.strftime('%Y-%m-%d')} with CURRENT trend-first "
+              "regime_bin at the TRADE horizon. Old file (Aug 5) used the "
+              "vol-first classifier and a broken method, claiming mean reversion "
+              "(STRONG_UP P(up)=0.476) -> engine shorted strength, 5 SL / 1 TP "
+              "in 38 min while gold climbed 4234->4244. Fresh stream of the same "
+              "6.4yr matrix: P(up)=0.76-0.77 at 180 min in every regime (secular "
+              f"gold bull). Engine uses {_trade_key} as the direction tilt; h5 kept "
+              "for reference. v8: bars are M5 (300s) when PRIOR_BAR_SECS=300."),
+    "horizon_bars": HORIZONS[-1],
+    "bar_seconds": BAR_SECS,
+    "source": f"{CSV} stream, trend-first regime_bin, one row/timestamp",
+    "measured": time.strftime("%Y-%m-%d"),
+    "P_up_by_regime": {n: out[n][_trade_key] for n in out},
+    "P_up_15min": {n: out[n][str(HORIZONS[0])] for n in out},
+    "n": {n: out[n][f'n{HORIZONS[-1]}'] for n in out},
 }
 tmp = OUT + ".tmp"
 with open(tmp, 'w') as f:

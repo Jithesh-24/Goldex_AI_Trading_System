@@ -41,7 +41,7 @@ MODEL_DIR = f"{BASE}/models"
 ARCH = "/home/jith/.hermes/profiles/trading/archives/backtest-data-2026-08-03"
 SEEDS = [42, 7, 2026]
 RECENCY_TAU_DAYS = 180.0
-HORIZON_BARS = 240        # 4h window — the trade's realistic holding horizon
+HORIZON_BARS = int(os.environ.get("DIR_HORIZON_BARS", 240))  # 4h window — the trade's realistic holding horizon (M1). v8 M5: 36 bars = 180 min.
 MIN_BARS_PER_PERIOD = 300
 
 def lgb_params(seed):
@@ -65,6 +65,15 @@ def build_matrix(seed_csv, horizon=HORIZON_BARS):
     df = pd.read_csv(seed_csv)
     df["time"] = pd.to_datetime(df["time"])
     df = df.sort_values("time").reset_index(drop=True)
+    # v8 M5: resample M1 seed → M5 bars so the direction model trains on the
+    # SAME base timeframe the live engine computes (FeatureComputer M5 path).
+    # horizon is in BARS — at M5, 36 bars = 180 min (matches trade horizon).
+    if os.environ.get("PRIOR_BAR_SECS") == "300":
+        s = df.set_index("time")
+        r = s.resample("5min").agg({"open": "first", "high": "max", "low": "min",
+                                    "close": "last", "tick_volume": "sum"}).dropna(
+            subset=["open", "close"]).reset_index()
+        df = r
     t = df["time"].values.astype("datetime64[s]").astype(np.int64)
     gaps = np.where(np.diff(t) > 6 * 3600)[0]
     bounds = [0] + [int(g) + 1 for g in gaps] + [len(df)]
@@ -229,7 +238,8 @@ def train_final(seed_csv, horizon):
     with open(f"{MODEL_DIR}/direction_ensemble.json", "w") as f:
         json.dump({"type": "direction", "seeds": SEEDS,
                    "models": [f"direction_s{s}.txt" for s in SEEDS],
-                   "horizon_bars": HORIZON_BARS}, f, indent=2)
+                   "horizon_bars": HORIZON_BARS,
+                   "base_tf": os.environ.get("PRIOR_BAR_SECS", "180") == "300" and "m5" or "m1"}, f, indent=2)
     with open(f"{MODEL_DIR}/direction_metrics.json", "w") as f:
         json.dump({k: (float(v) if isinstance(v, (int, float, np.floating)) else v)
                    for k, v in res.items()}, f, indent=2)

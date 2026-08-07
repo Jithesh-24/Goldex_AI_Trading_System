@@ -15,6 +15,7 @@ RUN under systemd-run MemoryMax=7G so it gets all 8 cores (not the 800ms gateway
 cgroup). Cold-start fresh per bin (a specialist is a specialist).
 """
 import numpy as np
+import os
 import pandas as pd
 import lightgbm as lgb
 import json, os, sys, time, gc
@@ -22,7 +23,7 @@ from datetime import datetime
 
 BASE = "/home/jith/.hermes/profiles/trading/scripts"
 MODEL_DIR = f"{BASE}/models"
-FEAT_CSV = f"{BASE}/gold_features.csv"
+FEAT_CSV = os.environ.get("FEAT_CSV", f"{BASE}/gold_features.csv")
 FEATURE_EXCLUDE = {"time", "target", "fwd_return"}
 SEEDS = [42, 7, 2026]
 # 2026-08-06 FIX: i5-10210U = 4 physical cores / 8 logical. num_threads=8
@@ -277,7 +278,8 @@ def main():
     with open(f"{MODEL_DIR}/regime_specialists.json", "w") as f:
         json.dump({"type": "regime-placement", "bins": spec_map, "seeds": SEEDS,
                    "mode": "cold-fresh-per-regime", "creator": "train_regime_spec",
-                   "coverage": coverage},
+                   "coverage": coverage,
+                   "base_tf": os.environ.get("PRIOR_BAR_SECS", "180") == "300" and "m5" or "m1"},
                   f, indent=2)
     # cleanup temps
     for n in F.REGIME_NAMES:

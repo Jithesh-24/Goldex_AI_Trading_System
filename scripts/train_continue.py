@@ -17,6 +17,7 @@ Strategy (Claude plan: warm-start / continuation):
     index-aligned with gold_features.csv rows.
 """
 import numpy as np
+import os
 import pandas as pd
 import lightgbm as lgb
 import json, os, sys, time, gc, subprocess as _sp
@@ -26,7 +27,7 @@ from calibrate import fit_calibration
 
 BASE = "/home/jith/.hermes/profiles/trading/scripts"
 MODEL_DIR = f"{BASE}/models"
-FEAT_CSV = f"{BASE}/gold_features.csv"
+FEAT_CSV = os.environ.get("FEAT_CSV", f"{BASE}/gold_features.csv")
 FEATURE_EXCLUDE = {"time", "target", "fwd_return"}
 SEEDS = [42, 7, 2026]
 RECENCY_TAU_DAYS = 120.0
@@ -157,7 +158,8 @@ def main():
     with open(f"{MODEL_DIR}/ensemble.json", "w") as f:
         json.dump({"type": "placement", "seeds": SEEDS,
                    "models": [f"gold_lgb_model_s{s}.txt" for s in SEEDS],
-                   "recency_tau_days": RECENCY_TAU_DAYS, "mode": "warm-start-continue"},
+                   "recency_tau_days": RECENCY_TAU_DAYS, "mode": "warm-start-continue",
+                   "base_tf": os.environ.get("PRIOR_BAR_SECS", "180") == "300" and "m5" or "m1"},
                   f, indent=2)
     print(f"[{datetime.now():%H:%M:%S}] ✅ continuation complete in {time.time()-t0:.0f}s")
     return 0

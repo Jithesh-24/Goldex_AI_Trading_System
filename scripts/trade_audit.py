@@ -44,12 +44,23 @@ LESSON_LIBRARY = {  # reason key -> human lesson
     "RANGE_ENTRY": "Breakout fired in a compressed/ranging market. bb_pctile low = range — fades beat breakouts there. Model must learn range vs trend regime.",
     "TREND_FADE": "Counter-trend entry in a mature trend. High atr_pctile + strong trend_ema at entry means trend continuation is likely — don't fade without confirmation.",
     "SPREAD_BLOWOUT": "Spread widened at entry, silently tightening the real stop. Spread is a cost the model must price in — avoid firing into spread spikes.",
+    "EXCURSION_STOP": "v8: SL was INSIDE the regime's learned adverse-excursion band — 6yr MFE/MFA data says losers here routinely dip past this stop before resolving. Placement prior says SL must sit beyond the regime's p90 loser-MFA.",
     "UNKNOWN": "No clear single cause — review the feature vector manually.",
 }
 
+_PLACEMENT = None  # lazy-loaded placement_prior.json (learned excursion bands)
 
-def _ts():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+def _placement():
+    global _PLACEMENT
+    if _PLACEMENT is None:
+        try:
+            p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "placement_prior.json")
+            with open(p) as f:
+                _PLACEMENT = json.load(f)
+        except Exception:
+            _PLACEMENT = {}
+    return _PLACEMENT
 
 
 def classify(trade):
@@ -75,20 +86,34 @@ def classify(trade):
     # 2. Spread blowout at entry
     if sz > 2.0:
         return "SPREAD_BLOWOUT"
-    # 3. Direction wrong vs the trend the model itself saw
+    # 3. v8 EXCURSION CHECK: SL inside the learned adverse band of this regime
+    #    (MFE/MFA placement prior from 6yr data — the institutional diagnosis:
+    #     did the stop sit where losers routinely dip before resolving?)
+    try:
+        p = _placement()
+        regime = trade.get("regime", "")
+        sl_atr = trade.get("sl_atr", None)
+        if p and regime and sl_atr is not None and regime in p.get("regimes", {}):
+            band = p["regimes"][regime].get(d, {}).get("mfa_p50")
+            learned_sl = p["regimes"][regime].get(d, {}).get("sl_atr")
+            if band is not None and learned_sl is not None and sl_atr < band * 1.1:
+                return "EXCURSION_STOP"
+    except Exception:
+        pass
+    # 4. Direction wrong vs the trend the model itself saw
     if d == "BUY" and te < -1.0 and ts < 0:
         return "DIRECTION_WRONG"
     if d == "SELL" and te > 1.0 and ts > 0:
         return "DIRECTION_WRONG"
-    # 4. Mature trend fade (counter-trend in strong regime)
+    # 5. Mature trend fade (counter-trend in strong regime)
     if d == "SELL" and te > 1.5 and ap > 0.6:
         return "TREND_FADE"
     if d == "BUY" and te < -1.5 and ap > 0.6:
         return "TREND_FADE"
-    # 5. Range entry (compressed market, breakout)
+    # 6. Range entry (compressed market, breakout)
     if bb < 0.3:
         return "RANGE_ENTRY"
-    # 6. Stop tight relative to regime
+    # 7. Stop tight relative to regime
     if ap > 0.5:  # volatile regime, stop should be wider
         return "STOP_TIGHT"
     return "UNKNOWN"
@@ -120,6 +145,8 @@ def audit_trade(trade):
         "tp": trade.get("tp"),
         "pnl": trade.get("pnl"),
         "conf": trade.get("conf"),
+        "regime": trade.get("regime"),     # v8: regime at entry (routing)
+        "sl_atr": trade.get("sl_atr"),     # v8: SL in ATR units (excursion check)
         "reason": reason,
         "feats": {k: v for k, v in (trade.get("feats") or {}).items() if k in
                   ("trend_ema", "trend_slope", "bb_pctile", "atr_pctile",
