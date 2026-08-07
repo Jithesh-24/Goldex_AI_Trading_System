@@ -42,7 +42,7 @@ for c in chunk:
         m = r == n
         if m.sum() == 0:
             continue
-        times = pd.to_datetime(c['time'].values[m]).astype('int64') // 10**9
+        times = pd.to_datetime(c['time'].values[m], utc=True).tz_localize(None).astype('datetime64[s]').astype('int64')
         closes = c['close'].values[m]
         _, idx = np.unique(times, return_index=True)
         regime_rows[n]['t'].append(times[idx])
