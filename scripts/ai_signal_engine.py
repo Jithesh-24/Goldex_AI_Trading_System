@@ -338,33 +338,39 @@ def load_specialists(cfg_path, fallback_single):
     except Exception:
         return None, None
 
-# ── LEARNED SL/TP PLACEMENT (v4 2026-08-01) ──
+# ── LEARNED SL/TP PLACEMENT (v4 2026-08-01 → v8.1 2026-08-07) ──
 # NO hardcoded geometry. The model was trained over a grid of placements
 # (SL_MULTS × TP_RATIOS × direction) and learned P(win | market + placement).
-# At signal time we evaluate EVERY candidate, compute expected value, and fire
-# the best one. The model's learned probability surface decides where SL/TP
-# go — the search space is data (sampling), not a deployed rule.
+# v8.1 (2026-08-07): the learned placement prior (placement_prior.json, fit
+# from 6yr MFE/MFA excursion distributions per regime×direction) is
+# AUTHORITATIVE. The SL/TP ratios are LEARNED from real excursion data, not
+# picked from a hardcoded grid. The grid (SL_MULTS × TP_RATIOS) is ONLY an
+# emergency fallback when no learned value exists for the current
+# regime×direction (e.g., unknown regime). The model still evaluates the
+# learned geometry through its probability surface (calibrated P(win) → exp),
+# so fire/no-fire is still model-decided — but the GEOMETRY is learned, never
+# grid-chosen.
 def best_placement(models, feats, fx, atr, spread, direction, cal_knots=None, cal_by_rr=None, regime=None):
-    """Evaluate all (sl_mult, tp_ratio) candidates for one direction using the
-    ENSEMBLE's averaged P(win | market + placement), return the best
+    """Evaluate the LEARNED (sl_atr, tp_ratio) placement for one direction
+    using the ENSEMBLE's averaged P(win | market + placement), return
     (sl_dist, tp_dist, conf, ev, exp, sl_mult, tp_ratio) or None.
 
     Selection metric = EXPECTANCY per dollar risked (scale-free, pro standard):
         Exp = P × RR − (1−P)   where RR = TP / (SL+spread)
     conf = CALIBRATED ensemble P (raw model P is overconfident; v5 fixes it).
     v7.3c: PER-RR calibration — each TP ratio has its OWN honest P(win) curve.
-    v8 (2026-08-07): the sweep is ANCHORED by the learned placement prior —
-    placement_prior.json (fit from 6yr MFE/MFA excursion distributions) gives
-    the regime's institutional SL/TP. The grid search still runs (the model
-    must confirm the learned placement beats other geometries), but the
-    learned candidate is ALWAYS in the set, so a hardcoded grid can never
-    dictate placement. regime=None → grid-only (backward compat)."""
-    from features import SL_MULTS, TP_RATIOS
+    v8 (2026-08-07): the sweep is ANCHORED by the learned placement prior.
+    v8.1 (2026-08-07): the learned placement is AUTHORITATIVE (user mandate:
+    "TP ratio and SL ratio should be learned not hardcoded"). The grid is
+    emergency fallback ONLY when regime is unknown / no learned value.
+    regime=None → grid fallback (backward compat, never the default)."""
     from calibrate import apply_calibration
     fc = FeatureComputer(maxlen=2)
     best = None
-    candidates = [(m, r) for m in SL_MULTS for r in TP_RATIOS]
-    # v8: inject the learned placement (regime × direction) into the sweep
+    candidates = []
+    # v8.1: LEARNED placement is authoritative — placement_prior.json fit from
+    # 6yr MFE/MFA excursions, per regime × direction. The model's own geometry
+    # is the ONLY candidate evaluated when it exists.
     try:
         if regime:
             with open(f"{BASE}/models/placement_prior.json") as f:
@@ -373,18 +379,33 @@ def best_placement(models, feats, fx, atr, spread, direction, cal_knots=None, ca
             learned_sl = pd_.get("sl_atr")
             learned_tp = pd_.get("tp_ratio")
             if learned_sl and learned_tp:
-                # learned SL in ATR units + learned TP ratio — anchored candidate
-                candidates.insert(0, (float(learned_sl), float(learned_tp)))
+                candidates.append((float(learned_sl), float(learned_tp)))
     except Exception:
         pass
+    # Emergency fallback ONLY: no learned value for this regime×direction.
+    # The hardcoded grid is a safety net, never a placement source.
+    if not candidates:
+        from features import SL_MULTS, TP_RATIOS
+        candidates = [(m, r) for m in SL_MULTS for r in TP_RATIOS]
     for m, r in candidates:
         row, sl_dist, tp_dist = fc.placement_row(fx, atr, spread, direction, m, r)
         X = np.array([[row.get(c, 0.0) for c in feats]], dtype=np.float32)
         # 3-seed ensemble: average raw probs, THEN calibrate once.
         p_raw = float(np.mean([mdl.predict(X)[0] for mdl in models]))
         if cal_by_rr is not None:
-            # v7.3e per-dir×RR curve: honest P(win) for THIS geometry+direction
-            knots = cal_by_rr.get(f"{direction}_{r}")
+            # v7.3e per-dir×RR curve: honest P(win) for THIS geometry+direction.
+            # v8.1: learned TP ratios (e.g. 1.29) rarely equal the grid ratios
+            # the curves were fit on (1.3/1.8/2.5/3.0) — look up the NEAREST
+            # available ratio so the learned geometry is still calibrated
+            # (exact-key miss would silently fall back to RAW overconfident P).
+            key = f"{direction}_{r}"
+            if key not in cal_by_rr and r > 0:
+                ratios = sorted(float(k.split('_')[1]) for k in cal_by_rr
+                                if k.startswith(direction + "_"))
+                if ratios:
+                    rn = min(ratios, key=lambda x: abs(x - r))
+                    key = f"{direction}_{rn}"
+            knots = cal_by_rr.get(key)
             p = apply_calibration(p_raw, knots) if knots else p_raw
         else:
             p = apply_calibration(p_raw, cal_knots) if cal_knots else p_raw
