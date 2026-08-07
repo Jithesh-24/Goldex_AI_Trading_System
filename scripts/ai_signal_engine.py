@@ -1239,7 +1239,7 @@ def main():
                    f"━━━━━━━━━━━━━━━\n"
                    f"ATR {atr:.2f} | XM bid/ask ${xm_bid:.2f}/${xm_ask:.2f} | spread ${xm_spread:.2f}\n"
                    f"<i>Closed-loop: outcome will be learned &amp; audited.</i>")
-                print(f"[{ts()}] 🔥 AI {direction} @ {entry:.2f} | P={conf:.0%} | P(dir)={p_up:.2f} | Exp={exp:+.2f} | ⭐{rating if rating is not None else '—'} | SL {sl} TP {tp} | {reg}{_rr}")
+                print(f"[{ts()}] 🔥 AI {direction} @ {entry:.2f} | P={conf:.0%} | P(dir)={p_up:.2f} | Exp={exp:+.2f} | ⭐{rating if rating is not None else '—'} | SL {sl} TP {tp} | {reg}")
                 time.sleep(1)
 
             time.sleep(poll)
