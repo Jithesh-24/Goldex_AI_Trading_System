@@ -338,39 +338,44 @@ def load_specialists(cfg_path, fallback_single):
     except Exception:
         return None, None
 
-# ── LEARNED SL/TP PLACEMENT (v4 2026-08-01 → v8.1 2026-08-07) ──
+# ── LEARNED SL/TP PLACEMENT (v4 2026-08-01 → v8.2 2026-08-07) ──
 # NO hardcoded geometry. The model was trained over a grid of placements
 # (SL_MULTS × TP_RATIOS × direction) and learned P(win | market + placement).
-# v8.1 (2026-08-07): the learned placement prior (placement_prior.json, fit
-# from 6yr MFE/MFA excursion distributions per regime×direction) is
-# AUTHORITATIVE. The SL/TP ratios are LEARNED from real excursion data, not
-# picked from a hardcoded grid. The grid (SL_MULTS × TP_RATIOS) is ONLY an
-# emergency fallback when no learned value exists for the current
-# regime×direction (e.g., unknown regime). The model still evaluates the
-# learned geometry through its probability surface (calibrated P(win) → exp),
-# so fire/no-fire is still model-decided — but the GEOMETRY is learned, never
-# grid-chosen.
+# v8.2 (2026-08-07): state-dependent placement — the engine ANALYSES the
+# current market and picks the placement with the highest calibrated
+# expectancy across the FULL candidate set. No fixed ratio: in range states
+# the model prefers tight geometry (~1:1.3); in strong-trend states with room
+# to run it can pick far geometry (up to the training grid's max ratio).
+# The learned placement prior (placement_prior.json, fit from 6yr MFE/MFA
+# excursions per regime×direction) is IN the candidate set as the
+# institutional anchor and wins any expectancy tie — but it never constrains
+# the sweep. The grid is the search space (data-sampled), not a hard rule.
 def best_placement(models, feats, fx, atr, spread, direction, cal_knots=None, cal_by_rr=None, regime=None):
-    """Evaluate the LEARNED (sl_atr, tp_ratio) placement for one direction
-    using the ENSEMBLE's averaged P(win | market + placement), return
+    """Evaluate ALL (sl_mult, tp_ratio) candidates for one direction using the
+    ENSEMBLE's averaged P(win | market + placement), return the best
     (sl_dist, tp_dist, conf, ev, exp, sl_mult, tp_ratio) or None.
 
     Selection metric = EXPECTANCY per dollar risked (scale-free, pro standard):
         Exp = P × RR − (1−P)   where RR = TP / (SL+spread)
     conf = CALIBRATED ensemble P (raw model P is overconfident; v5 fixes it).
     v7.3c: PER-RR calibration — each TP ratio has its OWN honest P(win) curve.
-    v8 (2026-08-07): the sweep is ANCHORED by the learned placement prior.
-    v8.1 (2026-08-07): the learned placement is AUTHORITATIVE (user mandate:
-    "TP ratio and SL ratio should be learned not hardcoded"). The grid is
-    emergency fallback ONLY when regime is unknown / no learned value.
-    regime=None → grid fallback (backward compat, never the default)."""
+    v8: the sweep is ANCHORED by the learned placement prior.
+    v8.1: learned placement made authoritative (user mandate) — but that
+    locked SL/TP to a fixed regime×direction pair (~1:1.3 always), which can
+    never catch a 1:10 runner. User corrected (2026-08-07): "it should
+    analyse and give the perfect placement… no constraints".
+    v8.2: restored the FULL state-dependent sweep — the learned prior is the
+    anchor (in the set, wins ties) but the calibrated expectancy surface
+    decides. Geometry varies with the market, never constrained to a ratio.
+    regime=None → grid-only (backward compat, never the default)."""
     from calibrate import apply_calibration
+    from features import SL_MULTS, TP_RATIOS
     fc = FeatureComputer(maxlen=2)
     best = None
-    candidates = []
-    # v8.1: LEARNED placement is authoritative — placement_prior.json fit from
-    # 6yr MFE/MFA excursions, per regime × direction. The model's own geometry
-    # is the ONLY candidate evaluated when it exists.
+    candidates = [(m, r) for m in SL_MULTS for r in TP_RATIOS]
+    learned_pair = None
+    # v8: learned anchor — the regime's institutional SL/TP from 6yr MFE/MFA
+    # excursion data. IN the set, wins expectancy ties, never constrains.
     try:
         if regime:
             with open(f"{BASE}/models/placement_prior.json") as f:
@@ -379,14 +384,15 @@ def best_placement(models, feats, fx, atr, spread, direction, cal_knots=None, ca
             learned_sl = pd_.get("sl_atr")
             learned_tp = pd_.get("tp_ratio")
             if learned_sl and learned_tp:
-                candidates.append((float(learned_sl), float(learned_tp)))
+                learned_pair = (float(learned_sl), float(learned_tp))
     except Exception:
         pass
-    # Emergency fallback ONLY: no learned value for this regime×direction.
-    # The hardcoded grid is a safety net, never a placement source.
-    if not candidates:
-        from features import SL_MULTS, TP_RATIOS
-        candidates = [(m, r) for m in SL_MULTS for r in TP_RATIOS]
+    # learned_pair (regime's institutional SL/TP from 6yr MFE/MFA data) is
+    # ALWAYS evaluated — it is the anchor candidate. Evaluated alongside the
+    # grid (never instead of it): the model's calibrated expectancy surface
+    # decides the winner; the learned pair wins any near-tie.
+    if learned_pair is not None:
+        candidates.append(learned_pair)
     for m, r in candidates:
         row, sl_dist, tp_dist = fc.placement_row(fx, atr, spread, direction, m, r)
         X = np.array([[row.get(c, 0.0) for c in feats]], dtype=np.float32)
@@ -414,7 +420,11 @@ def best_placement(models, feats, fx, atr, spread, direction, cal_knots=None, ca
         rr = tp_dist / (true_sl + 1e-9)
         exp = p * rr - (1 - p)          # expectancy per $ risked
         ev = p * tp_dist - (1 - p) * true_sl  # dollar EV (reporting only)
-        if best is None or exp > best[4]:
+        if best is None or exp > best[4] + 1e-9:
+            best = (sl_dist, tp_dist, p, ev, exp, m, r)
+        elif learned_pair is not None and abs(exp - best[4]) <= 1e-9 and (m, r) == learned_pair:
+            # v8.2: anchor wins ties — institutional geometry preferred when
+            # the model sees no material difference between candidates.
             best = (sl_dist, tp_dist, p, ev, exp, m, r)
     return best
 
