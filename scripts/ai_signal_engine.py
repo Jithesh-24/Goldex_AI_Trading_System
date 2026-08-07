@@ -94,6 +94,40 @@ def tg(text):
 def ts():
     return datetime.now().strftime("%H:%M:%S")
 
+
+def weekend_close_minutes():
+    """Minutes until XM weekly close (Fri 23:55 server = Fri 20:55 UTC with
+    the detected +3 summer offset), or 0 if already closed for the weekend.
+    Server offset is read from the ticker's persisted measurement so DST is
+    handled by what the broker actually reports. Returns None if offset
+    unknown (treat as no weekend info)."""
+    try:
+        import json as _j
+        off_p = os.path.join(BASE, "cron/output/xm_server_offset.json")
+        off = 3.0
+        try:
+            with open(off_p) as _f:
+                off = float(_j.load(_f).get("offset_h", 3.0))
+        except Exception:
+            pass
+        now = datetime.now(timezone.utc)
+        # weekly close: Friday 23:55 server time → UTC (server = UTC+off)
+        fri_close_utc = datetime(now.year, now.month, now.day, 23, 55,
+                                 tzinfo=timezone.utc) - timedelta(hours=off)
+        days_ahead = (4 - now.weekday()) % 7   # 0 today..6 if weekend passed
+        close_dt = fri_close_utc + timedelta(days=days_ahead)
+        # if we've already passed this Friday's close and it's the weekend
+        # (Sat/Sun), report 0 — market closed; Mon morning: next Friday
+        if now > close_dt and now.weekday() in (5, 6):
+            return 0
+        if now > close_dt and now.weekday() == 4:
+            return 0
+        if now > close_dt:
+            close_dt = close_dt + timedelta(days=7)
+        return int((close_dt - now).total_seconds() // 60)
+    except Exception:
+        return None
+
 # ── State (1 signal at a time) ──
 ACTIVE = f"{OUTDIR}/.active_signal_ai.json"
 def load_active():
@@ -974,6 +1008,27 @@ def main():
                        f"💡 This trade is NOT time-closed — it resolves only on a\n"
                        f"   real SL {active['sl']:.2f} / TP {active['tp']:.2f} touch.")
                     print(f"[{ts()}] ⏳ HOLD note sent (bar {bars_held}) — {d} riding to SL/TP")
+                # ── WEEKEND GAP WARNING (v8.3): once per open trade, when <90
+                # min remain before Friday's XM close and the trade is still
+                # open. Informational only — mirrors the hold-note contract:
+                # the engine keeps tracking, the USER decides whether to hold
+                # the weekend gap. (SL/TP resolution continues through the
+                # close; a gap through SL on Sunday reopen is real risk.)
+                if not active.get("weekend_warn_sent"):
+                    _wk = weekend_close_minutes()
+                    if _wk is not None and 0 < _wk <= 90:
+                        active["weekend_warn_sent"] = True
+                        save_active(active)
+                        tg(f"⚠️ <b>WEEKEND GAP RISK — {d} STILL OPEN</b>\n"
+                           f"━━━━━━━━━━━━━━━\n"
+                           f"{d} @ ${active['entry']:.2f} | SL ${active['sl']:.2f} | TP ${active['tp']:.2f}\n"
+                           f"⏳ <b>XM closes in {_wk} min</b> (Friday 23:55 server).\n"
+                           f"👉 <i>If not resolved by close, this position rides the\n"
+                           f"   weekend and may GAP through SL on Sunday reopen.\n"
+                           f"   Decide now: hold (your plan) or flatten before close.</i>\n"
+                           f"━━━━━━━━━━━━━━━\n"
+                           f"Engine keeps tracking — resolves on first real touch.")
+                        print(f"[{ts()}] ⚠️ Weekend gap warning sent ({_wk} min to Friday close) — {d} open")
                 # NO hit is forced here. Resolution only via real first-touch below.
                 # 1) First-touch verdict from the ticker's 25ms path — definitive
                 #    when coverage is full (ticker was running when trade opened).
@@ -1310,6 +1365,24 @@ def main():
                         news_line = ""
                 except Exception:
                     news_line = ""
+                # ── WEEKEND GAP AWARENESS (v8.3): surface how much trading time
+                # remains before the XM weekly close. If a 180-min trade can't
+                # complete before Friday's close, the USER must decide whether
+                # to hold the weekend gap (no gate — the model's learned
+                # placement still fires; this is execution information, same
+                # contract as the news line).
+                wk_line = ""
+                try:
+                    _wk = weekend_close_minutes()
+                    if _wk is not None:
+                        if _wk <= 0:
+                            wk_line = "⛔ <b>Market closed for the weekend</b> (XM) — no new entries until Sunday reopen\n"
+                        elif _wk <= 240:
+                            wk_line = f"⏳ <b>Friday close in {_wk} min</b> — 180-min trade may ride the weekend gap\n"
+                        elif _wk <= 720:
+                            wk_line = f"🗓 <b>Friday close in {_wk//60}h</b> — plan entry/exit accordingly\n"
+                except Exception:
+                    wk_line = ""
                 tg(f"📡 <b>AI SIGNAL — {direction}</b> {emoji}\n"
                    f"━━━━━━━━━━━━━━━\n"
                    f"🎯 <b>Entry:</b> ${entry:.2f}\n"
@@ -1319,6 +1392,7 @@ def main():
                    f"⭐ <b>Rating:</b> {rating if rating is not None else '—'}/100\n"
                    f"🌍 <b>Market:</b> {reg}\n"
                    f"{news_line}"
+                   f"{wk_line}"
                    f"━━━━━━━━━━━━━━━\n"
                    f"ATR {atr:.2f} | XM bid/ask ${xm_bid:.2f}/${xm_ask:.2f} | spread ${xm_spread:.2f}\n"
                    f"<i>Closed-loop: outcome will be learned &amp; audited.</i>")
