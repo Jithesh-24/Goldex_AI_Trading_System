@@ -66,7 +66,7 @@ for n in F.REGIME_NAMES:
         tot = len(i)
         out[n][f'h{h}'] = round(ups / max(tot, 1), 4)
         out[n][f'n{h}'] = int(tot)
-        print(f'  {n:15s} h={h:>3} ({h*3:>4}min): P(up)={out[n][f"h{h}"]:.4f}  n={tot:,}',
+        print(f'  {n:15s} h={h:>3} ({h*BAR_SECS//60:>4}min): P(up)={out[n][f"h{h}"]:.4f}  n={tot:,}',
               flush=True)
 
 # trade-horizon key: h60 (M1, 180min) or h36 (M5, 180min)
@@ -85,7 +85,7 @@ deploy = {
     "source": f"{CSV} stream, trend-first regime_bin, one row/timestamp",
     "measured": time.strftime("%Y-%m-%d"),
     "P_up_by_regime": {n: out[n][_trade_key] for n in out},
-    "P_up_15min": {n: out[n][str(HORIZONS[0])] for n in out},
+    "P_up_15min": {n: out[n][f"h{HORIZONS[0]}"] for n in out},
     "n": {n: out[n][f'n{HORIZONS[-1]}'] for n in out},
 }
 tmp = OUT + ".tmp"

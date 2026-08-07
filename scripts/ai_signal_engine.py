@@ -599,7 +599,14 @@ def main():
             print(f"[{ts()}] ⚠️ direction-neutral load failed: {e}")
             models = []
     spec_models, spec_cal = load_specialists(SPEC_CFG, MODEL)
-    if not models and spec_models:
+    if not _base_tf_ok(SPEC_CFG) and spec_models:
+        # v8 M5: specialists must be same TF lineage as the engine. Legacy
+        # M1 specialists (no base_tf field) would route ticks to M1 models
+        # computing M5 features — silent corruption. Drop → global ensemble.
+        print(f"[{ts()}] 🛑 v8 TF GUARD: clearing {len(spec_models)} legacy specialists "
+              f"(base_tf != {ENGINE_TF}) — using global ensemble until M5 specialists train.")
+        spec_models, spec_cal = {}, None
+    elif not models and spec_models:
         # v8 M5: the global ensemble was refused (TF mismatch) — specialists
         # are equally suspect (trained at the same TF as the ensemble). Drop
         # them so the engine idles cleanly until the M5 retrain deploys.
