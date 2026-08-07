@@ -589,15 +589,7 @@ def main():
               f"(legacy/absent). Placement ensemble loaded; direction = "
               f"empirical regime prior (neutral-tilt, no fake edge).")
         dir_models = []
-        try:
-            if os.path.exists(ENSEMBLE_CFG):
-                with open(ENSEMBLE_CFG) as f:
-                    models = [f"{MODEL}/gold_lgb_model_s{s}.txt" for s in
-                              json.load(f).get("seeds", [])]
-                models = [m for m in models if os.path.exists(m)]
-        except Exception as e:
-            print(f"[{ts()}] ⚠️ direction-neutral load failed: {e}")
-            models = []
+        # models from load_ensemble() above stay as-is (placement ensemble).
     spec_models, spec_cal = load_specialists(SPEC_CFG, MODEL)
     if not _base_tf_ok(SPEC_CFG) and spec_models:
         # v8 M5: specialists must be same TF lineage as the engine. Legacy
@@ -1096,10 +1088,18 @@ def main():
             route_models = models
             route_regime = None
             route_cal = None   # v7.7b: per-regime calibration (specialist OOF)
+            # v8 M5: compute the regime UNCONDITIONALLY — the learned placement
+            # prior (placement_prior.json) is keyed by regime×direction and must
+            # anchor the sweep even when no specialist exists for this regime.
+            # With spec_models empty, route_regime still feeds best_placement's
+            # learned-placement injection (SL/TP from 6yr MFE/MFA excursions).
+            try:
+                from features import regime_bin
+                route_regime = regime_bin(fx)
+            except Exception:
+                route_regime = None
             if spec_models:
                 try:
-                    from features import regime_bin
-                    route_regime = regime_bin(fx)
                     rmod = spec_models.get(route_regime)
                     if rmod:
                         route_models = rmod
