@@ -9,7 +9,7 @@ stream of the same matrix with the current classifier shows P(up) ~0.76-0.77
 at the 180-min trade horizon in EVERY regime (secular bull). This file makes
 the direction tilt match reality. Also emits the 15-min column for reference.
 """
-import pandas as pd, numpy as np, sys, json
+import pandas as pd, numpy as np, sys, json, time
 import os
 sys.path.insert(0, '.')
 import features as F

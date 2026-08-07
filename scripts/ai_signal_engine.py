@@ -573,11 +573,31 @@ def main():
                 return json.load(f).get("base_tf", "m1") == ENGINE_TF
         except Exception:
             return False
-    if not (_base_tf_ok(ENSEMBLE_CFG) and _base_tf_ok(DIR_ENSEMBLE_CFG)):
-        print(f"[{ts()}] 🛑 v8 TF GUARD: model configs are not base_tf=m5 "
+    if not _base_tf_ok(ENSEMBLE_CFG):
+        print(f"[{ts()}] 🛑 v8 TF GUARD: placement config not base_tf=m5 "
               f"(engine={ENGINE_TF}) — refusing M1 models. No signals until the "
               f"M5 retrain (retrain_m5.py) deploys M5-stamped configs.")
         models, dir_models = [], []
+    elif not _base_tf_ok(DIR_ENSEMBLE_CFG):
+        # v8 M5: the direction model is OPTIONAL. The M5 retrain only deploys
+        # it if OOS acc > 0.53 (no-fake-edge gate); at the 180-min horizon the
+        # honest result can be coin-flip → no M5 direction model exists yet.
+        # The engine must NOT idle for that: direction_prior() falls back to
+        # the EMPIRICAL REGIME PRIOR (measured P(up) per regime over 6yr) —
+        # market-condition steering, not a gate. Keep the placement ensemble.
+        print(f"[{ts()}] ℹ️ v8 TF GUARD: no base_tf=m5 direction model "
+              f"(legacy/absent). Placement ensemble loaded; direction = "
+              f"empirical regime prior (neutral-tilt, no fake edge).")
+        dir_models = []
+        try:
+            if os.path.exists(ENSEMBLE_CFG):
+                with open(ENSEMBLE_CFG) as f:
+                    models = [f"{MODEL}/gold_lgb_model_s{s}.txt" for s in
+                              json.load(f).get("seeds", [])]
+                models = [m for m in models if os.path.exists(m)]
+        except Exception as e:
+            print(f"[{ts()}] ⚠️ direction-neutral load failed: {e}")
+            models = []
     spec_models, spec_cal = load_specialists(SPEC_CFG, MODEL)
     if not models and spec_models:
         # v8 M5: the global ensemble was refused (TF mismatch) — specialists
@@ -780,13 +800,19 @@ def main():
             m = os.path.getmtime(ENSEMBLE_CFG)
             dm = os.path.getmtime(DIR_ENSEMBLE_CFG)
             if model_mtime is not None and max(m, dm) > model_mtime:
-                if not (_base_tf_ok(ENSEMBLE_CFG) and _base_tf_ok(DIR_ENSEMBLE_CFG)):
-                    print(f"[{ts()}] ⚠️ ENSEMBLE RELOAD REFUSED — base_tf mismatch "
+                if not _base_tf_ok(ENSEMBLE_CFG):
+                    print(f"[{ts()}] ⚠️ ENSEMBLE RELOAD REFUSED — placement not base_tf=m5 "
                           f"(engine={ENGINE_TF}, model files not M5). Keeping last valid models.")
                     model_mtime = max(m, dm)
                     return
                 models, _ = load_ensemble(ENSEMBLE_CFG, MODEL)
-                dir_models, _ = load_ensemble(DIR_ENSEMBLE_CFG, MODEL)
+                if _base_tf_ok(DIR_ENSEMBLE_CFG):
+                    dir_models, _ = load_ensemble(DIR_ENSEMBLE_CFG, MODEL)
+                else:
+                    # direction model optional (no-fake-edge gate) — keep
+                    # whatever direction models we have; if none, the
+                    # empirical regime prior steers the side.
+                    print(f"[{ts()}] ℹ️ reload: direction model absent/not-M5 — keeping prior direction state")
                 with open(FEATURES) as f:
                     feats.clear(); feats.extend(json.load(f))
                 try:
