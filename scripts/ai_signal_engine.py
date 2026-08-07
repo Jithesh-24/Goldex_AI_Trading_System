@@ -579,6 +579,13 @@ def main():
               f"M5 retrain (retrain_m5.py) deploys M5-stamped configs.")
         models, dir_models = [], []
     spec_models, spec_cal = load_specialists(SPEC_CFG, MODEL)
+    if not models and spec_models:
+        # v8 M5: the global ensemble was refused (TF mismatch) — specialists
+        # are equally suspect (trained at the same TF as the ensemble). Drop
+        # them so the engine idles cleanly until the M5 retrain deploys.
+        print(f"[{ts()}] 🛑 v8 TF GUARD: clearing {len(spec_models)} specialists "
+              f"(same TF lineage as refused ensemble) — idle until M5 retrain.")
+        spec_models, spec_cal = {}, None
     if spec_models:
         print(f"[{ts()}] REGIME ROUTER: {len(spec_models)} specialists loaded "
               f"({', '.join(sorted(spec_models.keys()))})")
@@ -1072,6 +1079,15 @@ def main():
                     _rr = " [global ensemble]"
             else:
                 _rr = ""
+            # v8 M5: TF-guard may have refused the old M1 models (engine boots
+            # before the M5 retrain deploys). NO models → NO sweep → NO fire.
+            # The engine idles safely, polls the ticker, and comes alive the
+            # moment the retrain writes M5-stamped configs (hot-reload).
+            if not route_models:
+                if not getattr(globals(), "_no_models_notice", False):
+                    print(f"[{ts()}] ⏳ no models loaded (M5 retrain pending) — idle, no signals")
+                    globals()["_no_models_notice"] = True
+                time.sleep(poll); continue
             _cal_used = route_cal if route_cal is not None else cal_by_rr
             buy = best_placement(route_models, feats, fx, atr, xm_spread, "BUY", cal_knots, _cal_used, route_regime)
             sell = best_placement(route_models, feats, fx, atr, xm_spread, "SELL", cal_knots, _cal_used, route_regime)
