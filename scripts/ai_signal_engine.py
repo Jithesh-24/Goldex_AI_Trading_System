@@ -795,11 +795,14 @@ def main():
         try:
             sm = os.path.getmtime(SPEC_CFG)
             if spec_mtime is not None and sm > spec_mtime:
-                spec_models, spec_cal = load_specialists(SPEC_CFG, MODEL)
-                if spec_models:
-                    print(f"[{ts()}] 🔄 REGIME ROUTER hot-reloaded: {len(spec_models)} specialists")
+                if not _base_tf_ok(SPEC_CFG):
+                    print(f"[{ts()}] ⚠️ SPECIALIST RELOAD REFUSED — base_tf mismatch (engine={ENGINE_TF}). Keeping last valid specialists.")
                 else:
-                    print(f"[{ts()}] 🔄 REGIME ROUTER hot-reload: specialists removed, falling back to global ensemble")
+                    spec_models, spec_cal = load_specialists(SPEC_CFG, MODEL)
+                    if spec_models:
+                        print(f"[{ts()}] 🔄 REGIME ROUTER hot-reloaded: {len(spec_models)} specialists")
+                    else:
+                        print(f"[{ts()}] 🔄 REGIME ROUTER hot-reload: specialists removed, falling back to global ensemble")
             spec_mtime = sm
         except Exception as e:
             print(f"[{ts()}] specialist reload warn: {e}")

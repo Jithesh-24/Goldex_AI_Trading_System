@@ -4,9 +4,11 @@ Replaces retrain_loop.py in the EOD cron (job b0c10005e3c0). Full loop:
   1. merge_seed.py          — fresh M1 seed (MT5 history + live bars)
   2. build_m5_matrix.py      — M5 matrix (incremental: appends only new bars)
   3. merge_live_outcomes     — closed loop: append real TP/SL outcome rows
-  4. retrain_m5.py           — placement prior (MFE/MFA) → signal rating →
-                             base ensemble → direction → calibration →
-                             8 specialists → direction prior (all at M5)
+  4. daily warm-start        — train_continue (base) → direction → calibration
+                             → 8 specialists → direction prior (all at M5)
+
+  The FULL 6yr cold start (retrain_m5.py → train_ai.py) is a ONE-TIME event
+  at the M1→M5 switch — NOT part of the daily loop.
 
 Everything writes into models/ atomically; the engine hot-reloads via
 regime_specialists.json / ensemble.json mtimes (blocked only mid-trade,
@@ -21,9 +23,9 @@ PY = "/home/jith/.hermes/hermes-agent/venv/bin/python"
 LOG = "/tmp/eod_m5.log"
 M5_CSV = f"{BASE}/gold_features_m5.csv"
 
-def run(cmd, timeout=36000):
+def run(cmd, timeout=36000, env=None):
     t0 = time.time()
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
     with open(LOG, "a") as f:
         f.write(f"\n--- {' '.join(cmd[1:])} {time.strftime('%H:%M:%S')} rc={r.returncode} ({time.time()-t0:.0f}s) ---\n")
         f.write(r.stdout[-3000:] + r.stderr[-1500:])
@@ -58,8 +60,25 @@ print(f'merged {{n}} live outcome rows | matrix ~{{tot:,}} rows')
     with open(LOG, "a") as f:
         f.write(r.stdout + r.stderr)
     print(r.stdout.strip() or r.stderr.strip()[-500:])
-    print("→ full M5 retrain...", flush=True)
-    ok = run([PY, "-u", f"{BASE}/retrain_m5.py"], 36000)
+    print("→ daily warm-start retrain...", flush=True)
+    # DAILY loop = warm-start continuation (train_continue.py) on the M5
+    # matrix — the 6yr base is already trained; EOD only adapts to the last
+    # 180 days. The FULL 6yr cold start (retrain_m5.py → train_ai.py) is a
+    # ONE-TIME event at the M1→M5 switch and is NOT part of the daily loop.
+    env = dict(os.environ)
+    env["FEAT_CSV"] = M5_CSV
+    env["PRIOR_BAR_SECS"] = "300"
+    env["PRIOR_HORIZONS"] = "3,12,36"
+    env["DIR_HORIZON_BARS"] = "36"
+    ok = run([PY, "-u", f"{BASE}/train_continue.py"], 3600, env=env)
+    if ok:
+        ok = run([PY, "-u", f"{BASE}/train_direction_htf.py"], 3600, env=env)
+    if ok:
+        ok = run([PY, "-u", f"{BASE}/fit_calibration_by_rr.py"], 1800, env=env)
+    if ok:
+        ok = run([PY, "-u", f"{BASE}/train_regime_spec.py"], 36000, env=env)
+    if ok:
+        ok = run([PY, "-u", f"{BASE}/regenerate_dir_prior.py"], 1800, env=env)
     if not ok:
         print(f"❌ retrain FAILED — see {LOG}", flush=True)
         sys.exit(1)
