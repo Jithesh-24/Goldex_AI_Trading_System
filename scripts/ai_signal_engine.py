@@ -444,8 +444,9 @@ def best_placement(models, feats, fx, atr, spread, direction, cal_knots=None, ca
         # v8.6 reachable-band filter: skip geometry the data says is out of
         # reach (multi-day runners). True SL in ATR must be within the
         # learned adverse band; TP distance must be within the learned
-        # median favorable excursion.
-        if learned_pair is not None:
+        # median favorable excursion. The learned anchor pair DEFINES the
+        # band — never filter it out (its TP ≈ mfe_p50 by construction).
+        if learned_pair is not None and (m, r) != learned_pair:
             if sl_dist / max(atr, 1e-9) > sl_cap:
                 continue
             if tp_dist / max(atr, 1e-9) > tp_cap_atr:
