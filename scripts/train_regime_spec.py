@@ -20,16 +20,19 @@ import pandas as pd
 import lightgbm as lgb
 import json, os, sys, time, gc
 from datetime import datetime
+import features as F   # v8.7: module-level (FEATURE_EXCLUDE uses F.HTF_FEATURES at import time)
 
 BASE = "/home/jith/.hermes/profiles/trading/scripts"
 MODEL_DIR = f"{BASE}/models"
-FEAT_CSV = os.environ.get("FEAT_CSV", f"{BASE}/gold_features.csv")
-FEATURE_EXCLUDE = {"time", "target", "fwd_return"}
+FEAT_CSV = os.environ.get("FEAT_CSV", f"{BASE}/gold_features_m5.csv")
+FEATURE_EXCLUDE = {"time", "target", "fwd_return", "mfe_atr", "mfa_atr"} | F.HTF_FEATURES
+# v8: mfe/mfa are forward-looking (measured at resolution) — placement-prior
+# calibration inputs, NEVER model features (lookahead leak otherwise).
 SEEDS = [42, 7, 2026]
 # 2026-08-06 FIX: i5-10210U = 4 physical cores / 8 logical. num_threads=8
 # spins on hyperthreaded logical CPUs -> 24x SLOWER (17s@1T, 8.6s@4T, 209s@8T).
 N_THREADS = 4
-ROWS_PER_BAR = 48
+ROWS_PER_BAR = 84              # 2 dir × 6 sl × 7 tp (must match features.py)
 RECENCY_TAU_DAYS = 120.0
 CAL_SPLIT = 0.9   # calibration OOF: train on first 90% (by time), hold out 10%
 CAL_ROUNDS = 300  # calibration pass early-stops; deployment keeps 600
@@ -60,43 +63,60 @@ def label_regime_all(df):
     return np.array([F.regime_bin(r) for r in zipped])
 
 
-def stream_bucket(FEAT_CSV, TMP_DIR):
+def stream_bucket(FEAT_CSV, TMP_DIR, skip=False):
     """Single pass: assign regime per row, append each row to a per-regime
     temp CSV. Returns coverage dict + the set of non-empty regimes. Bounded
-    memory: only one read-chunk + up to 8 growing temp files resident."""
+    memory: chunked pandas read + vector_regime_bin (no 32.5M-row python
+    loop). v8.4 (2026-08-09): rewritten from the pure-csv row loop which
+    took ~2h on the 32.5M-row matrix; now ~5 min. With skip=True (complete
+    temp set already on disk) it only recounts rows without re-reading."""
     import features as F
+    from features import vector_regime_bin
+    coverage = {n: 0 for n in F.REGIME_NAMES}
+    if skip:
+        import csv as _csv
+        for n in F.REGIME_NAMES:
+            tf = os.path.join(TMP_DIR, f"{n}.csv")
+            if not os.path.exists(tf):
+                continue
+            with open(tf) as f:
+                coverage[n] = sum(1 for _ in _csv.reader(f)) - 1
+        nonempty = {n for n, c in coverage.items() if c > 0}
+        hdr = pd.read_csv(FEAT_CSV, nrows=0).columns.tolist()
+        feats = [c for c in hdr if c not in FEATURE_EXCLUDE and c not in F.RAW_PRICE_COLS]
+        return feats, coverage, nonempty
     # resolve feature list from header once
     hdr = pd.read_csv(FEAT_CSV, nrows=0).columns.tolist()
     feats = [c for c in hdr if c not in FEATURE_EXCLUDE and c not in F.RAW_PRICE_COLS]
     read_cols = feats + ["target", "direction", "rr_buy", "rr_sell", "time"]
     dt = {c: np.float32 for c in read_cols if c != "time"}
+    dt["time"] = str
 
-    handles = {}
     coverage = {n: 0 for n in F.REGIME_NAMES}
-    # ensure temp files exist with header
-    for n in F.REGIME_NAMES:
-        tf = os.path.join(TMP_DIR, f"{n}.csv")
-        pd.DataFrame(columns=read_cols).to_csv(tf, index=False)
-        handles[n] = open(tf, "a")
-        coverage[n] = 0
-
-    import csv as _csv
-    with open(FEAT_CSV) as f:
-        rd = _csv.reader(f)
-        header = next(rd)
-        idx = {c: header.index(c) for c in read_cols}
-        # stream row by row (6.39M) — pure python, but bounded ~ few MB
-        writers = {n: _csv.writer(handles[n]) for n in F.REGIME_NAMES}
-        for row in rd:
-            rec = {c: row[idx[c]] for c in read_cols}
-            fx = {c: float(row[idx[c]]) for c in F.REGIME_KEYS}
-            n = F.regime_bin(fx)
-            writers[n].writerow([rec[c] for c in read_cols])
-            coverage[n] += 1
-    for n in F.REGIME_NAMES:
-        handles[n].close()
-    for w in writers.values():
-        del w
+    # open per-regime writers; first chunk writes header
+    writers = {}
+    first = True
+    for chunk in pd.read_csv(FEAT_CSV, usecols=read_cols, dtype=dt,
+                             chunksize=500_000, low_memory=False):
+        bins = vector_regime_bin(chunk)
+        for n in F.REGIME_NAMES:
+            m = bins == n
+            cnt = int(m.sum())
+            if cnt == 0:
+                continue
+            coverage[n] += cnt
+            tf = os.path.join(TMP_DIR, f"{n}.csv")
+            if n not in writers:
+                writers[n] = open(tf, "w")
+                chunk[m].to_csv(writers[n], index=False, header=first,
+                                lineterminator="\n")
+            else:
+                chunk[m].to_csv(writers[n], index=False, header=False,
+                                lineterminator="\n")
+        first = False
+        del chunk, bins
+    for n, h in writers.items():
+        h.close()
     nonempty = {n for n, c in coverage.items() if c > 0}
     return feats, coverage, nonempty
 
@@ -158,11 +178,47 @@ def train_regime_from_file(regime, tmp_file, feats, MODEL_DIR, t0):
     calibration_by_drr_spec_<regime>.json. The engine picks the specialist
     curve when it routes to this regime (fallback: base curves).
     """
-    df = pd.read_csv(tmp_file)
-    times = pd.to_datetime(df["time"]).values
+    # v8.4 (2026-08-10): CHUNKED PREALLOCATED load — two OOM fixes layered:
+    # (1) read_csv builds non-contiguous column blocks, so a single-read
+    #     df[feats].values CONSOLIDATES a float32 copy → chunked reads;
+    # (2) np.concatenate(X_parts) doubled the matrix (parts 3.7G + copy
+    #     3.7G = 7.3G transient) → preallocate X and fill by slice. Final
+    #    resident set: X + y/w/direction/rr ≈ 4.2G for the biggest regime.
+    dt = {c: np.float32 for c in feats}
+    dt["target"] = np.float64
+    dt["direction"] = np.float64
+    dt["rr_buy"] = np.float64
+    dt["rr_sell"] = np.float64
+    n_feats = len(feats)
+    row_buf = []
+    for chunk in pd.read_csv(tmp_file, dtype=dt, chunksize=500_000,
+                             low_memory=False):
+        row_buf.append(len(chunk))
+        del chunk
+    n_rows = sum(row_buf)
+    del row_buf
+    X = np.empty((n_rows, n_feats), dtype=np.float32)
+    y = np.empty(n_rows, dtype=np.int8)
+    times = np.empty(n_rows, dtype="datetime64[ns]")
+    direction = np.empty(n_rows, dtype=np.float32)
+    rr_buy = np.empty(n_rows, dtype=np.float32)
+    rr_sell = np.empty(n_rows, dtype=np.float32)
+    pos = 0
+    for chunk in pd.read_csv(tmp_file, dtype=dt, chunksize=500_000,
+                             low_memory=False):
+        n = len(chunk)
+        X[pos:pos + n] = chunk[feats].values
+        y[pos:pos + n] = chunk["target"].values
+        times[pos:pos + n] = pd.to_datetime(chunk["time"]).values
+        direction[pos:pos + n] = chunk["direction"].values
+        rr_buy[pos:pos + n] = chunk["rr_buy"].values
+        rr_sell[pos:pos + n] = chunk["rr_sell"].values
+        pos += n
+        del chunk
+    rows = n_rows
+    gc.collect()
     w = recency_weights(times)
-    X = df[feats].values.astype(np.float32)
-    y = df["target"].values.astype(np.int8)
+    gc.collect()
     files = []
     for s in SEEDS:
         model = lgb.train(lgb_params(s),
@@ -175,7 +231,6 @@ def train_regime_from_file(regime, tmp_file, feats, MODEL_DIR, t0):
         files.append(os.path.basename(fn))
         del model
         gc.collect()
-    rows = len(df)
 
     # ── v7.7b per-regime OOF + calibration ──
     # Time-ordered 90/10 split; train calibration seeds on the EARLY 90%,
@@ -186,37 +241,48 @@ def train_regime_from_file(regime, tmp_file, feats, MODEL_DIR, t0):
         tr = order[:cut]
         va = order[cut:]
         if len(tr) > 20000 and len(va) > 5000:
-            Xva = X[va]
             yva = y[va]
             oof = np.zeros(len(va), dtype=np.float32)
+            # v8.4 (2026-08-09): Dataset.subset() SHARES the raw data instead
+            # of fancy-index copying X[tr]/X[va]. For UP (8.5M rows) the old
+            # copies peaked ~8GB and the kernel OOM-killed the box.
+            dset_all = lgb.Dataset(X, label=y, weight=w, free_raw_data=False)
             for s in SEEDS:
                 cal_params = dict(lgb_params(s))
                 cal_params.pop("early_stopping_rounds", None)
+                dset_tr = dset_all.subset(tr)
+                dset_tr.set_label(y[tr])
+                dset_tr.set_weight(w[tr])
+                dset_va = dset_all.subset(va)
+                dset_va.set_label(yva)
+                dset_va.set_weight(w[va])
                 md = lgb.train(
                     cal_params,
-                    lgb.Dataset(X[tr], label=y[tr], weight=w[tr],
-                                free_raw_data=True),
+                    dset_tr,
                     num_boost_round=CAL_ROUNDS,
-                    valid_sets=[lgb.Dataset(Xva, label=yva, weight=w[va])],
+                    valid_sets=[dset_va],
                     callbacks=[lgb.early_stopping(50, verbose=False)])
-                oof += md.predict(Xva, num_iteration=md.best_iteration or CAL_ROUNDS)
-                del md
+                oof += md.predict(X[va],
+                                  num_iteration=md.best_iteration or CAL_ROUNDS)
+                del md, dset_tr, dset_va
                 gc.collect()
+            del dset_all
+            gc.collect()
             oof /= len(SEEDS)
             np.save(f"{MODEL_DIR}/oof_spec_{regime.lower()}.npy", oof)
             np.save(f"{MODEL_DIR}/oofy_spec_{regime.lower()}.npy", yva)
             # per-row direction + effective RR → fit per-dir×RR curves
-            drr = np.where(df["direction"].values[va] > 0.5,
-                           df["rr_buy"].values[va], df["rr_sell"].values[va])
+            drr = np.where(direction[va] > 0.5,
+                           rr_buy[va], rr_sell[va])
             np.save(f"{MODEL_DIR}/drr_spec_{regime.lower()}.npy", drr)
-            dirs_va = df["direction"].values[va] > 0.5  # v7.7c: TRUE=BUY mask
+            dirs_va = direction[va] > 0.5  # v7.7c: TRUE=BUY mask
             _fit_spec_calibration(regime, oof, yva, drr, dirs_va)
             print(f"  {regime}: OOF n={len(va):,} | WR {yva.mean():.1%} | "
                   f"calibration saved", flush=True)
     except Exception as e:
         print(f"  {regime}: ⚠ OOF/calibration skipped: {e}", flush=True)
 
-    del df, X, y, w, times
+    del X, y, w, times, direction, rr_buy, rr_sell
     gc.collect()
     print(f"  {regime}: trained {len(files)} seeds n={rows:,} ({time.time()-t0:.0f}s)",
           flush=True)
@@ -229,11 +295,24 @@ def main():
     from features import RAW_PRICE_COLS  # noqa (used by stream_bucket)
     TMP_DIR = f"{BASE}/tmp_regime"
     os.makedirs(TMP_DIR, exist_ok=True)
-    for fn in os.listdir(TMP_DIR):
-        os.remove(os.path.join(TMP_DIR, fn))
+    # v8.4 (2026-08-09): REUSE a complete previous bucket set instead of
+    # re-bucketing (90 min). Only re-bucket when files are missing or stale
+    # (older than the matrix itself). Deterministic: same matrix + same
+    # classifier ⇒ identical output.
+    existing = os.listdir(TMP_DIR)
+    expect = {f"{n}.csv" for n in F.REGIME_NAMES}
+    matrix_mtime = os.path.getmtime(FEAT_CSV)
+    tmp_ok = (existing and expect.issubset(set(existing)) and
+              all(os.path.getmtime(os.path.join(TMP_DIR, f)) >= matrix_mtime
+                  for f in expect))
+    if not tmp_ok:
+        for fn in existing:
+            os.remove(os.path.join(TMP_DIR, fn))
+        print("(re)bucketing full matrix — no complete temp set on disk",
+              flush=True)
 
     # PASS 1: single streaming pass → 8 per-regime temp CSVs (bounded memory)
-    feats, coverage, nonempty = stream_bucket(FEAT_CSV, TMP_DIR)
+    feats, coverage, nonempty = stream_bucket(FEAT_CSV, TMP_DIR, skip=tmp_ok)
     total = sum(coverage.values())
     print(f"BUCKET {total:,} rows in {time.time()-t0:.0f}s", flush=True)
     print("6-YEAR REGIME COVERAGE:", flush=True)
@@ -261,7 +340,26 @@ def main():
             all_fresh = all(
                 os.path.exists(p) and os.path.getmtime(p) >= time.time() - 86400
                 for p in seed_files)
-            cal_ok = os.path.exists(cal_file)
+            # v8.7 (2026-08-10) HTF-STRIP FIX: a "fresh" seed from the OLD
+            # 108-feature space (this morning's pre-strip run) must NOT be
+            # reused for the 93-feature M5-only retrain. Verify the model's
+            # feature count matches the current matrix feats — mismatch ⇒
+            # force re-train even if mtime looks fresh.
+            if all_fresh:
+                try:
+                    import lightgbm as _lgb
+                    _n = _lgb.Booster(model_file=seed_files[0]).num_feature()
+                    if _n != len(feats):
+                        print(f"  {n}: STALE-SPACE ({_n} feats != {len(feats)}) — forcing retrain", flush=True)
+                        all_fresh = False
+                except Exception:
+                    all_fresh = False
+            # v8.4 (2026-08-09): calibration must be FRESHER THAN THE SEEDS,
+            # not merely present. A stale Aug-7 calibration alongside fresh
+            # seeds would ship mismatched probability scales.
+            seed_newest = max(os.path.getmtime(p) for p in seed_files) if all_fresh else 0
+            cal_ok = (os.path.exists(cal_file)
+                      and os.path.getmtime(cal_file) >= seed_newest)
         except Exception:
             all_fresh = False
             cal_ok = False

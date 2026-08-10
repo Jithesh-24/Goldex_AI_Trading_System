@@ -45,7 +45,13 @@ def load_ensemble(cfg_path):
     try:
         with open(cfg_path) as f:
             cfg = json.load(f)
-        ms = [lgb.Booster(model_file=f"{MODEL}/{m}") for m in cfg["models"]]
+        ms = []
+        for m in cfg["models"]:
+            try:
+                ms.append(lgb.Booster(model_file=f"{MODEL}/{m}"))
+            except Exception:
+                pass  # v8.7: skip missing model files (e.g. direction_s42 not
+                # deployed) — a partial ensemble still beats a crash
         return ms
     except Exception:
         return []
