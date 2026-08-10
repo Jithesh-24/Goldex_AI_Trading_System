@@ -77,10 +77,12 @@ def main():
         oof = np.load(spec_full)
         oofy = np.load(f"{MODEL_DIR}/oof_spec_full_y.npy")
         print(f"OOF source: SPECIALIST full-matrix ({len(oof):,} rows) — engine parity")
+        USE_SPEC_CALS = True   # spec probs need spec curves (engine parity)
     else:
         oof = np.load(f"{MODEL_DIR}/oof_probs.npy")          # raw 3-seed avg
         oofy = np.load(f"{MODEL_DIR}/oof_targets.npy")
         print(f"OOF source: BASE ensemble ({len(oof):,} rows)")
+        USE_SPEC_CALS = False  # base probs need base curves (same scale)
     n_oof = len(oof)
     print(f"OOF: {n_oof:,} rows | base WR {oofy.mean():.1%}")
     try:
@@ -125,7 +127,7 @@ def main():
             m = bins == b
             if not m.any():
                 continue
-            cal = spec_cals.get(b) if spec_cals.get(b) else cal_by_rr
+            cal = (spec_cals.get(b) if spec_cals.get(b) else cal_by_rr) if USE_SPEC_CALS else cal_by_rr
             for di, dname in enumerate(["SELL", "BUY"]):
                 for t in TP_RATIOS:
                     mm = m & (d == (1 if dname == "BUY" else 0)) & (bucket == t)
@@ -295,7 +297,11 @@ def main():
             threshold = float(ds["lo"])
             break
     if threshold == 100.0:
-        threshold = 50.0   # data says no positive-EV decile; neutral default
+        # Data says NO rating level is profitable → honest behavior is to not
+        # trade at all (never fire), not to pick an arbitrary middle value.
+        threshold = 100.0
+        print("⚠️ no positive-EV decile in 6yr data → threshold=100 (system "
+              "will not trade until the data supports an edge)")
 
     out = {"version": 8.5, "base_tf": "M5",
            "weights": weights,
