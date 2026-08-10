@@ -18,7 +18,7 @@ import os
 
 BASE = "/home/jith/.hermes/profiles/trading/scripts"
 MODEL_DIR = f"{BASE}/models"
-MATRIX = f"{BASE}/gold_features.csv"
+MATRIX = os.environ.get("FEAT_CSV", f"{BASE}/gold_features_m5.csv")
 
 TP_RATIOS = [1.3, 1.8, 2.5, 3.0]
 DIRS = ["BUY", "SELL"]
@@ -50,10 +50,18 @@ def pava_bins(p, y, n_bins=100, min_support=2000):
     ps = np.array([agg[b][0] for b in bs])
     ys = np.array([agg[b][1] for b in bs])
     ws = np.array([agg[b][2] for b in bs], dtype=np.float64)
-    # v7.11: shrink low-support bins toward the base rate BEFORE pooling
+    # v7.11: shrink low-support bins toward the base rate BEFORE pooling.
+    # FIX (2026-08-10): ys[i] is the SUM of targets, ws[i] the count — the
+    # shrinkage formula needs the RATE. Old code did (sum*count + base*n0)/
+    # (count+n0) then PAVA divided by count again → DOUBLE-DIVISION crushed
+    # every low-support bin to ~0 (specialist curves became degenerate,
+    # engine refused ALL signals). Convert to rate, shrink, store back as a
+    # sum consistent with the PAVA pooling below.
     for i in range(len(ys)):
         if ws[i] < min_support:
-            ys[i] = (ys[i] * ws[i] + base * min_support) / (ws[i] + min_support)
+            rate = ys[i] / ws[i]
+            shrunk = (rate * ws[i] + base * min_support) / (ws[i] + min_support)
+            ys[i] = shrunk * ws[i]
     blocks = [[ps[i], ys[i], ws[i]] for i in range(len(ps))]
     i = 0
     while i < len(blocks) - 1:
