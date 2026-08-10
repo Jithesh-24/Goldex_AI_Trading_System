@@ -63,6 +63,10 @@ def _placement():
     return _PLACEMENT
 
 
+def _ts():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
 def classify(trade):
     """Deterministic root-cause classification from stored features."""
     f = trade.get("feats", {}) or {}
@@ -124,7 +128,7 @@ def append_lesson(reason, trade):
     lines = []
     if os.path.exists(LESSONS):
         with open(LESSONS) as f:
-            lines = f.read().splitlines()
+            lines = [l for l in f.read().splitlines() if l and not l.startswith("#")]
     line = f"- [{datetime.now(timezone.utc).strftime('%Y-%m-%d')}] {reason}: {trade.get('dir')} @ ${trade.get('entry', 0):.2f} (PnL ${trade.get('pnl', 0):+.2f}) — {LESSON_LIBRARY[reason]}"
     if reason in "\n".join(lines):
         return  # lesson already known — don't duplicate
