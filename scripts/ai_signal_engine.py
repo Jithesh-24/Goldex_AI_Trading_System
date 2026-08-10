@@ -417,8 +417,20 @@ def best_placement(models, feats, fx, atr, spread, direction, cal_knots=None, ca
             pd_ = pp.get("regimes", {}).get(regime, {}).get(direction, {})
             learned_sl = pd_.get("sl_atr")
             learned_tp = pd_.get("tp_ratio")
+            mfe_p50 = pd_.get("mfe_p50")
             if learned_sl and learned_tp:
                 learned_pair = (float(learned_sl), float(learned_tp))
+                # v8.6 (2026-08-10): REACHABLE-BAND constraint — the sweep is
+                # capped by what 6yr MFE/MFA data says is actually reachable:
+                #   SL  ≤ learned p90 loser-adverse band (sl_atr)
+                #   TP  ≤ learned median favorable excursion (mfe_p50)
+                # A 7R TP at 20+ ATR is a multi-day runner — positive on a
+                # time-blind exp surface but NOT the clean, human-speed trade
+                # the user wants. The cap is LEARNED per regime×direction
+                # (expands automatically when the regime has room to run) —
+                # not a hardcoded ratio. The learned pair stays in the set.
+                sl_cap = float(learned_sl)
+                tp_cap_atr = float(mfe_p50) if mfe_p50 else float(learned_sl) * float(learned_tp)
     except Exception:
         pass
     # learned_pair (regime's institutional SL/TP from 6yr MFE/MFA data) is
@@ -429,6 +441,15 @@ def best_placement(models, feats, fx, atr, spread, direction, cal_knots=None, ca
         candidates.append(learned_pair)
     for m, r in candidates:
         row, sl_dist, tp_dist = fc.placement_row(fx, atr, spread, direction, m, r)
+        # v8.6 reachable-band filter: skip geometry the data says is out of
+        # reach (multi-day runners). True SL in ATR must be within the
+        # learned adverse band; TP distance must be within the learned
+        # median favorable excursion.
+        if learned_pair is not None:
+            if sl_dist / max(atr, 1e-9) > sl_cap:
+                continue
+            if tp_dist / max(atr, 1e-9) > tp_cap_atr:
+                continue
         X = np.array([[row.get(c, 0.0) for c in feats]], dtype=np.float32)
         # 3-seed ensemble: average raw probs, THEN calibrate once.
         p_raw = float(np.mean([mdl.predict(X)[0] for mdl in models]))
