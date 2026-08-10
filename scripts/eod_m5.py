@@ -78,6 +78,16 @@ print(f'merged {{n}} live outcome rows | matrix ~{{tot:,}} rows')
     if ok:
         ok = run([PY, "-u", f"{BASE}/train_regime_spec.py"], 36000, env=env)
     if ok:
+        # v8.5: full-matrix specialist OOF → the rating fitter must learn its
+        # threshold on the SAME scale the live engine uses (specialist probs
+        # + per-regime calibration curves). Must run AFTER train_regime_spec
+        # (fresh specialists) and BEFORE fit_signal_rating.
+        ok = run([PY, "-u", f"{BASE}/build_spec_oof_full.py"], 7200, env=env)
+    if ok:
+        # v8.5: re-learn the rating weights + fire threshold nightly so the
+        # quality gate adapts as the models learn (no stale hardcoded gate).
+        ok = run([PY, "-u", f"{BASE}/fit_signal_rating.py"], 3600, env=env)
+    if ok:
         ok = run([PY, "-u", f"{BASE}/regenerate_dir_prior.py"], 1800, env=env)
     if not ok:
         print(f"❌ retrain FAILED — see {LOG}", flush=True)
