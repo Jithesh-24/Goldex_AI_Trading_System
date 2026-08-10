@@ -713,12 +713,36 @@ def main():
         print(f"[{ts()}] REGIME ROUTER: no regime_specialists.json yet — using global ensemble")
     with open(FEATURES) as f:
         feats = json.load(f)
+    # v8.7 feature-count guard (boot): the engine must ONLY run models whose
+    # feature count matches features.json — a retrain transition (108 → 93
+    # M5-only) can leave disk momentarily mixed (new features.json, old
+    # models, or vice versa). Feeding mismatched X to LightGBM is a FATAL
+    # predict error mid-signal. Refuse to load mismatched models → engine
+    # idles safely (no signals) until the retrain writes consistent artifacts
+    # and hot-reload picks them up. Same guard the reload path enforces.
+    try:
+        if models and models[0].num_feature() != len(feats):
+            print(f"[{ts()}] 🛑 FEATURE-COUNT GUARD (boot): ensemble trained on "
+                  f"{models[0].num_feature()} feats, features.json has {len(feats)} — "
+                  f"refusing stale models. Idle until retrain deploys consistent artifacts.")
+            models = []
+    except Exception:
+        pass
     dir_feats = []
     try:
         with open(DIR_FEATURES) as f:
             dir_feats = json.load(f)
     except Exception:
         dir_feats = feats
+    # v8.7 feature-count guard (boot, direction): same mixed-state protection.
+    try:
+        if dir_models and dir_models[0].num_feature() != len(dir_feats):
+            print(f"[{ts()}] 🛑 FEATURE-COUNT GUARD (boot): direction trained on "
+                  f"{dir_models[0].num_feature()} feats, direction_features.json has "
+                  f"{len(dir_feats)} — refusing stale direction models. Empirical regime prior will steer the side.")
+            dir_models = []
+    except Exception:
+        pass
     ens_tag = f"3-seed ensemble" if ens_seeds else "single (v6 fallback)"
     dir_tag = f"3-seed direction" if dir_seeds else "none (neutral prior)"
     print(f"[{ts()}] Placement: {len(models)} models ({ens_tag}) | {len(feats)} features")

@@ -89,6 +89,13 @@ print(f'merged {{n}} live outcome rows | matrix ~{{tot:,}} rows')
         ok = run([PY, "-u", f"{BASE}/fit_signal_rating.py"], 3600, env=env)
     if ok:
         ok = run([PY, "-u", f"{BASE}/regenerate_dir_prior.py"], 1800, env=env)
+    if ok:
+        # v8.7 LOSS-LESSON REPLAY (2026-08-10, user mandate): after every
+        # artifact is retrained, replay today's closed trades through the
+        # FRESH models and verify the same losing setup now gets a DIFFERENT
+        # decision (or confirm the data says it should still fire). Adaptive
+        # proof — not a hardcoded avoidance rule.
+        ok = run([PY, "-u", f"{BASE}/eod_loss_lessons.py"], 1800, env=env)
     if not ok:
         print(f"❌ retrain FAILED — see {LOG}", flush=True)
         sys.exit(1)
