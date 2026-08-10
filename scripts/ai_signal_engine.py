@@ -693,6 +693,20 @@ def main():
               f"(same TF lineage as refused ensemble) — idle until M5 retrain.")
         spec_models, spec_cal = {}, None
     if spec_models:
+        # v8.7 feature-count guard: specialists must match the CURRENT
+        # features.json list (108 → 93 after the M5-only strip). Mismatch
+        # = stale models from a previous feature list — drop to global
+        # ensemble until the retrain redeploys consistent specialists.
+        try:
+            _probe = next(iter(spec_models.values()))[0]
+            with open(FEATURES) as _f:
+                _nfeats = len(json.load(_f))
+            if _probe.num_feature() != _nfeats:
+                print(f"[{ts()}] 🛑 FEATURE-COUNT GUARD: specialists ({_probe.num_feature()} feats) != features.json ({_nfeats}) — using global ensemble until specialists retrain.")
+                spec_models, spec_cal = {}, None
+        except Exception:
+            pass
+    if spec_models:
         print(f"[{ts()}] REGIME ROUTER: {len(spec_models)} specialists loaded "
               f"({', '.join(sorted(spec_models.keys()))})")
     else:
@@ -907,6 +921,27 @@ def main():
                 except Exception:
                     pass
                 print(f"[{ts()}] 🔄 Ensemble hot-reloaded (retrain picked up) | {len(models)} placement + {len(dir_models)} direction | {len(feats)} feats")
+                # v8.7 M5-only: if the global ensemble moved to a NEW feature
+                # list (e.g. HTF stripped → 93 feats) but the specialists in
+                # memory are still trained on the OLD list (108), feeding them
+                # the new X would raise a LightGBM dimension error. Clear
+                # stale specialists → fall back to the fresh global ensemble
+                # until train_regime_spec redeploys matching specialists.
+                if spec_models:
+                    try:
+                        _probe = next(iter(spec_models.values()))[0]
+                        if _probe.num_feature() != len(feats):
+                            print(f"[{ts()}] ⚠️ specialists stale ({_probe.num_feature()} feats != {len(feats)}) — using global ensemble until specialists retrain")
+                            spec_models, spec_cal = {}, None
+                    except Exception:
+                        pass
+                if dir_models:
+                    try:
+                        if dir_models[0].num_feature() != len(dir_feats):
+                            print(f"[{ts()}] ⚠️ direction models stale ({dir_models[0].num_feature()} feats != {len(dir_feats)}) — prior will steer side")
+                            dir_models = []
+                    except Exception:
+                        pass
             model_mtime = max(m, dm)
         except Exception as e:
             print(f"[{ts()}] reload warn: {e}")
@@ -919,7 +954,18 @@ def main():
                 else:
                     spec_models, spec_cal = load_specialists(SPEC_CFG, MODEL)
                     if spec_models:
-                        print(f"[{ts()}] 🔄 REGIME ROUTER hot-reloaded: {len(spec_models)} specialists")
+                        # v8.7: verify the new specialists match the CURRENT
+                        # feature list (dimension guard — same failure mode as
+                        # the ensemble reload above).
+                        try:
+                            _probe = next(iter(spec_models.values()))[0]
+                            if _probe.num_feature() != len(feats):
+                                print(f"[{ts()}] ⚠️ new specialists dim mismatch ({_probe.num_feature()} != {len(feats)}) — keeping old until consistent")
+                                spec_models, spec_cal = {}, None
+                        except Exception:
+                            pass
+                        if spec_models:
+                            print(f"[{ts()}] 🔄 REGIME ROUTER hot-reloaded: {len(spec_models)} specialists")
                     else:
                         print(f"[{ts()}] 🔄 REGIME ROUTER hot-reload: specialists removed, falling back to global ensemble")
             spec_mtime = sm

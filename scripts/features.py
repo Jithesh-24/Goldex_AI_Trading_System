@@ -608,7 +608,11 @@ MAX_TARGET_BARS = 60   # trade-realistic horizon
 # ratios × 2 directions = 24 candidates/bar (trimmed from 40 to fit the
 # 7GB/1-core machine while keeping the scalp→momentum spectrum).
 SL_MULTS = [0.8, 1.2, 1.8, 2.6, 3.4, 4.5]   # SL distance = mult × ATR
-TP_RATIOS = [1.3, 1.8, 2.5, 3.0]       # TP = ratio × (SL+spread) — ALL strictly > 1.0
+# v8.4c (2026-08-08, user mandate "no hardlimits, not always inside 3"):
+# extended BEYOND 3.0 so the model can LEARN wide-move placements (TP 4.0,
+# 5.5, 7.0) when the market move warrants — placement is per-movement,
+# never capped at 1:3. Rows/bar = 2 dir × 6 SL × 7 TP = 84 (was 48).
+TP_RATIOS = [1.3, 1.8, 2.5, 3.0, 4.0, 5.5, 7.0]
                                   # (user mandate: reward ALWAYS > risk; a 1.0
                                   # ratio is a coin flip, removed 2026-08-02)
 MIN_SL_FLOOR = 0.30               # structural sanity: SL must clear the spread
@@ -941,7 +945,26 @@ REGIME_NAMES = [
     "RANGE_TIGHT", "RANGE_WIDE", "HIGH_VOL", "QUIET_LOW_VOL",
 ]
 REGIME_KEYS = ["trend_ema", "trend_slope", "bb_pctile", "atr_pctile",
-               "vol_spike", "news_candle", "rsi_14", "m1_d1_vol_ratio"]
+               "vol_spike", "news_candle", "rsi_14", "vol_spike"]
+
+# ════════════════════════════════════════════════════════════════════
+# v8.7 M5-ONLY MANDATE (2026-08-10, user directive): "it should only see
+# the current M5 markets and make decisions, not along with htf
+# suggestions." The model was fed 15 H1/D1/M15 features (h1_trend,
+# h1_pos, dist_h1_hi/lo, htf_align, ...) — observed failure mode: at
+# 14:09 the M5 flow had turned (slope −0.13) but H1 trend (+3.9) kept
+# the model buying the dip → SL. Higher-TF context can override the
+# CURRENT M5 flow. Decision: the engine models (placement + direction)
+# see ONLY M5-derived features. These columns remain in the matrix (no
+# 33GB rebuild) but are EXCLUDED at read/train time by every trainer.
+# ════════════════════════════════════════════════════════════════════
+HTF_FEATURES = {
+    "h1_trend", "d1_trend", "m15_trend",
+    "m1_h1_vol_ratio", "m1_d1_vol_ratio", "m15_m1_vol_ratio",
+    "h1_pos", "d1_pos", "m15_pos",
+    "dist_h1_hi", "dist_h1_lo", "dist_m15_hi", "dist_m15_lo",
+    "htf_align", "m15_align",
+}
 
 def regime_bin(fx):
     """Map a feature vector (dict-like with regime cols) -> regime bin name.
@@ -983,11 +1006,49 @@ def regime_bin(fx):
         # Range bins by compression width
         if bb < 0.35:
             return "RANGE_TIGHT"
-        # Momentum within range: high RSI + wide vol ratio -> range-up bias
-        if rsi > 60 and volr > 1.2:
+        # Momentum within range: high RSI + M5 vol spike -> range-up bias
+        if rsi > 60 and vs > 1.2:
             return "UP"
-        if rsi < 40 and volr > 1.2:
+        if rsi < 40 and vs > 1.2:
             return "DOWN"
         return "RANGE_WIDE"
     except Exception:
         return "RANGE_WIDE"
+
+
+def vector_regime_bin(df):
+    """Vectorized mirror of regime_bin on a chunk DataFrame.
+
+    Returns an object-dtype array of regime names for every row. Rule order
+    matches regime_bin EXACTLY (trend first, then vol overlays, then range
+    compression/momentum). ~1000x faster than the scalar loop over millions
+    of rows; used by the chunked fitters (fit_signal_rating, train_regime_spec).
+    """
+    import numpy as _np
+    te = df["trend_ema"].values.astype(_np.float64)
+    ts = df["trend_slope"].values.astype(_np.float64)
+    bb = df["bb_pctile"].values.astype(_np.float64)
+    ap = df["atr_pctile"].values.astype(_np.float64)
+    vs = df["vol_spike"].values.astype(_np.float64)
+    ns = df["news_candle"].values.astype(_np.float64)
+    rsi = df["rsi_14"].values.astype(_np.float64)
+    out = _np.full(len(df), "RANGE_WIDE", dtype=object)
+    m = (te > 1.2) & (ts * te > 0)
+    out[m] = "STRONG_UP"
+    m = (te > 0.4) & ~_np.isin(out, "STRONG_UP")
+    out[m] = "UP"
+    m = (te < -1.2) & (ts * te > 0) & (out == "RANGE_WIDE")
+    out[m] = "STRONG_DOWN"
+    m = (te < -0.4) & (out == "RANGE_WIDE")
+    out[m] = "DOWN"
+    m = (out == "RANGE_WIDE") & ((vs > 2.0) | (ns > 0.4) | (ap > 0.85))
+    out[m] = "HIGH_VOL"
+    m = (out == "RANGE_WIDE") & (ap < 0.15) & (ns < 0.2)
+    out[m] = "QUIET_LOW_VOL"
+    m = (out == "RANGE_WIDE") & (bb < 0.35)
+    out[m] = "RANGE_TIGHT"
+    m = (out == "RANGE_WIDE") & (rsi > 60) & (vs > 1.2)
+    out[m] = "UP"
+    m = (out == "RANGE_WIDE") & (rsi < 40) & (vs > 1.2)
+    out[m] = "DOWN"
+    return out
