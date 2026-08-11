@@ -103,6 +103,14 @@ def merge_live_outcomes_appended(feat_csv):
             if uid in merged:
                 continue  # idempotent: already merged in a prior EOD run
             row = {c: (feats.get(c) if c in feats_cols else None) for c in header}
+            # v8.8 (2026-08-11): carry position-state into the training matrix so
+            # the retrain learns streak/day-pnl effects (pure learning, no gates).
+            if "day_pnl" in feats_cols:
+                row["day_pnl"] = (r.get("state") or {}).get("day_pnl", 0.0)
+            if "streak" in feats_cols:
+                row["streak"] = (r.get("state") or {}).get("streak", 0)
+            if "trades_today" in feats_cols:
+                row["trades_today"] = (r.get("state") or {}).get("trades_today", 0)
             if "direction" not in feats and r.get("dir") in ("BUY", "SELL"):
                 row["direction"] = 1.0 if r["dir"] == "BUY" else 0.0
             row["time"] = pd.Timestamp(int(r["t"]), unit="s").strftime("%Y-%m-%d %H:%M:%S")  # int-second, matches matrix datetime64[s] format (no fraction → mixed-col parse crash)

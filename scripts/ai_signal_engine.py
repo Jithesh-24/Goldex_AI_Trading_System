@@ -835,6 +835,7 @@ def main():
                     append_outcome({"t": time.time(), "dir": d0, "entry": active["entry"],
                                     "sl": active["sl"], "tp": active["tp"], "pnl": pnl,
                                     "result": verdict, "conf": active["conf"],
+                                    "state": active.get("state", {}),
                                     "feats": active.get("feats", {})})
                 except Exception:
                     pass
@@ -1200,6 +1201,7 @@ def main():
                                         "result": r_kind, "conf": active["conf"],
                                         "regime": active.get("regime", ""),
                                         "sl_atr": active.get("sl_atr", None),
+                                        "state": active.get("state", {}),
                                         "feats": active.get("feats", {})})
                     except Exception:
                         pass
@@ -1424,7 +1426,16 @@ def main():
                           "p_up": p_up,
                           "regime": route_regime,   # v8: regime for loss self-analysis
                           "sl_atr": float(sl_dist / max(atr, 1e-9)),  # v8: SL in ATR units
-                          "feats": {k: _row.get(k, 0.0) for k in feats}}
+                          "feats": {k: _row.get(k, 0.0) for k in feats},
+                          # v8.8 FIX (2026-08-11): position-state + microstructure were
+                          # computed above but DROPPED here — the closed-loop outcome
+                          # rows never carried streak/day_pnl/trades_today, so the
+                          # daily retrain could never LEARN "this is the Nth loss in a
+                          # row → state is toxic". Persist them explicitly so the
+                          # outcome rows teach the next models. Pure learning, no gates.
+                          "state": {"day_pnl": round(day_pnl_engine, 2),
+                                    "streak": int(streak_engine),
+                                    "trades_today": int(trades_today_engine)}}
                 save_active(active)
                 # record this fired signal for same-idea suppression (next fire)
                 globals()["_last_signal"] = {
