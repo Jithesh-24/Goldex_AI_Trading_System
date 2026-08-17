@@ -1,0 +1,13 @@
+{
+  "type": "direction",
+  "seeds": [
+    42,
+    7,
+    2026
+  ],
+  "models": [
+    "direction_s7.txt",
+    "direction_s2026.txt"
+  ],
+  "horizon_bars": 240
+}

@@ -1,0 +1,13 @@
+{
+  "version": "ensemble_v3",
+  "sl_atr": 0.8,
+  "tp_atr": 1.5,
+  "min_strength": 0.5,
+  "regime_filter": true,
+  "dynamic_sizing": true,
+  "trailing_pct": 0.6,
+  "win_rate": 0.8499360797566076,
+  "pnl": 1455117.7102890864,
+  "drawdown": 0.4634368817015385,
+  "trades": 201814
+}

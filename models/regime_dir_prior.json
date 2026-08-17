@@ -1,0 +1,37 @@
+{
+  "_note": "Regenerated 2026-08-11 with CURRENT trend-first regime_bin at the TRADE horizon. Old file (Aug 5) used the vol-first classifier and a broken method, claiming mean reversion (STRONG_UP P(up)=0.476) -> engine shorted strength, 5 SL / 1 TP in 38 min while gold climbed 4234->4244. Fresh stream of the same 6.4yr matrix: P(up)=0.76-0.77 at 180 min in every regime (secular gold bull). Engine uses h3 as the direction tilt; h5 kept for reference. v8: bars are M5 (300s) when PRIOR_BAR_SECS=300.",
+  "horizon_bars": 3,
+  "bar_seconds": 300,
+  "source": "gold_features_m5.csv stream, trend-first regime_bin, one row/timestamp",
+  "measured": "2026-08-11",
+  "P_up_by_regime": {
+    "STRONG_UP": 0.5374,
+    "UP": 0.4985,
+    "DOWN": 0.467,
+    "STRONG_DOWN": 0.4319,
+    "RANGE_TIGHT": 0.4862,
+    "RANGE_WIDE": 0.4854,
+    "HIGH_VOL": 0.4767,
+    "QUIET_LOW_VOL": 0.4585
+  },
+  "P_up_15min": {
+    "STRONG_UP": 0.5374,
+    "UP": 0.4985,
+    "DOWN": 0.467,
+    "STRONG_DOWN": 0.4319,
+    "RANGE_TIGHT": 0.4862,
+    "RANGE_WIDE": 0.4854,
+    "HIGH_VOL": 0.4767,
+    "QUIET_LOW_VOL": 0.4585
+  },
+  "n": {
+    "STRONG_UP": 56796,
+    "UP": 94846,
+    "DOWN": 88838,
+    "STRONG_DOWN": 40548,
+    "RANGE_TIGHT": 23873,
+    "RANGE_WIDE": 40382,
+    "HIGH_VOL": 24233,
+    "QUIET_LOW_VOL": 17367
+  }
+}

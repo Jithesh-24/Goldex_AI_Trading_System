@@ -1,0 +1,127 @@
+{
+  "type": "regime-placement",
+  "bins": {
+    "STRONG_UP": {
+      "models": [
+        "spec_strong_up_s42.txt",
+        "spec_strong_up_s7.txt",
+        "spec_strong_up_s2026.txt"
+      ],
+      "seeds": [
+        42,
+        7,
+        2026
+      ],
+      "rows": 4769438
+    },
+    "UP": {
+      "models": [
+        "spec_up_s42.txt",
+        "spec_up_s7.txt",
+        "spec_up_s2026.txt"
+      ],
+      "seeds": [
+        42,
+        7,
+        2026
+      ],
+      "rows": 7964714
+    },
+    "DOWN": {
+      "models": [
+        "spec_down_s42.txt",
+        "spec_down_s7.txt",
+        "spec_down_s2026.txt"
+      ],
+      "seeds": [
+        42,
+        7,
+        2026
+      ],
+      "rows": 7459788
+    },
+    "STRONG_DOWN": {
+      "models": [
+        "spec_strong_down_s42.txt",
+        "spec_strong_down_s7.txt",
+        "spec_strong_down_s2026.txt"
+      ],
+      "seeds": [
+        42,
+        7,
+        2026
+      ],
+      "rows": 3405612
+    },
+    "RANGE_TIGHT": {
+      "models": [
+        "spec_range_tight_s42.txt",
+        "spec_range_tight_s7.txt",
+        "spec_range_tight_s2026.txt"
+      ],
+      "seeds": [
+        42,
+        7,
+        2026
+      ],
+      "rows": 2040948
+    },
+    "RANGE_WIDE": {
+      "models": [
+        "spec_range_wide_s42.txt",
+        "spec_range_wide_s7.txt",
+        "spec_range_wide_s2026.txt"
+      ],
+      "seeds": [
+        42,
+        7,
+        2026
+      ],
+      "rows": 3312540
+    },
+    "HIGH_VOL": {
+      "models": [
+        "spec_high_vol_s42.txt",
+        "spec_high_vol_s7.txt",
+        "spec_high_vol_s2026.txt"
+      ],
+      "seeds": [
+        42,
+        7,
+        2026
+      ],
+      "rows": 2079420
+    },
+    "QUIET_LOW_VOL": {
+      "models": [
+        "spec_quiet_low_vol_s42.txt",
+        "spec_quiet_low_vol_s7.txt",
+        "spec_quiet_low_vol_s2026.txt"
+      ],
+      "seeds": [
+        42,
+        7,
+        2026
+      ],
+      "rows": 1458828
+    }
+  },
+  "seeds": [
+    42,
+    7,
+    2026
+  ],
+  "mode": "cold-fresh-per-regime",
+  "creator": "train_regime_spec",
+  "coverage": {
+    "STRONG_UP": 4769438,
+    "UP": 7964714,
+    "DOWN": 7459788,
+    "STRONG_DOWN": 3405612,
+    "RANGE_TIGHT": 2040948,
+    "RANGE_WIDE": 3312540,
+    "HIGH_VOL": 2079420,
+    "QUIET_LOW_VOL": 1458828
+  },
+  "base_tf": "m5"
+}

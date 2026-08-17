@@ -1,0 +1,9 @@
+*.csv
+*.npy
+*.log
+*.jsonl
+__pycache__/
+*.pyc
+models/*.txt
+rotator_keys.json
+*.env

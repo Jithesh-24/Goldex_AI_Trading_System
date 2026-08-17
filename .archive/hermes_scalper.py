@@ -1,0 +1,1222 @@
+"""
+XAUUSD Signal Engine v13 — Pure AI | 1m Analysis
+Modular: Config → Data → Analysis → Signal → Main
+No lot sizing. User handles position management.
+"""
+import os, sys, time, json, math, urllib.request, urllib.parse, threading
+from datetime import datetime, timezone
+from pathlib import Path
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+# ════ CONFIG ════
+SCAN_URL = "https://scanner.tradingview.com/cfd/scan"
+HDR = {"User-Agent":"Mozilla/5.0","Content-Type":"application/json",
+       "Origin":"https://www.tradingview.com","Referer":"https://www.tradingview.com/"}
+COLS = ["close","RSI","BB.upper","BB.lower","MACD.macd","MACD.signal","volume"]
+SP = {"symbols":{"tickers":["TVC:GOLD"]},"columns":COLS}
+POLL = 5; BOFF = 30
+SPREAD = 0.2
+MIN_SL = 3.0
+
+# ════ DAILY CONTEXT — the missing piece ════
+DCOLS = ["close","high","low","RSI","change_abs","Recommend.All","ATR"]
+DREQ = {"symbols":{"tickers":["TVC:GOLD"]},"columns":DCOLS}
+_daily_cache = {"data":None,"time":0}
+
+def fetch_daily():
+    """Fetch daily OHLC context from TV scanner. Cached 30s."""
+    now = time.time()
+    if now - _daily_cache["time"] < 30 and _daily_cache["data"]:
+        return _daily_cache["data"]
+    try:
+        req = urllib.request.Request(SCAN_URL, data=json.dumps(DREQ).encode(), headers=HDR, method="POST")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            d = json.loads(r.read())["data"][0]["d"]
+        data = dict(zip(DCOLS, d))
+        _daily_cache["data"] = data
+        _daily_cache["time"] = now
+        return data
+    except:
+        return _daily_cache["data"] or {"close":0,"high":0,"low":0,"RSI":50,"change_abs":0,"Recommend.All":0,"ATR":0}
+
+def daily_context(p, daily_raw):
+    """Build enriched daily context for module consumption.
+    
+    Returns dict with position_in_range, bias, and pre-compression ATR.
+    No thresholds, no hard rules — just data for modules to use naturally."""
+    hi = daily_raw.get("high", 0) or 0
+    lo = daily_raw.get("low", 0) or 0
+    d_rsi = daily_raw.get("RSI", 50) or 50
+    d_atr = daily_raw.get("ATR", 0) or 0
+    rng = hi - lo if hi > lo else 1
+    pos = max(0, min(100, (p - lo) / rng * 100))
+    bearish = d_rsi < 50
+    # Pre-compression ATR: daily ATR tells us the true volatility before squeeze
+    # If daily ATR is 87 and current 1m ATR is 4.0, that's 21× compression
+    return {
+        "high": hi, "low": lo, "range": rng,
+        "position": pos,  # 0-100% in daily range
+        "rsi": d_rsi,
+        "bearish": bearish,
+        "bias": -1 if d_rsi < 45 else (1 if d_rsi > 55 else 0),  # -1, 0, 1
+        "daily_atr": max(d_atr, 10),
+        "change": daily_raw.get("change_abs", 0) or 0,
+    }
+
+BASE = Path.home() / ".hermes" / "profiles" / "trading" / "cron" / "output"
+BASE.mkdir(parents=True, exist_ok=True)
+ACTIVE = BASE / ".active_signal.json"
+SFILE = BASE / "latest_signal.json"
+STATS = BASE / "bot_stats.json"
+LEARN = BASE / "bot_learn.json"
+JOURNAL = BASE / "trade_journal.jsonl"
+PREDICT = BASE / "signal_prediction.json"
+STATE = BASE / "bot_state.json"
+t0 = time.time()
+
+# ════ TELEGRAM ════
+CID = "5376343193"
+_env = Path.home() / ".hermes" / "profiles" / "signals" / ".env"
+TG_T = None
+if _env.exists():
+    for l in _env.read_text().splitlines():
+        if l.startswith("TELEGRAM_BOT_TOKEN="):
+            TG_T = l.split("=",1)[1].strip(); break
+
+def log(m):
+    print(f"[{time.time()-t0:.0f}s] {m}", file=sys.stderr, flush=True)
+
+def tg(text):
+    if not TG_T: return
+    d = urllib.parse.urlencode({"chat_id":CID,"text":text,"parse_mode":"Markdown"}).encode()
+    try:
+        urllib.request.urlopen(
+            urllib.request.Request(f"https://api.telegram.org/bot{TG_T}/sendMessage",data=d,method="POST"),timeout=5)
+    except: pass
+
+# ════ DATA ════
+_last_wh = {"p":0.0,"raw":{},"time":0,"bb_u":0,"bb_l":0}
+
+class WebhookHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        length = int(self.headers.get('Content-Length', 0))
+        body = self.rfile.read(length) if length > 0 else b'{}'
+        try:
+            data = json.loads(body); price = float(data.get("close", data.get("price", 0)) or 0)
+            if price > 0:
+                global _last_wh
+                _last_wh["p"] = price
+                _last_wh["time"] = time.time()
+                _last_wh["raw"] = {
+                    "close":price,"RSI":float(data.get("RSI",50) or 50),
+                    "BB.upper":float(data.get("BB_upper",0) or 0),
+                    "BB.lower":float(data.get("BB_lower",0) or 0),
+                    "MACD.macd":float(data.get("MACD_macd",0) or 0),
+                    "MACD.signal":float(data.get("MACD_signal",0) or 0),
+                    "volume":float(data.get("volume",0) or 0)}
+                _last_wh["bb_u"] = _last_wh["raw"]["BB.upper"]
+                _last_wh["bb_l"] = _last_wh["raw"]["BB.lower"]
+        except: pass
+        self.send_response(200); self.end_headers(); self.wfile.write(b'{"status":"ok"}')
+    def log_message(self, *a): pass
+
+wh_thread = threading.Thread(target=lambda: HTTPServer(("0.0.0.0", 8888), WebhookHandler).serve_forever(), daemon=True)
+wh_thread.start()
+
+def scan():
+    """Fetch price + indicators from TV scanner. Fallback to webhook if recent."""
+    now = time.time()
+    if now - _last_wh["time"] < 30 and _last_wh["p"] > 0:
+        return _last_wh["p"], _last_wh["raw"]
+    try:
+        req = urllib.request.Request(SCAN_URL, data=json.dumps(SP).encode(), headers=HDR, method="POST")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            d = json.loads(r.read())["data"][0]["d"]
+        return d[0], dict(zip(COLS, d))
+    except Exception as e:
+        return ("RL",{}) if "429" in str(e) else (0,{})
+
+class OHLC:
+    """Aggregate 5s ticks into 1-minute bars for meaningful analysis."""
+    BAR_FILE = os.path.expanduser("~/.hermes/profiles/trading/cron/output/spot_ohlc.jsonl")
+    
+    def __init__(self, max_bars=120):
+        self.bars = []    # completed 1m bars: {o,h,l,c,minute}
+        self.current = None
+        self.max_bars = max_bars
+        self._load_bars()
+    
+    def _load_bars(self):
+        """Load persisted bars from previous sessions."""
+        try:
+            with open(self.BAR_FILE) as f:
+                for line in f:
+                    if line.strip():
+                        self.bars.append(json.loads(line))
+        except: pass
+        # Keep within max_bars
+        if len(self.bars) > self.max_bars:
+            self.bars = self.bars[-self.max_bars:]
+    
+    def _save_bar(self, bar):
+        """Persist completed bar to file."""
+        try:
+            with open(self.BAR_FILE, "a") as f:
+                f.write(json.dumps(bar) + "\n")
+        except: pass
+
+    def tick(self, price, ts):
+        minute = int(ts // 60)
+        if self.current is None or self.current["minute"] != minute:
+            if self.current:
+                self.current["c"] = self.current["last"]
+                self.bars.append(self.current)
+                self._save_bar(self.current)
+                if len(self.bars) > self.max_bars:
+                    self.bars.pop(0)
+            self.current = {"o":price,"h":price,"l":price,"c":price,"last":price,"minute":minute}
+        else:
+            self.current["h"] = max(self.current["h"], price)
+            self.current["l"] = min(self.current["l"], price)
+            self.current["c"] = price
+            self.current["last"] = price
+
+    def close_prices(self, n=0):
+        """Last n close prices from completed bars. n=0 = all."""
+        arr = [b["c"] for b in self.bars]
+        return arr[-n:] if n and arr else arr
+
+    def highs(self, n=0):
+        arr = [b["h"] for b in self.bars]
+        return arr[-n:] if n and arr else arr
+
+    def lows(self, n=0):
+        arr = [b["l"] for b in self.bars]
+        return arr[-n:] if n and arr else arr
+
+    def ready(self, min_bars):
+        return len(self.bars) >= min_bars
+
+class State:
+    """Live market state — current price + 1m OHLC bars."""
+    def __init__(self):
+        self.p = 0.0; self.pp = 0.0; self.raw = {}; self.ohlc = OHLC()
+        self.last = 0; self.interval = POLL; self.ck = 0
+    def update(self):
+        now = time.time()
+        if now - self.last < self.interval:
+            self.ck += 1; return self.p > 0
+        p, ind = scan()
+        if p == "RL": self.interval = BOFF; self.last = now; self.ck += 1; return self.p > 0
+        if p > 0:
+            self.pp = self.p; self.p = p; self.raw = ind
+            self.interval = POLL; self.last = now; self.ck += 1
+            self.ohlc.tick(p, now)
+            return True
+        self.ck += 1; return self.p > 0
+
+# ════ VOLATILITY DETECTION (news/spike awareness) ════
+def get_vol_state(ohlc):
+    """Detect volatility regime: NORMAL, EXPANDING, or SPIKING (news).
+    Returns (state, ratio) where ratio = recent ATR / prior ATR."""
+    cl = ohlc.close_prices(30); hi = ohlc.highs(30); lo = ohlc.lows(30)
+    if len(cl) < 20: return "NORMAL", 1.0
+    atr_recent = calc_atr(cl[-10:], hi[-10:], lo[-10:])
+    atr_prior = calc_atr(cl[-20:-10], hi[-20:-10], lo[-20:-10])
+    if atr_prior <= 0: return "NORMAL", 1.0
+    ratio = atr_recent / atr_prior
+    if ratio > 2.0: return "SPIKING", ratio
+    if ratio > 1.35: return "EXPANDING", ratio
+    return "NORMAL", ratio
+
+# ════ URGENT MID-BAR CHECK (no-lag capture) ════
+def check_urgent(p, raw, ohlc):
+    """Check every 5s for extreme conditions — fire immediately without waiting for bar close."""
+    rsi = raw.get("RSI", 50) or 50
+    bb_u = raw.get("BB.upper", 0) or 0
+    bb_l = raw.get("BB.lower", 0) or 0
+    cl = ohlc.close_prices()
+    chg = cl[-1] - cl[-2] if len(cl) >= 2 else 0
+    if rsi < 28 and bb_l and p <= bb_l * 1.005 and chg > 0: return "BUY", 88, "UrgBBL"
+    if rsi > 72 and bb_u and p >= bb_u * 0.995 and chg < 0: return "SELL", 88, "UrgBBU"
+    if rsi < 25: return "BUY", 85, "UrgOS"
+    if rsi > 75: return "SELL", 85, "UrgOB"
+    return None, 0, ""
+
+# ════ TRADE JOURNAL (loss analysis at end of day) ════
+def journal_trade(result, a, pnl, r_mul, exit_price, sl_dist):
+    """Store every trade with full details for end-of-day analysis."""
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "direction": a.get("direction", a.get("d", "?")),
+        "entry_price": a.get("entry", a.get("e", 0)),
+        "sl": a.get("sl", 0),
+        "tp": a.get("tp", 0),
+        "exit_price": exit_price,
+        "result": result,
+        "pnl": round(pnl, 2),
+        "r_multiple": r_mul,
+        "signal_type": a.get("type", "?"),
+        "regime": a.get("regime", "?"),
+        "session": a.get("session", "?"),
+        "confidence": a.get("confidence", 0),
+        "reasons": a.get("reasons", []),
+        "sl_distance": sl_dist,
+        "daily_position": a.get("daily_position", 50),
+        "momentum": a.get("momentum", 50),
+        "range_pos": a.get("range_pos", 50),
+        "streak": a.get("streak", 0),
+    }
+    with open(JOURNAL, 'a') as f:
+        f.write(json.dumps(entry) + '\n')
+
+# ════ URGENT SIGNAL BUILDER (fire extreme conditions mid-bar) ════
+def make_urgent_signal(s, direction, confidence, reason):
+    """Build a complete signal dict for mid-bar urgent conditions."""
+    p = s.p; o = s.ohlc
+    regime, trend_strength = detect_regime(s)
+    vol_state, vol_ratio = get_vol_state(o)
+    sess, sadj = session_adj()
+    daily_raw = fetch_daily()
+    daily = daily_context(p, daily_raw)
+    cl = o.close_prices()
+    atr_v = max(calc_atr(cl, o.highs(), o.lows()), 2.0)
+    is_ct = (direction == "BUY" and daily['bearish'] and daily['position'] > 20) or \
+            (direction == "SELL" and not daily['bearish'] and daily['position'] < 80)
+    sl, tp, rr, sl_m, tp_m, atr_fire, sl_dist = compute_sl_tp(
+        atr_v, regime, p, direction, vol_state, vol_ratio, daily['daily_atr'],
+        confidence, 1, is_ct)
+    tp_dist = abs(p - tp)
+    return {
+        "d": direction, "e": p, "sl": sl, "tp": tp,
+        "confidence": confidence, "rr": rr,
+        "reasons": [reason], "n_modules": 1,
+        "type": "URGENT", "session": sess, "regime": regime,
+        "vol_state": vol_state+"+"+str(round(vol_ratio,1))+"×" if vol_state != "NORMAL" else vol_state,
+        "sl_dist": sl_dist, "tp_dist": round(tp_dist, 2),
+        "sl_label": f"~{sl_m:.1f}×ATR ${sl_dist:.1f}{' (SPIKE)' if vol_state=='SPIKING' else ''}",
+        "tp_label": f"~{tp_m:.1f}×ATR ${tp_dist:.1f}",
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
+
+# ════ INDICATORS (on 1m close prices) ════
+def calc_atr(closes, highs, lows, per=14):
+    if len(closes) < per + 1: return 4.0
+    tr = [max(highs[i-1], closes[i]) - min(lows[i-1], closes[i]) for i in range(-per, 0)]
+    return sum(tr) / per if tr else 4.0
+
+def calc_rsi(closes, per=14):
+    if len(closes) < per + 1: return 50.0
+    g = l = 0
+    for i in range(-per, 0):
+        c = closes[i] - closes[i-1]
+        if c > 0: g += c
+        else: l -= c
+    return 100.0 if l == 0 else round(100 - 100 / (1 + (g/per) / (l/per)), 1)
+
+def calc_sma(closes, per):
+    return sum(closes[-per:]) / per if len(closes) >= per else sum(closes) / len(closes)
+
+def calc_std(closes, per=14):
+    if len(closes) < per: return None
+    m = sum(closes[-per:]) / per
+    return math.sqrt(sum((x-m)**2 for x in closes[-per:]) / per)
+
+def calc_ema(closes, per):
+    if len(closes) < per: return closes[-1] if closes else 0
+    k = 2 / (per + 1)
+    ema = sum(closes[:per]) / per
+    for i in range(per, len(closes)):
+        ema = closes[i] * k + ema * (1 - k)
+    return ema
+
+def calc_macd(closes, fast=12, slow=26, signal=9):
+    if len(closes) < slow + signal: return 0, 0
+    ema_fast = calc_ema(closes, fast)
+    ema_slow = calc_ema(closes, slow)
+    macd_line = ema_fast - ema_slow
+    # Signal line = EMA of MACD over last `signal` bars
+    # Simplified: use the difference over recent bars
+    macd_vals = []
+    for i in range(len(closes)-slow, len(closes)):
+        ef = calc_ema(closes[:i+1], fast) if i+1 >= fast else 0
+        es = calc_ema(closes[:i+1], slow) if i+1 >= slow else 0
+        macd_vals.append(ef - es)
+    sig = sum(macd_vals[-signal:]) / signal if len(macd_vals) >= signal else 0
+    return macd_line, sig
+
+def calc_bb(closes, per=20, std_m=2):
+    if len(closes) < per: return 0, 0, 0
+    m = calc_sma(closes, per)
+    sd = calc_std(closes, per)
+    return m + std_m*sd, m, m - std_m*sd  # upper, middle, lower
+
+# ════ REGIME DETECTION (on 1m bars) ════
+def detect_regime(s):
+    o = s.ohlc; cl = o.close_prices(30)
+    if len(cl) < 15: return "RANGING", 0
+    hi = max(cl[-15:]); lo = min(cl[-15:])
+    bw = hi - lo
+    bb_u, bb_m, bb_l = calc_bb(cl, 20, 2)
+    bb_width = bb_u - bb_l if bb_u and bb_l else bw
+    bw_norm = bb_width / 50
+    atr = calc_atr(o.close_prices(30), o.highs(30), o.lows(30))
+    avg_atr = calc_atr(cl[:15], o.highs(15), o.lows(15)) if len(cl) >= 15 else atr
+    vol_ratio = atr / avg_atr if avg_atr > 0 else 1.0
+    if len(cl) >= 10:
+        ut = sum(1 for i in range(-5, 0) if cl[i] > cl[i-1])
+        dt = 5 - ut; dirn = abs(ut - dt) / 5
+    else: dirn = 0
+    ema20 = calc_sma(cl, min(20, len(cl)))
+    ts = abs(cl[-1] - ema20) / (bw + 0.01) if bw > 0 else 0
+    if bw_norm < 0.4 and vol_ratio < 0.9: return "SQUEEZE", ts
+    if vol_ratio > 1.4: return "VOLATILE", ts
+    if dirn > 0.6 and ts > 0.35: return "TRENDING", ts
+    return "RANGING", ts
+
+def session_adj():
+    h = datetime.now(timezone.utc).hour
+    if h < 9: return "Asia", 4
+    if h < 13: return "London", 0
+    if h < 17: return "ON", -8
+    if h < 22: return "NY", -3
+    return "Late", 2
+
+# ════ SIGNAL LIFECYCLE ════
+def load_a():
+    try:
+        with open(ACTIVE) as f:
+            d = json.load(f)
+            if d.get("active") and d.get("status") == "monitoring": return d
+    except: return None
+
+def save_a(s, sig):
+    """Save active signal for monitoring."""
+    json.dump({"active":True,"direction":s["d"],"entry":s["e"],"sl":s["sl"],"tp":s["tp"],
+               "sl_orig":s["sl"],"atr_fire":s.get("atr_fire",2.0),
+               "fired_at":s["ts"],"status":"monitoring","type":s["type"],
+               "session":s["session"],"confidence":s["confidence"],
+               "regime":s["regime"],"vol_state":s.get("vol_state","NORMAL"),
+               "reasons":s.get("reasons",[])}, open(ACTIVE,'w'), indent=2)
+    update_state_from_signal(s)  # PERSISTENT direction lock
+    log(f"⚡{s['regime']}: {s['d']} @ {s['e']} | {s['confidence']}% | R:R 1:{s['rr']}")
+
+def resolve_a(r, pnl_pct=0):
+    d = load_a()
+    if d:
+        d["status"] = r; d["active"] = False
+        d["resolved_at"] = datetime.now(timezone.utc).isoformat()
+        json.dump(d, open(ACTIVE,'w'), indent=2)
+        # Extract real reasons from the active signal — NOT empty list
+        rs = d.get("reasons", [])
+        record_result({"type":d.get("type","?"),"session":d.get("session","?"),
+                       "reasons":rs if isinstance(rs, list) else [str(rs)],
+                       "regime":d.get("regime","?"),"confidence":d.get("confidence",0)}, r, pnl_pct)
+    clear_state_on_resolve()  # Release direction lock
+
+def check_st(p, a):
+    if a["direction"] == "BUY": return "tp" if p >= a["tp"] else ("sl" if p <= a["sl"] else None)
+    return "tp" if p <= a["tp"] else ("sl" if p >= a["sl"] else None)
+
+# ════ SELF-LEARNING ════
+def load_learn():
+    try: return json.load(open(LEARN))
+    except: return {"module_perf":{},"consecutive_results":[],"last_loss_reason":""}
+
+def save_learn(d):
+    json.dump(d, open(LEARN,'w'), indent=2)
+
+def load_stats():
+    try: return json.load(open(STATS))
+    except: return {"total":0,"wins":0,"losses":0,"by_type":{},"by_session":{}}
+
+def save_stats(st):
+    json.dump(st, open(STATS,'w'), indent=2)
+
+def record_result(signal, result, pnl_pct=0):
+    st = load_stats(); ln = load_learn()
+    st["total"] += 1
+    if result == "tp": st["wins"] += 1
+    else: st["losses"] += 1
+    key = signal.get("type","?")
+    if key not in st["by_type"]: st["by_type"][key] = {"w":0,"l":0}
+    if result == "tp": st["by_type"][key]["w"] += 1
+    else: st["by_type"][key]["l"] += 1
+    sess = signal.get("session","?")
+    if sess not in st["by_session"]: st["by_session"][sess] = {"w":0,"l":0}
+    if result == "tp": st["by_session"][sess]["w"] += 1
+    else: st["by_session"][sess]["l"] += 1
+    save_stats(st)
+    
+    # Track consecutive results for streak adaptation
+    ln["consecutive_results"].append(result)
+    if len(ln["consecutive_results"]) > 20: ln["consecutive_results"] = ln["consecutive_results"][-20:]
+    loss_streak = 0; win_streak = 0
+    for r in reversed(ln["consecutive_results"]):
+        if r == "sl": loss_streak += 1; win_streak = 0
+        elif r == "tp": win_streak += 1; loss_streak = 0
+    ln["loss_streak"] = loss_streak
+    ln["win_streak"] = win_streak
+    
+    for reason in signal.get("reasons",["?",""]):
+        base = reason.split("(")[0].strip()
+        if base not in ln["module_perf"]: ln["module_perf"][base] = {"w":0,"l":0}
+        if result == "tp": ln["module_perf"][base]["w"] += 1
+        else: ln["module_perf"][base]["l"] += 1
+    if result == "sl": ln["last_loss_reason"] = " | ".join(signal.get("reasons",["?"])[:3])
+    save_learn(ln)
+    # Feed outcome to prediction engine with loss size
+    record_prediction(signal, result, pnl_pct)
+
+def winrate_key(d):
+    t = d.get("w",0) + d.get("l",0)
+    return d["w"]/t*100 if t > 0 else 50
+
+# ════ PERSISTENT STATE — survives restarts, prevents direction overlap ════
+def load_state():
+    try: return json.load(open(STATE))
+    except: return {"direction":"","entry":0,"fired_at":"","resolved_at":"","sl":0,"tp":0}
+
+def save_state(d):
+    json.dump(d, open(STATE,'w'), indent=2)
+
+def is_direction_locked(dir):
+    """Check if this direction has an unresolved signal (prevents double-fire)."""
+    st = load_state()
+    if st["direction"] == dir and not st.get("resolved_at"):
+        return True  # Same direction still active
+    return False
+
+def update_state_from_signal(sig):
+    """Call after firing a signal — locks this direction."""
+    save_state({
+        "direction": sig["d"], "entry": sig["e"],
+        "sl": sig["sl"], "tp": sig["tp"],
+        "fired_at": sig["ts"], "resolved_at": ""
+    })
+
+def clear_state_on_resolve():
+    """Call when SL/TP hit — releases direction lock."""
+    st = load_state()
+    st["resolved_at"] = datetime.now(timezone.utc).isoformat()
+    save_state(st)
+
+# ════ PREDICTION ENGINE — learns from every trade, ADAPTS on repeat ════
+def load_pred():
+    try: return json.load(open(PREDICT))
+    except: return {}
+
+def save_pred(d):
+    json.dump(d, open(PREDICT,'w'), indent=2)
+
+def predict_and_adapt(sig_type, regime, session, reasons, loss_streak=0):
+    """Return (mult, sl_boost, tp_reduce) based on historical outcomes.
+    Does NOT just block — ADAPTS: wider SL, tighter TP on repeat losers.
+    An experienced trader: 'last time I saw this, it reversed. This time I'll
+    position wider and take profits faster.'"""
+    pred = load_pred()
+    key = f"{sig_type}|{regime}|{session}|{'/'.join(sorted(reasons))}"
+    data = pred.get(key, {"w":0,"l":0,"avg_loss_pct":0})
+    total = data["w"] + data["l"]
+    
+    # Not enough data → let it ride, but loss streak widens SL slightly
+    if total < 3:
+        sl_b = 1.0 + loss_streak * 0.05
+        return (1.0, sl_b, 1.0)
+    
+    tp_rate = data["w"] / total
+    
+    if tp_rate < 0.3:  # This combo mostly LOSES
+        # DON'T skip — ADAPT: wider SL (survive what killed us), tighter TP (take profit faster)
+        sl_boost = 1.3 + loss_streak * 0.08
+        tp_reduce = 0.65
+        mult = 0.0  # Only pass with very high confidence
+        return (mult, sl_boost, tp_reduce)
+    elif tp_rate < 0.6:  # Mixed results
+        sl_boost = 1.15 + loss_streak * 0.05
+        tp_reduce = 0.85
+        mult = 0.90
+        return (mult, sl_boost, tp_reduce)
+    elif tp_rate < 0.8:  # Decent
+        sl_boost = 1.0 + loss_streak * 0.03
+        tp_reduce = 1.0
+        mult = 1.0
+        return (mult, sl_boost, tp_reduce)
+    else:  # This combo wins 80%+ → boost confidence
+        sl_boost = 1.0
+        tp_reduce = 1.0
+        mult = 1.10
+        return (mult, sl_boost, tp_reduce)
+
+def record_prediction(signal, result, pnl_pct=0):
+    """Store trade outcome with loss size for smarter adaptation."""
+    pred = load_pred()
+    reasons = signal.get("reasons", [])
+    key = f"{signal.get('type','?')}|{signal.get('regime','?')}|{signal.get('session','?')}|{'/'.join(sorted(reasons))}"
+    if key not in pred: pred[key] = {"w":0,"l":0,"avg_loss_pct":0,"total_loss_pct":0}
+    if result == "tp": pred[key]["w"] += 1
+    else:
+        pred[key]["l"] += 1
+        pred[key]["total_loss_pct"] = pred[key].get("total_loss_pct",0) + abs(pnl_pct)
+        l = pred[key]["l"]
+        pred[key]["avg_loss_pct"] = pred[key]["total_loss_pct"] / l if l > 0 else 0
+    save_pred(pred)
+
+# ════ MODULES (each returns: direction(-1|0|1), confidence(0-95), reason(str)) ════
+# All modules receive (ohlc, daily) — daily context provides position in range + daily bias
+
+def daily_scale(d, daily):
+    """Naturally scale module confidence based on where price sits in the daily range + daily bias.
+    No thresholds, no blocks — just data for the module to breathe with the market."""
+    pos = daily.get("position", 50)
+    bear = daily.get("bearish", False)
+
+    if d == 1:  # BUY — buying into the market
+        if bear:
+            if pos < 15: return 1.20   # Reversal bounce at daily low — powerful
+            elif pos < 30: return 0.85  # Still in bear territory, not at extreme
+            else: return 0.65           # Buying up in a bearish day — weak
+        else:
+            if pos < 15: return 1.15    # Dip buy in an uptrend
+            elif pos > 85: return 0.75  # Chasing the top — risky
+            else: return 1.0            # Normal bullish context
+    else:  # SELL — selling into the market
+        if bear:
+            if pos > 85: return 1.20    # Selling the rip at the daily top — powerful
+            elif pos < 15: return 0.65  # Selling near the low — dangerous
+            else: return 1.0            # Normal bearish context
+        else:
+            if pos < 15: return 0.65    # Selling the dip in an uptrend — dangerous
+            elif pos > 85: return 1.15  # Reversal at the top
+            else: return 0.85           # Mildly counter-trend
+
+def m1_momentum(ohlc, daily):
+    """Detect sustained direction or acceleration on 1m bars."""
+    cl = ohlc.close_prices(6)
+    if len(cl) < 5: return 0, 0, ""
+    d = 0; c = 0; r = ""
+    if cl[-4] <= cl[-3] <= cl[-2] <= cl[-1]:
+        d = 1; c = min(abs(cl[-1]-cl[-4])*12+50, 90); r = f"Mom+({cl[-1]-cl[-4]:.2f})"
+        c = c * daily_scale(1, daily)
+    if cl[-4] >= cl[-3] >= cl[-2] >= cl[-1]:
+        d = -1; c = min(abs(cl[-4]-cl[-1])*12+50, 90); r = f"Mom-({cl[-4]-cl[-1]:.2f})"
+        c = c * daily_scale(-1, daily)
+    if len(cl) >= 8:
+        a1 = (cl[-1]-cl[-4])/4; a2 = (cl[-4]-cl[-8])/4
+        move = abs(cl[-1] - cl[-4])
+        if move >= 0.5 and a1 > 0 and a1 > abs(a2)*1.5:
+            d = 1; c = min(abs(a1)*60+50, 85) * daily_scale(1, daily); r = f"Accel+({move:.2f})"
+        if move >= 0.5 and a1 < 0 and abs(a1) > abs(a2)*1.5:
+            d = -1; c = min(abs(a1)*60+50, 85) * daily_scale(-1, daily); r = f"Accel-({move:.2f})"
+    return d, c, r
+
+def m2_rsi(ohlc, tv_rsi, daily):
+    """RSI extremes and crossovers on 1m bars, scaled by daily context."""
+    cl = ohlc.close_prices(25)
+    rsi_fast = calc_rsi(cl, 10) if len(cl) >= 11 else 50
+    rsi_slow = calc_rsi(cl, 25) if len(cl) >= 26 else 50
+    d = 0; c = 0; r = ""
+    if tv_rsi < 28: d = 1; c = 88 * daily_scale(1, daily); r = f"OS({tv_rsi:.0f})"
+    elif tv_rsi > 72: d = -1; c = 88 * daily_scale(-1, daily); r = f"OB({tv_rsi:.0f})"
+    elif tv_rsi < 33: d = 1; c = 72 * daily_scale(1, daily); r = f"RSI({tv_rsi:.0f})"
+    elif tv_rsi > 67: d = -1; c = 72 * daily_scale(-1, daily); r = f"RSI({tv_rsi:.0f})"
+    if rsi_fast > 50 and rsi_slow < 50 and cl[-1] > cl[-2] if len(cl) >= 2 else True:
+        cross_c = max(c if d == 1 else 0, 78) * daily_scale(1, daily)
+        if cross_c > c: d = 1; c = cross_c; r = "Rcross+"
+    if rsi_fast < 50 and rsi_slow > 50 and cl[-1] < cl[-2] if len(cl) >= 2 else True:
+        cross_c = max(c if d == -1 else 0, 78) * daily_scale(-1, daily)
+        if cross_c > c: d = -1; c = cross_c; r = "Rcross-"
+    return d, c, r
+
+def m3_bb(ohlc, tv_bb_u, tv_bb_l, tv_p, daily):
+    """Bollinger Band touches — a touch near daily extreme is powerful."""
+    p = tv_p; cl = ohlc.close_prices(20)
+    if tv_bb_u and tv_bb_l and tv_bb_u > tv_bb_l:
+        bb_u, bb_l, bb_m = tv_bb_u, tv_bb_l, (tv_bb_u + tv_bb_l) / 2
+    elif len(cl) >= 20:
+        bb_u, bb_m, bb_l = calc_bb(cl)
+    else: return 0, 0, ""
+    chg = cl[-1] - cl[-2] if len(cl) >= 2 else 0
+    d = 0; c = 0; r = ""
+    if bb_l and p <= bb_l * 1.005:
+        d = 1; c = 88 if chg > 0 else 68; r = f"BBL({bb_l:.0f})"
+        c = c * daily_scale(1, daily)
+    if bb_u and p >= bb_u * 0.995:
+        d = -1; c = 88 if chg < 0 else 68; r = f"BBU({bb_u:.0f})"
+        c = c * daily_scale(-1, daily)
+    # Dynamic squeeze break (no change, rare)
+    bbw = bb_u - bb_l if bb_u and bb_l else 0
+    if bbw and len(cl) >= 25:
+        all_bw = [abs(cl[i] - sum(cl[max(0,i-19):i+1])/min(20,i+1)) for i in range(10, len(cl))]
+        if all_bw:
+            recent_bw = sorted(all_bw[-15:])
+            bw_thresh = recent_bw[int(len(recent_bw)*0.2)] if len(recent_bw) > 5 else bbw * 1.5
+            if bbw < bw_thresh * 0.5 and abs(chg) > 0.3:
+                d = 1 if chg > 0 else -1; c = 75; r = "SqzBrk"
+    return d, c, r
+
+def m4_structure(ohlc, daily):
+    """Support/resistance pivots — amplified by daily position."""
+    cl = ohlc.close_prices(25); hi = ohlc.highs(25); lo = ohlc.lows(25)
+    if len(cl) < 15: return 0, 0, ""
+    d = 0; c = 0; r = ""
+    piv_h = []; piv_l = []
+    for i in range(2, min(12, len(hi)-1)):
+        if hi[i] > hi[i-1] and hi[i] > hi[i+1]: piv_h.append(hi[i])
+        if lo[i] < lo[i-1] and lo[i] < lo[i+1]: piv_l.append(lo[i])
+    p = cl[-1]
+    for pl in piv_l:
+        if abs(p - pl) < 0.5 and cl[-1] > cl[-2]:
+            d = 1; c = 82 * daily_scale(1, daily); r = f"Sup({pl:.0f})"; break
+    if d == 0:
+        for ph in piv_h:
+            if abs(p - ph) < 0.5 and cl[-1] < cl[-2]:
+                d = -1; c = 82 * daily_scale(-1, daily); r = f"Res({ph:.0f})"; break
+    if d == 0 and piv_h:
+        nr = min(piv_h)
+        if p > nr + 0.3: d = 1; c = 72 * daily_scale(1, daily); r = f"BrkU({nr:.0f})"
+    if d == 0 and piv_l:
+        ns = max(piv_l)
+        if p < ns - 0.3: d = -1; c = 72 * daily_scale(-1, daily); r = f"BrkD({ns:.0f})"
+    return d, c, r
+
+def m5_divergence(ohlc, daily):
+    """RSI divergence with daily context."""
+    cl = ohlc.close_prices(20)
+    if len(cl) < 15: return 0, 0, ""
+    rv = [calc_rsi(cl[:i+1], 10) for i in range(max(0, len(cl)-15), len(cl))]
+    if len(rv) < 15: return 0, 0, ""
+    sp = cl[-15:]; sr = rv
+    mp = []; xp = []; mr = []; xr = []
+    for i in range(1, len(sp)-1):
+        if sp[i] < sp[i-1] and sp[i] < sp[i+1]: mp.append((i, sp[i]))
+        if sp[i] > sp[i-1] and sp[i] > sp[i+1]: xp.append((i, sp[i]))
+        if sr[i] < sr[i-1] and sr[i] < sr[i+1]: mr.append((i, sr[i]))
+        if sr[i] > sr[i-1] and sr[i] > sr[i+1]: xr.append((i, sr[i]))
+    d = 0; c = 0; r = ""
+    if len(mp) >= 2 and len(mr) >= 2 and mp[-2][1] > mp[-1][1] and mr[-2][1] < mr[-1][1]:
+        d = 1; c = min(abs(mp[-2][1]-mp[-1][1])*15, 75) * daily_scale(1, daily); r = "Div+"
+    if len(xp) >= 2 and len(xr) >= 2 and xp[-2][1] < xp[-1][1] and xr[-2][1] > xr[-1][1]:
+        d = -1; c = min(abs(xp[-2][1]-xp[-1][1])*15, 75) * daily_scale(-1, daily); r = "Div-"
+    return d, c, r
+
+def m6_patterns(ohlc, daily):
+    """3-bar patterns with daily context — overextension near daily extreme = powerful."""
+    cl = ohlc.close_prices(12)
+    if len(cl) < 8: return 0, 0, ""
+    d = 0; c = 0; r = ""
+    peak = max(cl[-10:]) if len(cl) >= 10 else cl[-1]
+    trough = min(cl[-10:]) if len(cl) >= 10 else cl[-1]
+    drop_pct = (peak - cl[-1]) / (peak + 0.01) * 100
+    rise_pct = (cl[-1] - trough) / (trough + 0.01) * 100
+
+    l3 = cl[-4:-1]
+    if all(l3[i] > l3[i+1] for i in range(len(l3)-1)):
+        d = 1
+        if drop_pct > 0.15:
+            base = min(65 + drop_pct * 50, 88)
+            if cl[-1] > cl[-2]: base = min(base + 5, 90)
+        else:
+            base = 55
+        c = base * daily_scale(1, daily)
+        r = f"3↓({drop_pct:.1f}%)"
+
+    if all(l3[i] < l3[i+1] for i in range(len(l3)-1)):
+        d = -1
+        if rise_pct > 0.15:
+            base = min(65 + rise_pct * 50, 88)
+            if cl[-1] < cl[-2]: base = min(base + 5, 90)
+        else:
+            base = 55
+        c = base * daily_scale(-1, daily)
+        r = f"3↑({rise_pct:.1f}%)"
+
+    return d, c, r
+
+def m7_stats(ohlc, daily):
+    """Z-score and percentile extremes, strengthened by daily context."""
+    cl = ohlc.close_prices(20)
+    if len(cl) < 20: return 0, 0, ""
+    m = sum(cl) / len(cl); sd = calc_std(cl, 14)
+    d = 0; c = 0; r = ""
+    if sd and sd > 0:
+        z = (cl[-1] - m) / sd
+        if z > 1.5:
+            d = -1
+            base = min(abs(z) * 28, 88)
+            c = base * daily_scale(-1, daily)
+            r = f"Z={z:.1f}"
+        elif z < -1.5:
+            d = 1
+            base = min(abs(z) * 28, 88)
+            c = base * daily_scale(1, daily)
+            r = f"Z={z:.1f}"
+    lo, hi = min(cl), max(cl)
+    if hi - lo > 0.5:
+        pt = (cl[-1]-lo)/(hi-lo)*100
+        chg = cl[-1]-cl[-2]
+        if pt > 85 and chg < 0:
+            d = -1; c = max(68, c if d == -1 else 0) * daily_scale(-1, daily); r = f"{pt:.0f}%↓"
+        elif pt < 15 and chg > 0:
+            d = 1; c = max(68, c if d == 1 else 0) * daily_scale(1, daily); r = f"{pt:.0f}%↑"
+    return d, c, r
+
+def m8_macd(ohlc, tv_macd, tv_sig, daily):
+    """MACD line vs signal line — scaled by daily context naturally."""
+    cl = ohlc.close_prices(30)
+    if tv_macd != 0 and tv_sig != 0:
+        macd_line, sig = tv_macd, tv_sig
+    elif len(cl) >= 26:
+        macd_line, sig = calc_macd(cl)
+    else: return 0, 0, ""
+    chg = cl[-1]-cl[-2] if len(cl) >= 2 else 0
+    d = 0; c = 0; r = ""
+    if macd_line > sig and chg > 0:
+        hist = abs(macd_line - sig)
+        base = min(65 + hist * 35, 85)
+        c = base * daily_scale(1, daily)
+        d = 1; r = f"MACD+({hist:.3f})"
+    elif macd_line < sig and chg < 0:
+        hist = abs(macd_line - sig)
+        base = min(65 + hist * 35, 85)
+        c = base * daily_scale(-1, daily)
+        d = -1; r = f"MACD-({hist:.3f})"
+    return d, c, r
+
+# ════ SL/TP CALCULATION — breathes with market ════
+def compute_sl_tp(atr_v, regime, p, direction, vol_state="NORMAL", vol_ratio=1.0, daily_atr=10.0, conf=70, agreeing_count=2, is_counter_trend=False):
+    """SL/TP that breathes with market conditions. SL scales with daily volatility.
+    Minimum SL is max(MIN_SL, daily_atr/18) so $90 daily ATR → $5 min SL."""
+
+    # Dynamic SL floor based on daily volatility (not my static $3)
+    dynamic_min_sl = max(4.0, daily_atr / 12.0)  # ~$6 for $72 ATR day
+
+    # ── SL ──
+    if regime == "SQUEEZE":
+        true_bar_atr = max(daily_atr, 10) / 140
+        sl_m = 1.2
+        sl_dist = max(atr_v * sl_m, true_bar_atr * 0.7, dynamic_min_sl)
+    else:
+        sl_m = 0.8 if regime == "RANGING" else (1.0 if regime == "TRENDING" else 1.0)
+        sl_dist = max(atr_v * sl_m, dynamic_min_sl)
+
+    # Volatility widening
+    if vol_state == "SPIKING": sl_dist *= 1.5
+    elif vol_state == "EXPANDING": sl_dist *= 1.2
+
+    # ── TP: regime-capped, scaled by confidence and agreement ──
+    cap = {"SQUEEZE":3.0, "RANGING":4.0, "TRENDING":6.0, "VOLATILE":7.0}.get(regime, 4.0)
+    conf_boost = max(0, conf - 60) / 40
+    aggr = agreeing_count / max(agreeing_count, 1)
+    tp_m = 1.5 + conf_boost * 1.5 + aggr * 0.5
+    if is_counter_trend:
+        tp_m *= 0.75  # Tighter TP for counter-trend (scalp, don't swing)
+    tp_m = min(max(tp_m, 1.5), cap)
+    tp_dist = atr_v * max(tp_m, 1.8)
+
+    total_sl = sl_dist + SPREAD
+    # 🔥 R:R GUARD: TP must ALWAYS exceed total SL — minimum 1:1.3, adaptive upward.
+    # TP can stretch to 1:3, 1:5, 1:10 when market allows — but NEVER below SL.
+    tp_daily_floor = max(atr_v * 1.8, daily_atr / 22.0)  # ~$4 for $90 ATR day
+    tp_dist = max(tp_dist, total_sl * 1.3, tp_daily_floor)
+    rr = round(tp_dist / total_sl, 1) if total_sl > 0 else 0
+    if direction == "BUY":
+        return round(p - sl_dist - SPREAD, 2), round(p + tp_dist, 2), rr, sl_m, tp_m, atr_v, round(total_sl, 2)
+    return round(p + sl_dist + SPREAD, 2), round(p - tp_dist, 2), rr, sl_m, tp_m, atr_v, round(total_sl, 2)
+
+def load_all_trades():
+    """Load all historical trades into memory for learning system."""
+    trades = []
+    try:
+        with open(JOURNAL) as f:
+            for line in f:
+                if line.strip():
+                    trades.append(json.loads(line))
+    except: pass
+    return trades
+
+def build_position_bins(journal_trades, direction, regime):
+    """Group historical trades by daily position range. Returns sorted list of (pos_range, win_rate, count)."""
+    # Filter to relevant direction + regime, exclude RESTORED
+    relevant = [t for t in journal_trades if t.get('direction') == direction 
+                and t.get('regime') == regime
+                and t.get('signal_type') != 'RESTORED']
+    # Also include broader regime match (e.g. RANGING matches both RANGING and ?)
+    if regime == "RANGING":
+        relevant += [t for t in journal_trades if t.get('direction') == direction 
+                     and t.get('regime') in ('?', 'RANGING')
+                     and t.get('signal_type') != 'RESTORED']
+    
+    bins = []
+    for bucket in [(0,15),(15,30),(30,50),(50,70),(70,85),(85,100)]:
+        in_bin = [t for t in relevant if bucket[0] <= (t.get('daily_position',50)) < bucket[1]]
+        if in_bin:
+            wins = sum(1 for t in in_bin if t.get('result') == 'tp')
+            bins.append((bucket, wins/len(in_bin)*100, len(in_bin)))
+    return bins
+
+def query_learning(journal_trades, direction, regime, daily_pos, session):
+    """Query historical data: given current conditions, what's the expected win rate?
+    Returns (expected_win_rate, similar_count, avg_sl_dist, avg_tp_dist)."""
+    if not journal_trades:
+        return (50.0, 0, 3.2, 0)
+    
+    # Exact match: same direction + regime + position within 15%
+    exact = [t for t in journal_trades if t.get('direction') == direction
+             and t.get('regime') in (regime, '?')
+             and abs(t.get('daily_position', 50) - daily_pos) < 15
+             and t.get('signal_type') != 'RESTORED'
+             and t.get('confidence', 0) > 0]  # only module-fired trades
+    
+    if len(exact) >= 3:
+        wins = sum(1 for t in exact if t.get('result') == 'tp')
+        wr = wins / len(exact) * 100
+        avg_sl = sum(t.get('sl_distance', 3.2) for t in exact) / len(exact)
+        avg_tp = sum(abs(t.get('tp',0) - t.get('entry_price',0)) for t in exact if t.get('tp')) / len(exact)
+        return (wr, len(exact), avg_sl, avg_tp)
+    
+    # Broader: same direction + regime
+    broad = [t for t in journal_trades if t.get('direction') == direction
+             and t.get('regime') in (regime, '?')
+             and t.get('signal_type') != 'RESTORED'
+             and t.get('confidence', 0) > 0]
+    
+    if len(broad) >= 3:
+        wins = sum(1 for t in broad if t.get('result') == 'tp')
+        wr = wins / len(broad) * 100
+        avg_sl = sum(t.get('sl_distance', 3.2) for t in broad) / len(broad)
+        avg_tp = sum(abs(t.get('tp',0) - t.get('entry_price',0)) for t in broad if t.get('tp')) / len(broad)
+        return (wr, len(broad), avg_sl, avg_tp)
+    
+    return (50.0, len(broad), 3.2, 0)
+
+# ════ ENRICHED LEARNING — 6 dimensions ════
+def compute_momentum(cl, lookback=5):
+    """0-100 momentum: 0 = max bearish, 100 = max bullish."""
+    if len(cl) < lookback + 1: return 50
+    net = 0
+    for i in range(-lookback, -1):
+        net += (cl[i] - cl[i-1]) if i - 1 >= -len(cl) else 0
+    rng = max(cl[-lookback:]) - min(cl[-lookback:]) or 0.01
+    return max(0, min(100, 50 + (net / rng) * 50))
+
+def local_range_position(cl, lookback=20):
+    """0-100: position within recent lookback bars' range."""
+    if len(cl) < lookback: return 50
+    recent = cl[-lookback:]
+    lo, hi = min(recent), max(recent)
+    return (cl[-1] - lo) / (hi - lo + 0.01) * 100
+
+def compute_streak(journal_trades):
+    """Consecutive wins (+) or losses (-)."""
+    streak = 0
+    for t in reversed(journal_trades):
+        r = t.get('result')
+        if r == 'tp':
+            if streak < 0: break
+            streak += 1
+        elif r == 'sl':
+            if streak > 0: break
+            streak -= 1
+        else:
+            break
+    return streak
+
+def bucket(val, thresholds):
+    """Return bucket index for a value given sorted thresholds list."""
+    for i, t in enumerate(thresholds):
+        if val < t: return i
+    return len(thresholds)
+
+MOM_TH = [33, 67]   # low / mid / high
+POS_TH = [25, 50, 75]  # low / mid-low / mid-high / high
+STR_TH = [-1, 1, 4]    # losing / neutral / winning-streak / hot
+
+def query_learning6(journal_trades, direction, regime, daily_pos, session, momentum, range_pos, streak):
+    """6-dimension learning: find similar trades across all dimensions.
+    Progressive relaxation: exact → drop momentum → drop range → broad → default."""
+    if not journal_trades: return (50.0, 0, {})
+    
+    # Build feature vector
+    features = {
+        'direction': direction, 'regime': regime,
+        'dp_bucket': bucket(daily_pos, [15, 35, 65, 85]),  # 0-4
+        'mom_bucket': bucket(momentum, MOM_TH),   # 0-2
+        'rp_bucket': bucket(range_pos, POS_TH),    # 0-3
+        'str_bucket': bucket(streak, STR_TH),      # 0-3
+        'session': session,
+    }
+    
+    # Relaxation levels
+    filters = [
+        # Exact (narrowest)
+        lambda t: t.get('direction') == direction
+            and t.get('regime') in (regime, '?')
+            and bucket(t.get('daily_position',50), [15, 35, 65, 85]) == features['dp_bucket']
+            and bucket(t.get('momentum',50), MOM_TH) == features['mom_bucket']
+            and bucket(t.get('range_pos',50), POS_TH) == features['rp_bucket']
+            and bucket(t.get('streak',0), STR_TH) == features['str_bucket']
+            and t.get('signal_type') != 'RESTORED' and t.get('confidence',0) > 0,
+        # Drop momentum
+        lambda t: t.get('direction') == direction
+            and t.get('regime') in (regime, '?')
+            and bucket(t.get('daily_position',50), [15, 35, 65, 85]) == features['dp_bucket']
+            and bucket(t.get('range_pos',50), POS_TH) == features['rp_bucket']
+            and t.get('signal_type') != 'RESTORED' and t.get('confidence',0) > 0,
+        # Drop range_pos too
+        lambda t: t.get('direction') == direction
+            and t.get('regime') in (regime, '?')
+            and bucket(t.get('daily_position',50), [15, 35, 65, 85]) == features['dp_bucket']
+            and t.get('signal_type') != 'RESTORED' and t.get('confidence',0) > 0,
+        # Direction + regime only (broad)
+        lambda t: t.get('direction') == direction
+            and t.get('regime') in (regime, '?')
+            and t.get('signal_type') != 'RESTORED' and t.get('confidence',0) > 0,
+    ]
+    
+    for f in filters:
+        matches = [t for t in journal_trades if f(t)]
+        if len(matches) >= 3:
+            wins = sum(1 for t in matches if t.get('result') == 'tp')
+            wr = wins / len(matches) * 100
+            return (wr, len(matches), features)
+    
+    return (50.0, 0, features)
+
+def analyze(s, journal_trades=None):
+    p = s.p; o = s.ohlc; cl = o.close_prices(); tv_rsi = s.raw.get("RSI", 50) or 50
+    if p == 0 or not cl: return None
+    atr_v = max(calc_atr(cl, o.highs(), o.lows()), 2.0)
+    sess, sadj = session_adj()
+    regime, trend_strength = detect_regime(s)
+
+    # DAILY CONTEXT
+    daily_raw = fetch_daily()
+    daily = daily_context(p, daily_raw)
+    log(f"  📅 Daily: ${daily['low']:.0f}-${daily['high']:.0f} | pos={daily['position']:.0f}% | {'🐻' if daily['bearish'] else '🐂'}{daily['rsi']:.0f}")
+
+    # Run all 8 modules — they return raw patterns, no artificial confidence
+    modules = [
+        ("M1", *m1_momentum(o, daily)),
+        ("M2", *m2_rsi(o, tv_rsi, daily)),
+        ("M3", *m3_bb(o, s.raw.get("BB.upper",0) or 0, s.raw.get("BB.lower",0) or 0, p, daily)),
+        ("M4", *m4_structure(o, daily)),
+        ("M5", *m5_divergence(o, daily)),
+        ("M6", *m6_patterns(o, daily)),
+        ("M7", *m7_stats(o, daily)),
+        ("M8", *m8_macd(o, s.raw.get("MACD.macd",0) or 0, s.raw.get("MACD.signal",0) or 0, daily)),
+    ]
+    active = [(n, d, c, r) for n, d, c, r in modules if d != 0]
+    if not active: return None
+
+    # Regime-weighted voting to determine direction
+    w_map = {
+        "SQUEEZE": {"M1":0.20,"M2":0.10,"M3":0.25,"M4":0.05,"M5":0.05,"M6":0.10,"M7":0.10,"M8":0.15},
+        "TRENDING": {"M1":0.25,"M2":0.10,"M3":0.05,"M4":0.15,"M5":0.05,"M6":0.10,"M7":0.10,"M8":0.20},
+        "VOLATILE": {"M1":0.15,"M2":0.20,"M3":0.10,"M4":0.05,"M5":0.15,"M6":0.05,"M7":0.10,"M8":0.20},
+        "RANGING": {"M1":0.10,"M2":0.20,"M3":0.20,"M4":0.05,"M5":0.10,"M6":0.10,"M7":0.10,"M8":0.15},
+    }
+    w = w_map.get(regime, w_map["RANGING"])
+    tw = sum(w.get(n, 0.10) for n, d, c, r in active)
+    bv = sum(w.get(n, 0.10) * (c/100) for n, d, c, r in active if d == 1)
+    sv = sum(w.get(n, 0.10) * (c/100) for n, d, c, r in active if d == -1)
+    bp = bv / tw * 100 if tw > 0 else 0
+    sp = sv / tw * 100 if tw > 0 else 0
+
+    # Signal type label (from highest-priority active module)
+    priority = ["M5","M4","M1","M2","M7","M3","M6","M8"]
+    sig_label = "ENSEMBLE"
+    for pn in priority:
+        for n, d, c, r in active:
+            if n == pn:
+                if pn == "M5": sig_label = "DIVERGENCE"
+                elif pn == "M4" and "Brk" in r: sig_label = "BREAKOUT"
+                elif pn == "M1": sig_label = "MOMENTUM"
+                elif pn == "M2" and ("OS" in r or "OB" in r): sig_label = "EXTREME"
+                elif pn == "M7" and "Z=" in r: sig_label = "STAT"
+                break
+        if sig_label != "ENSEMBLE": break
+
+    # Determine direction from voting (no threshold — modules determine direction naturally)
+    direction = "BUY" if bp >= sp else ("SELL" if sp > bp else None)
+    if not direction: return None
+    final_conf_raw = max(bp, sp)
+    reasons = [r for n, d, c, r in active if d == (1 if direction == "BUY" else -1)]
+
+    # ── LEARNING SYSTEM: 6-dimension query ──
+    all_trades = journal_trades if journal_trades is not None else load_all_trades()
+    mom = compute_momentum(cl, 5)
+    rp = local_range_position(cl, 20)
+    streak_val = compute_streak(all_trades)
+    wr, n_similar, features = query_learning6(all_trades, direction, regime, daily['position'],
+                                               sess, mom, rp, streak_val)
+
+    # Log enriched features
+    mom_label = ["⬇️","~","⬆️"][bucket(mom, MOM_TH)]
+    rp_label = ["⬇️low","↘️","↗️","⬆️high"][bucket(rp, POS_TH)]
+    str_label = ["🔥","0","🔥","🔥🔥"][bucket(streak_val, STR_TH)]
+    log(f"  📖 Learn: {direction} {regime} {sess} | mom={mom_label}{mom:.0f} rp={rp_label}{rp:.0f} str={str_label}{streak_val:+d} | hist_wr={wr:.0f}% (n={n_similar})")
+    if n_similar >= 3 and wr < 20:
+        log(f"  🧠 Learned: this exact combo {wr:.0f}% in {n_similar} trades → SKIP")
+        return None
+
+    # Final confidence: use module raw confidence, NOT artificial bootstrap
+    if n_similar >= 3:
+        final_conf = min(max(wr, 10), 92)
+    elif n_similar >= 1:
+        final_conf = 50  # Some data → cautiously try
+    else:
+        final_conf = final_conf_raw  # No data — use module raw confidence, don't inflate
+
+    # DIRECTION LOCK
+    if is_direction_locked(direction): return None
+
+    agreeing = [(n, c, r) for n, d, c, r in active if d == (1 if direction == "BUY" else -1)]
+    if len(agreeing) < 2 and final_conf < 80: return None
+    # Require 3+ agreeing modules unless very high confidence
+    if len(agreeing) < 3 and final_conf < 70: return None
+
+    # INSPECTOR
+    log(f"  📋 {sig_label} {direction} | conf={final_conf:.0f}% (learned) | {len(agreeing)}/{len(active)} modules agree | {regime}")
+    for n, d, c, r in active:
+        arrow = "▲" if d == 1 else "▼"
+        agree_tag = " ✓" if d == (1 if direction == "BUY" else -1) else ""
+        log(f"    {arrow} {n}: {c:.0f}% {r}{agree_tag}")
+
+    # ── SL/TP ──
+    vol_state, vol_ratio = get_vol_state(s.ohlc)
+    # Counter-trend based on daily context
+    is_counter_trend = (direction == "BUY" and daily['bearish'] and daily['position'] > 20) or \
+                       (direction == "SELL" and not daily['bearish'] and daily['position'] < 80)
+    sl, tp, rr, sl_m, tp_m, atr_fire, actual_sl_dist = compute_sl_tp(
+        atr_v, regime, p, direction, vol_state, vol_ratio, daily['daily_atr'],
+        final_conf, len(agreeing), is_counter_trend)
+    tp_dist = abs(p - tp)
+
+    return {
+        "d": direction, "e": p, "sl": sl, "tp": tp,
+        "confidence": round(final_conf, 1), "rr": rr,
+        "reasons": reasons[:6], "n_modules": len(agreeing),
+        "type": sig_label, "session": sess, "regime": regime,
+        "vol_state": vol_state+"+"+str(round(vol_ratio,1))+"×" if vol_state != "NORMAL" else vol_state,
+        "sl_dist": actual_sl_dist, "tp_dist": round(tp_dist, 2),
+        "atr_fire": atr_fire,
+        "sl_label": f"~{sl_m:.1f}×ATR ${actual_sl_dist:.1f}",
+        "tp_label": f"~{tp_m:.1f}×ATR ${tp_dist:.1f}",
+        "daily_position": round(daily['position'], 1),
+        "momentum": round(mom, 1),
+        "range_pos": round(rp, 1),
+        "streak": streak_val,
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
+
+# ════ SIGNAL FORMAT ════
+def fmt(s):
+    em = "🟢" if s["d"] == "BUY" else "🔴"
+    urg = " 🔥 URGENT" if s.get("type") == "URGENT" else ""
+    vol = f" | 🌊 {s.get('vol_state','NORMAL')}" if s.get("vol_state","NORMAL") != "NORMAL" else ""
+    lines = [
+        f"{em} **{'BUY' if s['d']=='BUY' else 'SELL'} XAUUSD**{urg}",
+        f"**{s['confidence']}%** | {s['n_modules']} modules | {s['type']} | {s['session']}",
+        f"**{s['regime']}**{vol} | R:R **1:{s['rr']}**",
+        "",
+        f"**Entry:** {s['e']:.2f}",
+        f"**SL:** {s['sl']} ({s['sl_label']})  **TP:** {s['tp']} ({s['tp_label']})",
+        "",
+        f"{' , '.join(s['reasons'][:5])}",
+        f"{s['ts'][11:16]} UTC",
+    ]
+    return "\n".join(lines)
+
+# ════ MAIN ════
+def main():
+    log("═══ XAUUSD v13 — 1m Analysis ═══")
+    log(f"Webhook:8888 | Spread:{SPREAD} | MinSL:{MIN_SL} | LEARNING system")
+    st = load_stats()
+    log(f"Stats: {st['total']} trades | {winrate_key(st):.0f}% WR")
+    # Load all historical trades for learning
+    journal_trades = load_all_trades()
+    log(f"Learning DB: {len(journal_trades)} trades loaded")
+    s = State()
+    # Initial warmup — collect data until scanner is providing ticks
+    for _ in range(40):
+        if s.update() and s.p > 0 and s.ck >= 10:
+            log(f"Ready: ${s.p:.2f} | {s.ck} ticks | {len(s.ohlc.bars)} bars | ATR:{calc_atr(s.ohlc.close_prices(), s.ohlc.highs(), s.ohlc.lows()):.1f}")
+            break
+        time.sleep(2)
+    else:
+        log("FAILED - no data after 80s"); sys.exit(1)
+    last_scan = time.time(); last_check = time.time(); last_log = time.time()
+
+    # Restore unresolved signal from persistent state (survives restarts)
+    st = load_state()
+    if st["direction"] and not st.get("resolved_at"):
+        # Re-create active_signal from state
+        json.dump({"active":True,"direction":st["direction"],"entry":st["entry"],
+                   "sl":st["sl"],"tp":st["tp"],"sl_orig":st["sl"],"atr_fire":2.0,
+                   "fired_at":st["fired_at"],"status":"monitoring",
+                   "type":"RESTORED","session":"?","confidence":0,
+                   "regime":"?","vol_state":"NORMAL","reasons":[]},
+                  open(ACTIVE,'w'), indent=2)
+        log(f"↻ Restored {st['direction']} @ {st['entry']} from state")
+
+    while True:
+        now = time.time()
+        if now - last_scan >= POLL:
+            s.update(); last_scan = now
+        if now - last_check < 1.0:
+            time.sleep(0.3); continue
+        last_check = now
+        a = load_a()
+        if a:
+            # ── Active signal monitoring ──
+            h = check_st(s.p, a)
+            if h:
+                em = "✅" if h == "tp" else "❌"; sg = "+" if h == "tp" else "-"
+                pnl = abs(s.p - a['entry'])
+                sl_d = abs(a['entry'] - a.get('sl_orig', a['sl']))
+                if sl_d < 0.1: sl_d = max(MIN_SL, SPREAD)
+                r_mul = round(pnl / sl_d, 1)
+                pnl_pct = round(pnl / a['entry'] * 100, 2) if a['entry'] else 0
+                journal_trade(h, a, pnl, r_mul, s.p, round(sl_d, 2))
+                tg(f"{em} **{a['direction']} @ {a['entry']}** → {h.upper()} {s.p:.2f} | {sg}${pnl:.2f} ({sg}{r_mul}R)")
+                resolve_a(h, pnl_pct)
+                log(f"{'TP' if h=='tp' else 'SL'} ${s.p:.2f} | {sg}{r_mul}R")
+                continue
+            # Just log — no trailing, no management
+            if now - last_log >= 30:
+                log(f"↻ {a['direction']} ${s.p:.2f} | {len(s.ohlc.bars)} bars")
+                last_log = now
+        else:
+            # ── 1. Mid-bar urgent check (fires immediately, no wait) ──
+            urgent = check_urgent(s.p, s.raw, s.ohlc)
+            if urgent[0] and s.raw and not is_direction_locked(urgent[0]):
+                sig = make_urgent_signal(s, *urgent)
+                json.dump(sig, open(SFILE,'w'), indent=2)
+                save_a(sig, sig)
+                tg(fmt(sig))
+                log(f"🔥 URGENT {sig['d']} @ {sig['e']} | {sig['confidence']}%")
+            # ── 2. Normal bar analysis (after 15+ ticks) ──
+            elif s.ck >= 15 and now - last_scan < 8 and s.p > 0 and s.raw:
+                sig = analyze(s, journal_trades)
+                if sig:
+                    json.dump(sig, open(SFILE,'w'), indent=2)
+                    save_a(sig, sig)
+                    tg(fmt(sig))
+                    # Inspector: log full signal detail
+                    log(f"🔥 {sig['type']} {sig['d']} @ {sig['e']} | {sig['confidence']}% | R:R 1:{sig['rr']} | "
+                        f"SL={sig['sl']} ({sig.get('sl_dist',0):.1f}) | TP={sig['tp']} ({sig.get('tp_dist',0):.1f}) | "
+                        f"ATR={sig.get('atr_fire',2.0):.1f} | {sig['regime']} | {', '.join(sig['reasons'][:4])}")
+            if now - last_log >= 30:
+                reg, ts = detect_regime(s)
+                cl_p = s.ohlc.close_prices(20)
+                bb_w = 0
+                if len(cl_p) >= 20:
+                    bb_uu, _, bb_ll = calc_bb(cl_p)
+                    bb_w = round(bb_uu - bb_ll, 1) if bb_uu and bb_ll else 0
+                log(f"Ready: ${s.p:.2f} | {reg} | RSI:{s.raw.get('RSI',0):.1f} | {len(s.ohlc.bars)} bars | BBW:{bb_w if bb_w else '?'}")
+                last_log = now
+        time.sleep(1.0 if a else 1.5)
+
+if __name__ == "__main__":
+    main()

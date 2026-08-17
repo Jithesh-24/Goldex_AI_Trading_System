@@ -1,0 +1,106 @@
+{
+ "version": 8.5,
+ "base_tf": "M5",
+ "weights": {
+  "p_win": 0.914273019915042,
+  "exp": 0.0,
+  "regime_conf": 0.03125939626218869,
+  "excursion": 0.05446758382276937
+ },
+ "threshold": 0.0,
+ "deciles": [
+  {
+   "decile": 0,
+   "lo": 0.0,
+   "hi": 10.0,
+   "n": 6198111,
+   "win_rate": 0.2057,
+   "rr_mean": 5.655,
+   "realized_exp": 0.3688
+  },
+  {
+   "decile": 1,
+   "lo": 10.0,
+   "hi": 20.0,
+   "n": 6929941,
+   "win_rate": 0.2238,
+   "rr_mean": 4.791,
+   "realized_exp": 0.296
+  },
+  {
+   "decile": 2,
+   "lo": 20.0,
+   "hi": 30.0,
+   "n": 7920432,
+   "win_rate": 0.2805,
+   "rr_mean": 3.523,
+   "realized_exp": 0.2686
+  },
+  {
+   "decile": 3,
+   "lo": 30.0,
+   "hi": 40.0,
+   "n": 6454337,
+   "win_rate": 0.3385,
+   "rr_mean": 2.603,
+   "realized_exp": 0.2198
+  },
+  {
+   "decile": 4,
+   "lo": 40.0,
+   "hi": 50.0,
+   "n": 2666334,
+   "win_rate": 0.4076,
+   "rr_mean": 2.108,
+   "realized_exp": 0.267
+  },
+  {
+   "decile": 5,
+   "lo": 50.0,
+   "hi": 60.0,
+   "n": 386915,
+   "win_rate": 0.3955,
+   "rr_mean": 3.676,
+   "realized_exp": 0.8492
+  },
+  {
+   "decile": 6,
+   "lo": 60.0,
+   "hi": 70.0,
+   "n": 182982,
+   "win_rate": 0.3974,
+   "rr_mean": 3.96,
+   "realized_exp": 0.971
+  },
+  {
+   "decile": 7,
+   "lo": 70.0,
+   "hi": 80.0,
+   "n": 100656,
+   "win_rate": 0.4384,
+   "rr_mean": 4.186,
+   "realized_exp": 1.2737
+  },
+  {
+   "decile": 8,
+   "lo": 80.0,
+   "hi": 90.0,
+   "n": 45055,
+   "win_rate": 0.4764,
+   "rr_mean": 4.361,
+   "realized_exp": 1.5543
+  },
+  {
+   "decile": 9,
+   "lo": 90.0,
+   "hi": 100.0,
+   "n": 3279,
+   "win_rate": 0.4767,
+   "rr_mean": 5.433,
+   "realized_exp": 2.0662
+  }
+ ],
+ "p_source": "calibrated OOF model probs (same scale as live engine)",
+ "note": "rating = weighted components; fire only when rating >= threshold (lowest decile with positive realized expectancy, 6yr)",
+ "built_at": 1786601259.8514261
+}

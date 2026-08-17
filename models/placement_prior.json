@@ -1,0 +1,187 @@
+{
+ "version": 8,
+ "base_tf": "M5",
+ "horizon_bars": 36,
+ "sl_pct": 0.9,
+ "tp_pct": 0.5,
+ "note": "SL beyond p90 loser-MFA; TP at p50 winner-MFE (ATR units)",
+ "built_at": 1786599784.8125777,
+ "regimes": {
+  "STRONG_UP": {
+   "BUY": {
+    "n_winners": 692294,
+    "n_losers": 1567808,
+    "sl_atr": 2.712,
+    "tp_ratio": 1.645,
+    "mfe_p50": 4.461,
+    "mfa_w_p90": 2.712,
+    "mfa_l_p90": 3.742,
+    "mfa_l_p50": 1.785
+   },
+   "SELL": {
+    "n_winners": 535768,
+    "n_losers": 1753659,
+    "sl_atr": 2.816,
+    "tp_ratio": 1.208,
+    "mfe_p50": 3.402,
+    "mfa_w_p90": 2.816,
+    "mfa_l_p90": 3.612,
+    "mfa_l_p50": 1.617
+   }
+  },
+  "UP": {
+   "BUY": {
+    "n_winners": 1167573,
+    "n_losers": 2587805,
+    "sl_atr": 2.744,
+    "tp_ratio": 1.675,
+    "mfe_p50": 4.598,
+    "mfa_w_p90": 2.744,
+    "mfa_l_p90": 3.796,
+    "mfa_l_p50": 1.79
+   },
+   "SELL": {
+    "n_winners": 906843,
+    "n_losers": 2908280,
+    "sl_atr": 2.749,
+    "tp_ratio": 1.279,
+    "mfe_p50": 3.516,
+    "mfa_w_p90": 2.749,
+    "mfa_l_p90": 3.655,
+    "mfa_l_p50": 1.675
+   }
+  },
+  "DOWN": {
+   "BUY": {
+    "n_winners": 1119669,
+    "n_losers": 2392804,
+    "sl_atr": 2.712,
+    "tp_ratio": 1.659,
+    "mfe_p50": 4.501,
+    "mfa_w_p90": 2.712,
+    "mfa_l_p90": 3.652,
+    "mfa_l_p50": 1.733
+   },
+   "SELL": {
+    "n_winners": 886415,
+    "n_losers": 2689920,
+    "sl_atr": 2.88,
+    "tp_ratio": 1.183,
+    "mfe_p50": 3.409,
+    "mfa_w_p90": 2.88,
+    "mfa_l_p90": 3.741,
+    "mfa_l_p50": 1.705
+   }
+  },
+  "STRONG_DOWN": {
+   "BUY": {
+    "n_winners": 543811,
+    "n_losers": 1066981,
+    "sl_atr": 2.591,
+    "tp_ratio": 1.653,
+    "mfe_p50": 4.284,
+    "mfa_w_p90": 2.591,
+    "mfa_l_p90": 3.607,
+    "mfa_l_p50": 1.68
+   },
+   "SELL": {
+    "n_winners": 416351,
+    "n_losers": 1221790,
+    "sl_atr": 2.899,
+    "tp_ratio": 1.094,
+    "mfe_p50": 3.172,
+    "mfa_w_p90": 2.899,
+    "mfa_l_p90": 3.631,
+    "mfa_l_p50": 1.642
+   }
+  },
+  "RANGE_TIGHT": {
+   "BUY": {
+    "n_winners": 276535,
+    "n_losers": 665691,
+    "sl_atr": 2.89,
+    "tp_ratio": 1.736,
+    "mfe_p50": 5.017,
+    "mfa_w_p90": 2.89,
+    "mfa_l_p90": 3.784,
+    "mfa_l_p50": 1.803
+   },
+   "SELL": {
+    "n_winners": 230894,
+    "n_losers": 730110,
+    "sl_atr": 2.626,
+    "tp_ratio": 1.478,
+    "mfe_p50": 3.88,
+    "mfa_w_p90": 2.626,
+    "mfa_l_p90": 3.85,
+    "mfa_l_p50": 1.787
+   }
+  },
+  "RANGE_WIDE": {
+   "BUY": {
+    "n_winners": 508942,
+    "n_losers": 1096867,
+    "sl_atr": 2.705,
+    "tp_ratio": 1.741,
+    "mfe_p50": 4.71,
+    "mfa_w_p90": 2.705,
+    "mfa_l_p90": 3.681,
+    "mfa_l_p50": 1.761
+   },
+   "SELL": {
+    "n_winners": 394331,
+    "n_losers": 1237035,
+    "sl_atr": 2.742,
+    "tp_ratio": 1.332,
+    "mfe_p50": 3.653,
+    "mfa_w_p90": 2.742,
+    "mfa_l_p90": 3.714,
+    "mfa_l_p50": 1.719
+   }
+  },
+  "HIGH_VOL": {
+   "BUY": {
+    "n_winners": 325998,
+    "n_losers": 616594,
+    "sl_atr": 2.509,
+    "tp_ratio": 1.681,
+    "mfe_p50": 4.218,
+    "mfa_w_p90": 2.509,
+    "mfa_l_p90": 3.534,
+    "mfa_l_p50": 1.701
+   },
+   "SELL": {
+    "n_winners": 244170,
+    "n_losers": 715789,
+    "sl_atr": 2.919,
+    "tp_ratio": 1.028,
+    "mfe_p50": 3.002,
+    "mfa_w_p90": 2.919,
+    "mfa_l_p90": 3.445,
+    "mfa_l_p50": 1.497
+   }
+  },
+  "QUIET_LOW_VOL": {
+   "BUY": {
+    "n_winners": 197935,
+    "n_losers": 488312,
+    "sl_atr": 2.893,
+    "tp_ratio": 1.733,
+    "mfe_p50": 5.013,
+    "mfa_w_p90": 2.893,
+    "mfa_l_p90": 3.866,
+    "mfa_l_p50": 1.839
+   },
+   "SELL": {
+    "n_winners": 164546,
+    "n_losers": 536522,
+    "sl_atr": 2.725,
+    "tp_ratio": 1.423,
+    "mfe_p50": 3.88,
+    "mfa_w_p90": 2.725,
+    "mfa_l_p90": 3.924,
+    "mfa_l_p50": 1.794
+   }
+  }
+ }
+}
