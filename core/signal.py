@@ -36,8 +36,10 @@ class SignalEngine:
             meta_cfg = json.load(f)
         self.primary_cols = meta_cfg["primary"]
         self.meta_cols = meta_cfg["meta"]
-        self.pt_mult = meta_cfg["tb_cfg"]["pt_mult"]
-        self.sl_mult = meta_cfg["tb_cfg"]["sl_mult"]
+        self.pt_mult = meta_cfg["tb_cfg_trade"]["pt_mult"]
+        self.sl_mult = meta_cfg["tb_cfg_trade"]["sl_mult"]
+        self.horizon_vol_scale = meta_cfg["horizon_vol_scale"]
+        self.max_holding = meta_cfg["max_holding"]
         self.meta_prob_threshold = meta_cfg["meta_prob_threshold"]
 
         self.primary = CatBoostClassifier()
@@ -48,9 +50,14 @@ class SignalEngine:
     def score(self, feat_row: pd.Series, close: float, vol: float,
               prob_threshold: float = None) -> Signal | None:
         """feat_row: a single row of Tier1+Tier2 features (same columns
-        build_features produces). Returns None if primary is flat or meta
-        confidence is below threshold -> no trade, stay flat."""
+        build_features produces). `vol` = raw per-bar ewma_vol (feat_row's
+        own "ewma_vol" column) -- this method applies the same
+        horizon_vol_scale*sqrt(max_holding) scaling used in training, so the
+        caller never has to remember to pre-scale it. Returns None if
+        primary is flat or meta confidence is below threshold -> no trade,
+        stay flat."""
         thresh = prob_threshold if prob_threshold is not None else self.meta_prob_threshold
+        vol = vol * self.horizon_vol_scale * (self.max_holding ** 0.5)
 
         x_primary = feat_row[self.primary_cols].to_frame().T
         proba = self.primary.predict_proba(x_primary)[0]  # [down, flat, up]

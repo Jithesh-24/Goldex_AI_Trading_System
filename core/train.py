@@ -36,10 +36,30 @@ from core.cv import PurgedWalkForwardCV
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-TB_CFG = TripleBarrierConfig(pt_mult=1.5, sl_mult=1.0, max_holding=90, min_vol=1e-6)
+# Two separate barrier configs, deliberately not shared:
+#  TB_CFG_DIR   symmetric (pt==sl) -- used ONLY to decide "which direction
+#               moved first" for the primary label. Asymmetric widths here
+#               would bias the label toward whichever side is narrower,
+#               independent of actual market direction (caught via a 400k-row
+#               calibration check: 1.5/1.0 widths gave 58.8% down vs 38.1% up
+#               even on a random slice -- a labeling artifact, not gold's
+#               real behavior; symmetric widths gave a clean ~50/50 split).
+#  TB_CFG_TRADE asymmetric (pt=1.5, sl=1.0) -- the real reward:risk structure
+#               used for the meta win/loss label AND the live TP/SL distances
+#               sent to Telegram.
+TB_CFG_DIR = TripleBarrierConfig(pt_mult=1.0, sl_mult=1.0, max_holding=90, min_vol=1e-6)
+TB_CFG_TRADE = TripleBarrierConfig(pt_mult=1.5, sl_mult=1.0, max_holding=90, min_vol=1e-6)
+# vol passed to triple_barrier_labels must be scaled to the max_holding
+# horizon (Brownian sqrt(t)), not raw per-bar vol -- raw per-bar vol made
+# barriers so tight they were touched by 1-bar noise almost immediately
+# (mean holding was 2.7 bars against a 90-bar horizon). Calibrated by
+# scanning scale in [0.15..1.0] on a 400k-row slice for a flat-class rate
+# in the low single digits with a mean holding of ~20-30 bars (a real
+# multi-minute move, not swing-length, matching "quick precise signal" intent).
+HORIZON_VOL_SCALE = 0.45
 CUSUM_K = 2.5
 N_SPLITS = 6
-EMBARGO_BARS = TB_CFG.max_holding * 2
+EMBARGO_BARS = TB_CFG_DIR.max_holding * 2
 META_PROB_THRESHOLD = 0.55  # only used at inference; kept here as the documented default
 
 
@@ -55,27 +75,34 @@ def assemble_dataset(rows: int = None):
     high = df["high"].to_numpy(dtype=np.float64)
     low = df["low"].to_numpy(dtype=np.float64)
 
-    vol = feat["ewma_vol"].to_numpy(dtype=np.float64)
+    vol = feat["ewma_vol"].to_numpy(dtype=np.float64)  # per-bar (1-minute) std of log returns
     vol_filled = np.where(np.isfinite(vol) & (vol > 0), vol, np.nanmedian(vol[np.isfinite(vol)]))
     threshold = np.clip(CUSUM_K * vol_filled * close, 1e-6, None)
     event_mask = cusum_filter(close, threshold)
 
+    # barrier widths need vol scaled to the max_holding horizon (Brownian
+    # sqrt(t) scaling) -- passing raw per-bar vol makes the barriers roughly
+    # 1 minute's worth wide against a 90-bar horizon, so they get touched by
+    # bar-to-bar noise almost immediately (this was the bug: mean holding
+    # came out to ~3 bars instead of anything close to max_holding).
+    vol_tb = vol_filled * np.sqrt(TB_CFG_DIR.max_holding) * HORIZON_VOL_SCALE
+
     feature_cols = [c for c in feat.columns if c != "time"]
     warmup_ok = feat[feature_cols].notna().all(axis=1).to_numpy()
-    horizon_ok = np.arange(len(df)) < (len(df) - TB_CFG.max_holding - 1)
+    horizon_ok = np.arange(len(df)) < (len(df) - TB_CFG_DIR.max_holding - 1)
     valid = event_mask & warmup_ok & horizon_ok
     t0_idx = np.where(valid)[0]
 
     print(f"assemble_dataset: {len(df):,} bars -> {len(t0_idx):,} CUSUM events "
           f"({len(t0_idx) / len(df) * 100:.1f}% of bars), {len(feature_cols)} features")
-    return feat, close, high, low, vol, t0_idx, feature_cols
+    return feat, close, high, low, vol_tb, t0_idx, feature_cols
 
 
 def train_primary_oof(feat, close, high, low, vol, t0_idx, feature_cols):
     """Purged walk-forward OOF primary predictions, needed to build honest
     meta-labels (using the primary's actual generalization behavior, not its
     in-sample fit, which would make the meta stage trivially overfit)."""
-    labels = triple_barrier_labels(close, high, low, t0_idx, vol, TB_CFG, side=None)
+    labels = triple_barrier_labels(close, high, low, t0_idx, vol, TB_CFG_DIR, side=None)
     y = labels["label"].to_numpy()  # -1/0/1
     y_cat = y + 1  # catboost wants 0..2
     t1 = labels["t1"].to_numpy()
@@ -120,7 +147,7 @@ def build_meta_labels(close, high, low, vol, t0_idx_arr, oof_pred, has_oof):
     fired = has_oof & (oof_pred != 1)
     side = np.where(oof_pred[fired] == 2, 1.0, -1.0)  # class 2=up(+1), class 0=down(-1)
     t0_sub = t0_idx_arr[fired]
-    meta_labels = triple_barrier_labels(close, high, low, t0_sub, vol, TB_CFG, side=side)
+    meta_labels = triple_barrier_labels(close, high, low, t0_sub, vol, TB_CFG_TRADE, side=side)
     return fired, side, meta_labels
 
 
@@ -148,8 +175,12 @@ def train_final_models(X, y_cat, feature_cols, fired, side, meta_labels, out_dir
     meta_cols = feature_cols + ["assumed_side"]
     with open(os.path.join(out_dir, "feature_cols.json"), "w") as f:
         json.dump({"primary": feature_cols, "meta": meta_cols,
-                   "tb_cfg": TB_CFG.__dict__, "cusum_k": CUSUM_K,
-                   "meta_prob_threshold": META_PROB_THRESHOLD}, f, indent=2)
+                   "tb_cfg_dir": TB_CFG_DIR.__dict__, "tb_cfg_trade": TB_CFG_TRADE.__dict__,
+                   # signal.py's TP/SL formula uses tb_cfg_trade's pt_mult/sl_mult against
+                   # vol that's ALREADY *sqrt(max_holding)*HORIZON_VOL_SCALE -- live engine
+                   # must apply the same scaling to raw per-bar vol before calling score().
+                   "horizon_vol_scale": HORIZON_VOL_SCALE, "max_holding": TB_CFG_TRADE.max_holding,
+                   "cusum_k": CUSUM_K, "meta_prob_threshold": META_PROB_THRESHOLD}, f, indent=2)
 
     print(f"saved primary.cbm, meta.cbm, feature_cols.json -> {out_dir}")
     print(f"meta training set: {len(X_meta):,} rows, win rate {y_meta.mean():.3f} "

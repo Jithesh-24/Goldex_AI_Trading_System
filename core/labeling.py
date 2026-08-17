@@ -121,8 +121,11 @@ def triple_barrier_labels(close: np.ndarray, high: np.ndarray, low: np.ndarray,
     close/high/low: full bar arrays (float64), same length, aligned.
     t0_idx: int array of event indices to label (e.g. from cusum_filter, or
         np.arange(len(close)) for "label every bar").
-    vol: per-bar causal volatility estimate, same length as close, in RETURN
-        units (e.g. ewma_vol of log returns) — barrier widths are
+    vol: causal volatility estimate, same length as close, in RETURN units,
+        ALREADY SCALED to the cfg.max_holding horizon (e.g.
+        ewma_vol(returns) * sqrt(max_holding) — per-bar vol alone makes
+        barriers only ~1-bar wide against a multi-bar horizon, so they get
+        touched by noise almost immediately). Barrier widths are
         pt_mult*vol[t0] and sl_mult*vol[t0], so barriers adapt to current
         volatility instead of a fixed dollar/pip amount.
     side: optional array (len == t0_idx), +1 (long) / -1 (short) per event.
