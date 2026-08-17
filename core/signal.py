@@ -47,25 +47,28 @@ class SignalEngine:
         self.meta = CatBoostClassifier()
         self.meta.load_model(os.path.join(model_dir, "meta.cbm"))
 
-    def score(self, feat_row: pd.Series, close: float, vol: float,
+    def score(self, feat_row: pd.Series, close: float, vol: float, is_cusum_event: bool,
               prob_threshold: float = None) -> Signal | None:
         """feat_row: a single row of Tier1+Tier2 features (same columns
         build_features produces). `vol` = raw per-bar ewma_vol (feat_row's
         own "ewma_vol" column) -- this method applies the same
         horizon_vol_scale*sqrt(max_holding) scaling used in training, so the
-        caller never has to remember to pre-scale it. Returns None if
-        primary is flat or meta confidence is below threshold -> no trade,
-        stay flat."""
+        caller never has to remember to pre-scale it. `is_cusum_event` = has
+        the live CUSUM filter (same threshold as training: cusum_k *
+        ewma_vol * close) fired on this bar -- primary is binary (up/down,
+        no flat class) so the event gate is the ONLY "is there an
+        opportunity at all" check; call this only when it's True. Returns
+        None if no event, or meta confidence is below threshold -> no
+        trade, stay flat."""
+        if not is_cusum_event:
+            return None
         thresh = prob_threshold if prob_threshold is not None else self.meta_prob_threshold
         vol = vol * self.horizon_vol_scale * (self.max_holding ** 0.5)
 
         x_primary = feat_row[self.primary_cols].to_frame().T
-        proba = self.primary.predict_proba(x_primary)[0]  # [down, flat, up]
+        proba = self.primary.predict_proba(x_primary)[0]  # [down, up]
         cls = int(np.argmax(proba))
-        if cls == 1:
-            return None  # flat -> no directional opportunity
-
-        side = 1 if cls == 2 else -1
+        side = 1 if cls == 1 else -1
         primary_proba = float(proba[cls])
 
         x_meta = feat_row[self.primary_cols].copy()

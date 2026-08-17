@@ -1,22 +1,54 @@
 """
 Full training pipeline: raw M1 -> Tier1/Tier2 features -> CUSUM event
-sampling -> triple-barrier primary direction labels -> purged walk-forward
-OOF primary training -> meta-labeling (precision filter) -> final models.
+sampling -> triple-barrier direction labels -> purged walk-forward OOF
+primary training -> meta-labeling (precision filter) -> final models.
 
-Two-stage architecture (de Prado ch. 3):
-  PRIMARY  : recall-leaning direction classifier. 3-class (short/flat/long),
-             answers "is there a directional opportunity here at all".
-  META     : precision classifier, trained ONLY on rows where the primary's
-             own out-of-fold prediction fired (non-flat), target = did the
-             barrier in that assumed direction actually pay off (win) before
-             the adverse side. Answers "of the opportunities primary found,
-             which are precise enough to act on" — this is the filter that
-             kills "confident but wrong" signals from the old system.
+Two-stage architecture:
+  EVENT GATE : CUSUM filter -- only bars with a statistically significant
+               cumulative move become candidate rows at all. This is the
+               "is there an opportunity" recall gate (the old 3-class
+               primary's flat/no-flat role, moved here after finding the
+               vertical-timeout ("truly nothing happened") outcome is only
+               ~3-5% of CUSUM events -- CUSUM itself already screens out
+               almost all the "nothing happened" bars, so a 3rd flat class
+               downstream just adds a near-empty, hard-to-learn class).
+  PRIMARY    : binary direction classifier (up vs down) on CUSUM events.
+  META       : precision classifier, trained on the primary's own
+               out-of-fold predictions (never in-sample fit, which would
+               make the meta stage trivially overfit), target = did the
+               barrier in that assumed direction pay off (win) before the
+               adverse side. Answers "of primary's calls, which are precise
+               enough to act on" -- the filter that kills "confident but
+               wrong" signals.
 
-Live signal = primary fires a side AND meta P(win) exceeds a threshold.
+Live signal = primary's side AND meta P(win) exceeds a threshold.
 TP/SL prices are read straight off the same vol-scaled barrier widths used
 to build the labels, so what gets sent to Telegram is exactly what the
 model was scored against, not a separate hand-tuned distance.
+
+Calibration notes (found via diagnostic checks before landing on these
+defaults, not guesses):
+  - Barrier width MUST be horizon-scaled (vol * sqrt(max_holding) * scale),
+    not raw per-bar vol -- raw per-bar vol made barriers so tight they were
+    touched by 1-bar noise almost immediately (mean holding ~2.7 bars
+    against a 90-bar horizon).
+  - Direction label barriers MUST be symmetric (pt==sl) -- asymmetric
+    widths bias "which side touched first" toward whichever barrier is
+    narrower, independent of real market direction (caught a spurious
+    58.8%/38.1% down/up split this way that vanished under symmetric
+    widths).
+  - The real edge here is short-horizon mean-reversion after a CUSUM spike:
+    a trivial "bet against the last 5min move" rule beats "bet with it" in
+    every year 2020-2026 (52.0% -> 50.1%, decaying -- real but thin and
+    getting arbitraged away over time). Edge is stronger at shorter holding
+    horizons (15 bars: 51.4% vs 180 bars: 50.7%); max_holding=45 is a
+    balance between edge strength and a holding period a human can actually
+    react to and manage (~10-15min average).
+  - GBDT with only continuous return features UNDERPERFORMED that trivial
+    rule (histogram binning can't reproduce an exact zero-threshold split
+    as precisely as sign() does) -- fixed by adding explicit sign_ret_*
+    features (see core/features.py) and switching to early-stopped binary
+    Logloss instead of a 3-class softmax over a near-empty flat class.
 
 Run: python3 -m core.train [--rows N] [--out-dir models]
 """
@@ -27,7 +59,7 @@ import time
 
 import numpy as np
 import pandas as pd
-from catboost import CatBoostClassifier, Pool
+from catboost import CatBoostClassifier
 
 from core.data import load_raw_m1
 from core.features import build_features
@@ -36,36 +68,36 @@ from core.cv import PurgedWalkForwardCV
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Two separate barrier configs, deliberately not shared:
-#  TB_CFG_DIR   symmetric (pt==sl) -- used ONLY to decide "which direction
-#               moved first" for the primary label. Asymmetric widths here
-#               would bias the label toward whichever side is narrower,
-#               independent of actual market direction (caught via a 400k-row
-#               calibration check: 1.5/1.0 widths gave 58.8% down vs 38.1% up
-#               even on a random slice -- a labeling artifact, not gold's
-#               real behavior; symmetric widths gave a clean ~50/50 split).
-#  TB_CFG_TRADE asymmetric (pt=1.5, sl=1.0) -- the real reward:risk structure
-#               used for the meta win/loss label AND the live TP/SL distances
-#               sent to Telegram.
-TB_CFG_DIR = TripleBarrierConfig(pt_mult=1.0, sl_mult=1.0, max_holding=90, min_vol=1e-6)
-TB_CFG_TRADE = TripleBarrierConfig(pt_mult=1.5, sl_mult=1.0, max_holding=90, min_vol=1e-6)
-# vol passed to triple_barrier_labels must be scaled to the max_holding
-# horizon (Brownian sqrt(t)), not raw per-bar vol -- raw per-bar vol made
-# barriers so tight they were touched by 1-bar noise almost immediately
-# (mean holding was 2.7 bars against a 90-bar horizon). Calibrated by
-# scanning scale in [0.15..1.0] on a 400k-row slice for a flat-class rate
-# in the low single digits with a mean holding of ~20-30 bars (a real
-# multi-minute move, not swing-length, matching "quick precise signal" intent).
+TB_CFG_DIR = TripleBarrierConfig(pt_mult=1.0, sl_mult=1.0, max_holding=45, min_vol=1e-6)
+TB_CFG_TRADE = TripleBarrierConfig(pt_mult=1.5, sl_mult=1.0, max_holding=45, min_vol=1e-6)
 HORIZON_VOL_SCALE = 0.45
 CUSUM_K = 2.5
 N_SPLITS = 6
 EMBARGO_BARS = TB_CFG_DIR.max_holding * 2
 META_PROB_THRESHOLD = 0.55  # only used at inference; kept here as the documented default
 
+CATBOOST_KW = dict(depth=4, iterations=2000, learning_rate=0.02, l2_leaf_reg=15,
+                    loss_function="Logloss", random_seed=42, verbose=False,
+                    thread_count=-1, early_stopping_rounds=100)
+VAL_FRACTION = 0.15  # chronological tail slice of each fold's TRAIN set, for early stopping
+
+
+def _fit_with_early_stopping(X, y, train_pos):
+    """Carve the tail VAL_FRACTION of `train_pos` (already chronological)
+    as an early-stopping validation set -- still causal, no test-fold data
+    involved, just prevents the fit from running past where it stops
+    generalizing on this particular training window."""
+    cut = int(len(train_pos) * (1 - VAL_FRACTION))
+    tr, va = train_pos[:cut], train_pos[cut:]
+    model = CatBoostClassifier(**CATBOOST_KW)
+    model.fit(X.iloc[tr], y.iloc[tr], eval_set=(X.iloc[va], y.iloc[va]))
+    return model
+
 
 def assemble_dataset(rows: int = None):
-    """Returns (feat_df, close/high/low arrays, event t0_idx). `rows` caps to
-    the most recent N raw M1 bars for a fast dry run."""
+    """Returns (feat_df, close/high/low arrays, horizon-scaled vol, event
+    t0_idx, feature_cols). `rows` caps to the most recent N raw M1 bars for
+    a fast dry run."""
     df = load_raw_m1()
     if rows:
         df = df.tail(rows).reset_index(drop=True)
@@ -80,11 +112,6 @@ def assemble_dataset(rows: int = None):
     threshold = np.clip(CUSUM_K * vol_filled * close, 1e-6, None)
     event_mask = cusum_filter(close, threshold)
 
-    # barrier widths need vol scaled to the max_holding horizon (Brownian
-    # sqrt(t) scaling) -- passing raw per-bar vol makes the barriers roughly
-    # 1 minute's worth wide against a 90-bar horizon, so they get touched by
-    # bar-to-bar noise almost immediately (this was the bug: mean holding
-    # came out to ~3 bars instead of anything close to max_holding).
     vol_tb = vol_filled * np.sqrt(TB_CFG_DIR.max_holding) * HORIZON_VOL_SCALE
 
     feature_cols = [c for c in feat.columns if c != "time"]
@@ -98,78 +125,70 @@ def assemble_dataset(rows: int = None):
     return feat, close, high, low, vol_tb, t0_idx, feature_cols
 
 
-def train_primary_oof(feat, close, high, low, vol, t0_idx, feature_cols):
-    """Purged walk-forward OOF primary predictions, needed to build honest
-    meta-labels (using the primary's actual generalization behavior, not its
-    in-sample fit, which would make the meta stage trivially overfit)."""
+def label_events(close, high, low, vol, t0_idx, feature_cols, feat):
+    """Symmetric direction labels, vertical-timeout (flat) events dropped --
+    CUSUM already screens for "something happened"; keeping a near-empty
+    3rd class just makes the classifier harder to fit for no benefit."""
     labels = triple_barrier_labels(close, high, low, t0_idx, vol, TB_CFG_DIR, side=None)
-    y = labels["label"].to_numpy()  # -1/0/1
-    y_cat = y + 1  # catboost wants 0..2
+    y = labels["label"].to_numpy()
     t1 = labels["t1"].to_numpy()
+    nz = y != 0
+    t0_nz = t0_idx[nz]
+    y_bin = pd.Series((y[nz] == 1).astype(np.int64)).reset_index(drop=True)  # 1=up, 0=down
+    t0 = pd.Series(t0_nz).reset_index(drop=True)
+    t1_nz = pd.Series(t1[nz]).reset_index(drop=True)
+    X = feat.loc[t0_nz, feature_cols].reset_index(drop=True)
+    print(f"label_events: {len(t0_idx):,} events -> {len(t0_nz):,} directional "
+          f"({(~nz).mean() * 100:.1f}% dropped as vertical-timeout flat)")
+    return X, y_bin, t0, t1_nz, t0_nz
 
-    X = feat.loc[t0_idx, feature_cols].reset_index(drop=True)
-    y_cat = pd.Series(y_cat).reset_index(drop=True)
-    t0 = pd.Series(t0_idx).reset_index(drop=True)
-    t1 = pd.Series(t1).reset_index(drop=True)
 
+def train_primary_oof(X, y_bin, t0, t1):
+    """Purged walk-forward OOF primary predictions."""
     cv = PurgedWalkForwardCV(n_splits=N_SPLITS, embargo_bars=EMBARGO_BARS)
     oof_pred = np.full(len(X), -1, dtype=np.int64)
-    oof_proba = np.full((len(X), 3), np.nan, dtype=np.float64)
+    oof_proba = np.full(len(X), np.nan, dtype=np.float64)
     fold_metrics = []
 
     for fold, (train_pos, test_pos) in enumerate(cv.split(t0.to_numpy(), t1.to_numpy())):
-        model = CatBoostClassifier(
-            iterations=400, depth=6, learning_rate=0.05, loss_function="MultiClass",
-            class_weights=[1.0, 1.0, 1.0], random_seed=42, verbose=False,
-            thread_count=-1,
-        )
-        model.fit(X.iloc[train_pos], y_cat.iloc[train_pos])
-        proba = model.predict_proba(X.iloc[test_pos])
-        pred = proba.argmax(axis=1)
+        model = _fit_with_early_stopping(X, y_bin, train_pos)
+        proba = model.predict_proba(X.iloc[test_pos])[:, 1]
+        pred = (proba >= 0.5).astype(np.int64)
         oof_pred[test_pos] = pred
         oof_proba[test_pos] = proba
 
-        acc = (pred == y_cat.iloc[test_pos].to_numpy()).mean()
-        fired = pred != 1  # not-flat
-        fired_acc = (pred[fired] == y_cat.iloc[test_pos].to_numpy()[fired]).mean() if fired.sum() else float("nan")
+        acc = (pred == y_bin.iloc[test_pos].to_numpy()).mean()
         fold_metrics.append({"fold": fold, "n_train": len(train_pos), "n_test": len(test_pos),
-                              "acc": acc, "fire_rate": fired.mean(), "fired_acc": fired_acc})
+                              "acc": acc, "best_iter": model.get_best_iteration()})
         print(f"  fold {fold}: train={len(train_pos):,} test={len(test_pos):,} "
-              f"acc={acc:.3f} fire_rate={fired.mean():.3f} fired_acc={fired_acc:.3f}")
+              f"acc={acc:.4f} best_iter={model.get_best_iteration()}")
 
     has_oof = oof_pred >= 0
-    return X, y_cat, t0, t1, oof_pred, oof_proba, has_oof, fold_metrics
+    return oof_pred, oof_proba, has_oof, fold_metrics
 
 
-def build_meta_labels(close, high, low, vol, t0_idx_arr, oof_pred, has_oof):
-    """side = primary's OOF direction (+1/-1), only for rows it actually fired
-    on (non-flat). Meta target = did that side's TP hit before its SL."""
-    fired = has_oof & (oof_pred != 1)
-    side = np.where(oof_pred[fired] == 2, 1.0, -1.0)  # class 2=up(+1), class 0=down(-1)
-    t0_sub = t0_idx_arr[fired]
+def build_meta_labels(close, high, low, vol, t0_nz, oof_pred, has_oof):
+    """side = primary's OOF direction (+1/-1). Meta target = did that side's
+    TP hit before its SL, using the asymmetric TRADE config (real reward:risk
+    structure, not the symmetric one used to determine direction)."""
+    side = np.where(oof_pred[has_oof] == 1, 1.0, -1.0)
+    t0_sub = t0_nz[has_oof]
     meta_labels = triple_barrier_labels(close, high, low, t0_sub, vol, TB_CFG_TRADE, side=side)
-    return fired, side, meta_labels
+    return has_oof, side, meta_labels
 
 
-def train_final_models(X, y_cat, feature_cols, fired, side, meta_labels, out_dir):
+def train_final_models(X, y_bin, t0, has_oof, side, meta_labels, feature_cols, out_dir):
     os.makedirs(out_dir, exist_ok=True)
+    all_pos = np.arange(len(X))
 
-    primary_final = CatBoostClassifier(
-        iterations=600, depth=6, learning_rate=0.05, loss_function="MultiClass",
-        random_seed=42, verbose=False, thread_count=-1,
-    )
-    primary_final.fit(X, y_cat)
+    primary_final = _fit_with_early_stopping(X, y_bin, all_pos)
     primary_final.save_model(os.path.join(out_dir, "primary.cbm"))
 
-    X_meta = X.loc[fired].reset_index(drop=True)
+    X_meta = X.loc[has_oof].reset_index(drop=True)
     X_meta["assumed_side"] = side
-    y_meta = meta_labels["label"].to_numpy()
+    y_meta = pd.Series(meta_labels["label"].to_numpy())
 
-    meta_final = CatBoostClassifier(
-        iterations=500, depth=5, learning_rate=0.05, loss_function="Logloss",
-        random_seed=42, verbose=False, thread_count=-1,
-    )
-    meta_final.fit(X_meta, y_meta)
+    meta_final = _fit_with_early_stopping(X_meta, y_meta, np.arange(len(X_meta)))
     meta_final.save_model(os.path.join(out_dir, "meta.cbm"))
 
     meta_cols = feature_cols + ["assumed_side"]
@@ -196,23 +215,24 @@ def main():
 
     t_start = time.time()
     feat, close, high, low, vol, t0_idx, feature_cols = assemble_dataset(rows=args.rows)
+    X, y_bin, t0, t1, t0_nz = label_events(close, high, low, vol, t0_idx, feature_cols, feat)
 
-    print("\n== primary OOF training (purged walk-forward) ==")
-    X, y_cat, t0, t1, oof_pred, oof_proba, has_oof, fold_metrics = train_primary_oof(
-        feat, close, high, low, vol, t0_idx, feature_cols)
+    print("\n== primary OOF training (purged walk-forward, binary direction) ==")
+    oof_pred, oof_proba, has_oof, fold_metrics = train_primary_oof(X, y_bin, t0, t1)
+    mean_oof_acc = np.mean([f["acc"] for f in fold_metrics])
+    print(f"mean OOF accuracy: {mean_oof_acc:.4f}")
 
     print("\n== building meta-labels from primary OOF ==")
-    fired, side, meta_labels = build_meta_labels(close, high, low, vol, t0_idx, oof_pred, has_oof)
-    print(f"primary fired on {fired.sum():,}/{has_oof.sum():,} OOF rows "
-          f"({fired.sum() / max(has_oof.sum(), 1) * 100:.1f}%)")
+    has_oof, side, meta_labels = build_meta_labels(close, high, low, vol, t0_nz, oof_pred, has_oof)
+    print(f"meta training set size: {has_oof.sum():,}")
 
     print("\n== final model fit (full data) ==")
-    train_final_models(X, y_cat, feature_cols, fired, side, meta_labels, args.out_dir)
+    train_final_models(X, y_bin, t0, has_oof, side, meta_labels, feature_cols, args.out_dir)
 
     summary = {
-        "n_bars": int(len(feat)), "n_events": int(len(t0_idx)),
-        "fold_metrics": fold_metrics,
-        "n_fired_oof": int(fired.sum()), "n_oof": int(has_oof.sum()),
+        "n_bars": int(len(feat)), "n_events": int(len(t0_idx)), "n_directional": int(len(X)),
+        "fold_metrics": fold_metrics, "mean_oof_acc": float(mean_oof_acc),
+        "n_meta_train": int(has_oof.sum()),
         "meta_win_rate_baseline": float(meta_labels["label"].mean()),
         "elapsed_sec": time.time() - t_start,
     }
