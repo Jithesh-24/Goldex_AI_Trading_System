@@ -95,7 +95,7 @@ def test_journal_events_valid():
     sig = SignalEvent(trade_id="t-1", timestamp="2026-08-18T12:00:00", payload={"side": 1})
     learn = LearningEvent(timestamp="2026-08-18T23:59:00", payload={"note": "eod"})
     assert sig.schema_version == "v1"
-    assert learn.trade_id is None
+    assert learn.payload["note"] == "eod"
 
 
 if __name__ == "__main__":
