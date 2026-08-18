@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from contracts.model_registry import ModelRegistryEntry
 from contracts.market_state import MarketState
 from contracts.feature_schema import FeatureDescriptor, FeatureSetSchema
+from contracts.virtual_trade import VirtualTrade
 
 
 def test_model_registry_entry_valid():
@@ -68,6 +69,27 @@ def test_feature_descriptor_rejects_missing_required_field():
         pass
 
 
+def test_virtual_trade_valid():
+    vt = VirtualTrade(
+        trade_id="t-1", signal_timestamp="2026-08-18T12:00:00",
+        direction=1, entry=2500.0, sl=2495.0, tp=2510.0,
+        model_versions={"direction": "direction_catboost_20260818"},
+    )
+    assert vt.direction == 1
+    assert vt.expected_value is None
+
+
+def test_virtual_trade_rejects_bad_direction_type():
+    try:
+        VirtualTrade(
+            trade_id="t-1", signal_timestamp="2026-08-18T12:00:00",
+            direction="up", entry=2500.0, sl=2495.0, tp=2510.0,
+        )
+        assert False, "expected validation error for non-int direction"
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
     test_model_registry_entry_valid()
     test_model_registry_entry_rejects_bad_family()
@@ -75,4 +97,6 @@ if __name__ == "__main__":
     test_market_state_rejects_nonpositive_bid()
     test_feature_set_schema_valid()
     test_feature_descriptor_rejects_missing_required_field()
+    test_virtual_trade_valid()
+    test_virtual_trade_rejects_bad_direction_type()
     print("contracts/: OK")
