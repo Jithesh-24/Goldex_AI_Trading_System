@@ -1,0 +1,17 @@
+{
+  "model_id": "legacy_v7_spec_range_tight_s2026",
+  "family": "regime",
+  "algorithm": "lightgbm",
+  "artifact_path": "archive/legacy-v7/spec_range_tight_s2026.txt",
+  "feature_schema_version": null,
+  "feature_cols": [],
+  "target_definition": null,
+  "training_config": {},
+  "training_period": null,
+  "validation_period": null,
+  "created_at": "2026-08-10T19:23:51.846919+00:00",
+  "status": "archived",
+  "is_champion": false,
+  "metrics": {},
+  "lineage": {}
+}

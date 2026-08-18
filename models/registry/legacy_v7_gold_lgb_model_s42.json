@@ -1,0 +1,17 @@
+{
+  "model_id": "legacy_v7_gold_lgb_model_s42",
+  "family": "direction",
+  "algorithm": "lightgbm",
+  "artifact_path": "archive/legacy-v7/gold_lgb_model_s42.txt",
+  "feature_schema_version": null,
+  "feature_cols": [],
+  "target_definition": null,
+  "training_config": {},
+  "training_period": null,
+  "validation_period": null,
+  "created_at": "2026-08-16T10:43:23.900126+00:00",
+  "status": "archived",
+  "is_champion": false,
+  "metrics": {},
+  "lineage": {}
+}

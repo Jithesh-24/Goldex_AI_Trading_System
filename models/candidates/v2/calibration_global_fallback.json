@@ -1,0 +1,9 @@
+{
+  "version": "platt-rolling-v1",
+  "a": 0.003204789078520986,
+  "b": 0.9541660135862905,
+  "n_samples": 53026,
+  "window_start": null,
+  "window_end": null,
+  "fit_at_utc": null
+}

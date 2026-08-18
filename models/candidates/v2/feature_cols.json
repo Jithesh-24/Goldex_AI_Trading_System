@@ -1,0 +1,106 @@
+{
+  "primary": [
+    "ret_1",
+    "sign_ret_1",
+    "ret_5",
+    "sign_ret_5",
+    "ret_15",
+    "sign_ret_15",
+    "ret_60",
+    "sign_ret_60",
+    "ewma_vol",
+    "gk_vol_20",
+    "rs_vol_20",
+    "yz_vol_20",
+    "gk_vol_60",
+    "rs_vol_60",
+    "yz_vol_60",
+    "gk_vol_240",
+    "rs_vol_240",
+    "yz_vol_240",
+    "bipower_var_60",
+    "jump_component_60",
+    "kalman_level_dist",
+    "kalman_velocity",
+    "kalman_residual_z",
+    "hurst_120",
+    "hurst_480",
+    "fracdiff_log_price"
+  ],
+  "meta": [
+    "ret_1",
+    "sign_ret_1",
+    "ret_5",
+    "sign_ret_5",
+    "ret_15",
+    "sign_ret_15",
+    "ret_60",
+    "sign_ret_60",
+    "ewma_vol",
+    "gk_vol_20",
+    "rs_vol_20",
+    "yz_vol_20",
+    "gk_vol_60",
+    "rs_vol_60",
+    "yz_vol_60",
+    "gk_vol_240",
+    "rs_vol_240",
+    "yz_vol_240",
+    "bipower_var_60",
+    "jump_component_60",
+    "kalman_level_dist",
+    "kalman_velocity",
+    "kalman_residual_z",
+    "hurst_120",
+    "hurst_480",
+    "fracdiff_log_price",
+    "assumed_side"
+  ],
+  "tb_cfg_dir": {
+    "pt_mult": 1.0,
+    "sl_mult": 1.0,
+    "max_holding": 45,
+    "min_vol": 1e-06
+  },
+  "tb_cfg_trade": {
+    "pt_mult": 1.5,
+    "sl_mult": 1.0,
+    "max_holding": 45,
+    "min_vol": 1e-06
+  },
+  "horizon_vol_scale": 0.45,
+  "max_holding": 45,
+  "cusum_k": 2.5,
+  "meta_prob_threshold": 0.6,
+  "schema_version": "v2-2026-08-18",
+  "excluded_features": [
+    "spread",
+    "tick_volume"
+  ],
+  "catboost_kw": {
+    "depth": 4,
+    "iterations": 2000,
+    "learning_rate": 0.02,
+    "l2_leaf_reg": 15,
+    "loss_function": "Logloss",
+    "random_seed": 42,
+    "verbose": false,
+    "thread_count": -1,
+    "early_stopping_rounds": 100
+  },
+  "val_fraction": 0.15,
+  "n_splits": 6,
+  "embargo_bars": 90,
+  "trained_at_utc": "2026-08-18T05:02:07Z",
+  "dataset": {
+    "n_bars": 2461612,
+    "excluded_features": [
+      "spread",
+      "tick_volume"
+    ],
+    "date_range": [
+      "2019-12-02 00:00:00",
+      "2026-08-17 16:26:00"
+    ]
+  }
+}

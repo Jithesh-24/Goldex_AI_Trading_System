@@ -1,0 +1,27 @@
+{
+  "model_id": "opportunity_meta_catboost_v2_20260818",
+  "family": "opportunity_meta",
+  "algorithm": "catboost",
+  "artifact_path": "candidates/v2/meta.cbm",
+  "feature_schema_version": "v2-2026-08-18",
+  "feature_cols": ["ret_1","sign_ret_1","ret_5","sign_ret_5","ret_15","sign_ret_15","ret_60","sign_ret_60","ewma_vol","gk_vol_20","rs_vol_20","yz_vol_20","gk_vol_60","rs_vol_60","yz_vol_60","gk_vol_240","rs_vol_240","yz_vol_240","bipower_var_60","jump_component_60","kalman_level_dist","kalman_velocity","kalman_residual_z","hurst_120","hurst_480","fracdiff_log_price","assumed_side"],
+  "target_definition": "precision filter on v2 primary's OOF predictions: did the trade-side barrier pay off before the adverse side, excludes spread/tick_volume features",
+  "training_config": {
+    "tb_cfg_trade": {"pt_mult": 1.5, "sl_mult": 1.0, "max_holding": 45, "min_vol": 1e-6},
+    "horizon_vol_scale": 0.45,
+    "max_holding": 45,
+    "cusum_k": 2.5,
+    "catboost_kw": {"depth": 4, "iterations": 2000, "learning_rate": 0.02, "l2_leaf_reg": 15, "loss_function": "Logloss", "random_seed": 42, "early_stopping_rounds": 100},
+    "excluded_features": ["spread", "tick_volume"],
+    "n_splits": 6,
+    "embargo_bars": 90,
+    "val_fraction": 0.15
+  },
+  "training_period": "2019-12-02 to 2026-08-17 16:26",
+  "validation_period": "purged walk-forward OOF, 6 splits, embargo_bars=90",
+  "created_at": "2026-08-18T05:02:07Z",
+  "status": "candidate",
+  "is_champion": false,
+  "metrics": {"meta_win_rate_baseline": 0.48846832689065345, "n_meta_train": 253259, "note": "paper-traded live by gold-shadow.service (stopped in Phase 1, not restarted) -- no promotion decision has been made"},
+  "lineage": {"data_snapshot": "gold_seed.csv as of 2026-08-17 16:26", "config_snapshot": "models/candidates/v2/feature_cols.json"}
+}

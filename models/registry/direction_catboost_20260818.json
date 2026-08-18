@@ -1,0 +1,23 @@
+{
+  "model_id": "direction_catboost_20260818",
+  "family": "direction",
+  "algorithm": "catboost",
+  "artifact_path": "active/primary.cbm",
+  "feature_schema_version": "root-28col-2026-08-18",
+  "feature_cols": ["ret_1","sign_ret_1","ret_5","sign_ret_5","ret_15","sign_ret_15","ret_60","sign_ret_60","ewma_vol","gk_vol_20","rs_vol_20","yz_vol_20","gk_vol_60","rs_vol_60","yz_vol_60","gk_vol_240","rs_vol_240","yz_vol_240","bipower_var_60","jump_component_60","kalman_level_dist","kalman_velocity","kalman_residual_z","hurst_120","hurst_480","fracdiff_log_price","spread","tick_volume"],
+  "target_definition": "binary up/down direction on CUSUM events, symmetric triple-barrier (tb_cfg_dir: pt_mult=1.0, sl_mult=1.0, max_holding=45, min_vol=1e-6)",
+  "training_config": {
+    "tb_cfg_dir": {"pt_mult": 1.0, "sl_mult": 1.0, "max_holding": 45, "min_vol": 1e-6},
+    "tb_cfg_trade": {"pt_mult": 1.5, "sl_mult": 1.0, "max_holding": 45, "min_vol": 1e-6},
+    "horizon_vol_scale": 0.45,
+    "max_holding": 45,
+    "cusum_k": 2.5
+  },
+  "training_period": "2019-12-02 to 2026-08-17 (purged walk-forward, 6 folds)",
+  "validation_period": "purged walk-forward OOF, 6 splits, embargo_bars=90",
+  "created_at": "2026-08-18T09:16:20+05:30",
+  "status": "active",
+  "is_champion": true,
+  "metrics": {"mean_oof_acc": 0.5115082515354895, "n_bars": 2461612, "n_events": 312758},
+  "lineage": {"code_commit": "0da9082d3bb79e726b6f7796dacf960195ae0113", "config_snapshot": "models/active/feature_cols.json"}
+}

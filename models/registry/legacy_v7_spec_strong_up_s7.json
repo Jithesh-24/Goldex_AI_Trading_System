@@ -1,0 +1,17 @@
+{
+  "model_id": "legacy_v7_spec_strong_up_s7",
+  "family": "regime",
+  "algorithm": "lightgbm",
+  "artifact_path": "archive/legacy-v7/spec_strong_up_s7.txt",
+  "feature_schema_version": null,
+  "feature_cols": [],
+  "target_definition": null,
+  "training_config": {},
+  "training_period": null,
+  "validation_period": null,
+  "created_at": "2026-08-10T16:47:13.589277+00:00",
+  "status": "archived",
+  "is_champion": false,
+  "metrics": {},
+  "lineage": {}
+}

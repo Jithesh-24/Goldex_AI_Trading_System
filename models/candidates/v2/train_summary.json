@@ -1,0 +1,51 @@
+{
+  "n_bars": 2461612,
+  "n_events": 312758,
+  "n_directional": 300816,
+  "fold_metrics": [
+    {
+      "fold": 0,
+      "n_train": 47555,
+      "n_test": 49339,
+      "acc": 0.5166703824560692,
+      "best_iter": 43
+    },
+    {
+      "fold": 1,
+      "n_train": 96895,
+      "n_test": 50027,
+      "acc": 0.5148020069162652,
+      "best_iter": 225
+    },
+    {
+      "fold": 2,
+      "n_train": 146921,
+      "n_test": 49741,
+      "acc": 0.5075290002211456,
+      "best_iter": 83
+    },
+    {
+      "fold": 3,
+      "n_train": 196664,
+      "n_test": 52981,
+      "acc": 0.510786885864744,
+      "best_iter": 56
+    },
+    {
+      "fold": 4,
+      "n_train": 249643,
+      "n_test": 51171,
+      "acc": 0.5062828555236364,
+      "best_iter": 37
+    }
+  ],
+  "mean_oof_acc": 0.511214226196372,
+  "n_meta_train": 253259,
+  "meta_win_rate_baseline": 0.48846832689065345,
+  "schema_version": "v2-2026-08-18",
+  "excluded_features": [
+    "spread",
+    "tick_volume"
+  ],
+  "elapsed_sec": 91.65132713317871
+}

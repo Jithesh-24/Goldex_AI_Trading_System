@@ -1,0 +1,46 @@
+{
+  "n_bars": 2461297,
+  "n_events": 312716,
+  "n_directional": 300776,
+  "fold_metrics": [
+    {
+      "fold": 0,
+      "n_train": 47550,
+      "n_test": 49338,
+      "acc": 0.5142081154485386,
+      "best_iter": 89
+    },
+    {
+      "fold": 1,
+      "n_train": 96888,
+      "n_test": 50012,
+      "acc": 0.5145565064384547,
+      "best_iter": 272
+    },
+    {
+      "fold": 2,
+      "n_train": 146899,
+      "n_test": 49731,
+      "acc": 0.5089380869075627,
+      "best_iter": 61
+    },
+    {
+      "fold": 3,
+      "n_train": 196630,
+      "n_test": 52976,
+      "acc": 0.5104575656901238,
+      "best_iter": 86
+    },
+    {
+      "fold": 4,
+      "n_train": 249607,
+      "n_test": 51169,
+      "acc": 0.5071234536535794,
+      "best_iter": 43
+    }
+  ],
+  "mean_oof_acc": 0.5110567456276518,
+  "n_meta_train": 253224,
+  "meta_win_rate_baseline": 0.4862690740214198,
+  "elapsed_sec": 62.21996474266052
+}
