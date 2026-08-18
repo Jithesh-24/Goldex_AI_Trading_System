@@ -1,0 +1,63 @@
+{
+  "generated_at_utc": "2026-08-18T08:19:00Z",
+  "n_events": 253259,
+  "quantiles": [
+    0.5,
+    0.75,
+    0.9
+  ],
+  "targets": {
+    "mae_R": {
+      "0.5": {
+        "model_coverage": 0.4986469157221793,
+        "model_pinball": 0.2760631065728344,
+        "simple_by_state_coverage": 0.5,
+        "simple_by_state_pinball": 0.27470260642010835,
+        "model_coverage_error": 0.0013530842778207153,
+        "baseline_coverage_error": 0.0
+      },
+      "0.75": {
+        "model_coverage": 0.7441397778490203,
+        "model_pinball": 0.20005816901987136,
+        "simple_by_state_coverage": 0.75,
+        "simple_by_state_pinball": 0.21542559484761517,
+        "model_coverage_error": 0.005860222150979699,
+        "baseline_coverage_error": 0.0
+      },
+      "0.9": {
+        "model_coverage": 0.8972976031078507,
+        "model_pinball": 0.11512922104083417,
+        "simple_by_state_coverage": 0.899999057084127,
+        "simple_by_state_pinball": 0.12061553545008287,
+        "model_coverage_error": 0.00270239689214935,
+        "baseline_coverage_error": 9.429158730478449e-07
+      }
+    },
+    "mfe_R": {
+      "0.5": {
+        "model_coverage": 0.4916551945235446,
+        "model_pinball": 0.24839322394244925,
+        "simple_by_state_coverage": 0.5,
+        "simple_by_state_pinball": 0.24767658929693334,
+        "model_coverage_error": 0.008344805476455386,
+        "baseline_coverage_error": 0.0
+      },
+      "0.75": {
+        "model_coverage": 0.742301091896581,
+        "model_pinball": 0.17367019599520583,
+        "simple_by_state_coverage": 0.75,
+        "simple_by_state_pinball": 0.19350283214351183,
+        "model_coverage_error": 0.007698908103419,
+        "baseline_coverage_error": 0.0
+      },
+      "0.9": {
+        "model_coverage": 0.8973023176872159,
+        "model_pinball": 0.09703286129706658,
+        "simple_by_state_coverage": 0.899999057084127,
+        "simple_by_state_pinball": 0.10572709846288353,
+        "model_coverage_error": 0.002697682312784111,
+        "baseline_coverage_error": 9.429158730478449e-07
+      }
+    }
+  }
+}

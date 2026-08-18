@@ -1,0 +1,1771 @@
+{
+  "generated_at_utc": "2026-08-18T07:57:38Z",
+  "primary_fold_metrics": [
+    {
+      "fold": 0,
+      "n_train": 47555,
+      "n_test": 49339,
+      "acc": 0.5142382293925698,
+      "bal_acc": 0.5149023132463675,
+      "logloss": 0.6927558006761326,
+      "best_iter": 167
+    },
+    {
+      "fold": 1,
+      "n_train": 96895,
+      "n_test": 50027,
+      "acc": 0.513482719331561,
+      "bal_acc": 0.5131454110061691,
+      "logloss": 0.6927120921001592,
+      "best_iter": 171
+    },
+    {
+      "fold": 2,
+      "n_train": 146921,
+      "n_test": 49741,
+      "acc": 0.5113286825757424,
+      "bal_acc": 0.5109890772483558,
+      "logloss": 0.6928311931219583,
+      "best_iter": 99
+    },
+    {
+      "fold": 3,
+      "n_train": 196664,
+      "n_test": 52981,
+      "acc": 0.5085030482625847,
+      "bal_acc": 0.5095170385928338,
+      "logloss": 0.6931115424981962,
+      "best_iter": 220
+    },
+    {
+      "fold": 4,
+      "n_train": 249643,
+      "n_test": 51171,
+      "acc": 0.5079830372672022,
+      "bal_acc": 0.5079266244013262,
+      "logloss": 0.6931147612104432,
+      "best_iter": 67
+    }
+  ],
+  "meta_fold_metrics": [
+    {
+      "fold": 0,
+      "n_train": 41149,
+      "n_test": 41566,
+      "acc": 0.6018139825819179,
+      "bal_acc": 0.6023451852584585,
+      "logloss": 0.6712816070183848,
+      "best_iter": 335
+    },
+    {
+      "fold": 1,
+      "n_train": 82714,
+      "n_test": 41358,
+      "acc": 0.5992069248996567,
+      "bal_acc": 0.5988347415411726,
+      "logloss": 0.6721620029670298,
+      "best_iter": 418
+    },
+    {
+      "fold": 2,
+      "n_train": 124072,
+      "n_test": 42868,
+      "acc": 0.5921899785387702,
+      "bal_acc": 0.5932320820982486,
+      "logloss": 0.674432047023871,
+      "best_iter": 222
+    },
+    {
+      "fold": 3,
+      "n_train": 166941,
+      "n_test": 44020,
+      "acc": 0.5918673330304407,
+      "bal_acc": 0.5930228881917732,
+      "logloss": 0.6752639257846037,
+      "best_iter": 297
+    },
+    {
+      "fold": 4,
+      "n_train": 210959,
+      "n_test": 42297,
+      "acc": 0.6051493013688914,
+      "bal_acc": 0.605602000490842,
+      "logloss": 0.6698853055496571,
+      "best_iter": 447
+    }
+  ],
+  "primary_importance": {
+    "ret_1": {
+      "mean_importance": 2.4796738280134476,
+      "std_importance": 1.532365352866009,
+      "cv_importance": 0.6179705312668642
+    },
+    "sign_ret_1": {
+      "mean_importance": 2.9316234712358495,
+      "std_importance": 1.950667111489251,
+      "cv_importance": 0.6653880113283892
+    },
+    "ret_5": {
+      "mean_importance": 1.3489793887957993,
+      "std_importance": 0.9470294396288516,
+      "cv_importance": 0.7020340321687505
+    },
+    "sign_ret_5": {
+      "mean_importance": 2.1263820923635763,
+      "std_importance": 1.3823604631811202,
+      "cv_importance": 0.6500997483686292
+    },
+    "ret_15": {
+      "mean_importance": 0.3223243183953386,
+      "std_importance": 0.3409793249059674,
+      "cv_importance": 1.0578765096084
+    },
+    "sign_ret_15": {
+      "mean_importance": 0.08672660315447478,
+      "std_importance": 0.12442806579456903,
+      "cv_importance": 1.4347162377954727
+    },
+    "ret_60": {
+      "mean_importance": 0.8801394488814271,
+      "std_importance": 0.5825014696120235,
+      "cv_importance": 0.6618286117641097
+    },
+    "sign_ret_60": {
+      "mean_importance": 0.13820809650746693,
+      "std_importance": 0.10349551372834867,
+      "cv_importance": 0.7488382833111166
+    },
+    "ewma_vol": {
+      "mean_importance": 0.38587770910320274,
+      "std_importance": 0.3242418110717948,
+      "cv_importance": 0.8402709029898292
+    },
+    "gk_vol_20": {
+      "mean_importance": 0.24500163392495394,
+      "std_importance": 0.2768710779207451,
+      "cv_importance": 1.1300784957440448
+    },
+    "rs_vol_20": {
+      "mean_importance": 0.29672545231247255,
+      "std_importance": 0.2192232210506487,
+      "cv_importance": 0.738808279984662
+    },
+    "yz_vol_20": {
+      "mean_importance": 0.38466493909323224,
+      "std_importance": 0.2349909500112935,
+      "cv_importance": 0.6108977609585003
+    },
+    "gk_vol_60": {
+      "mean_importance": 0.3202408522293517,
+      "std_importance": 0.18260784250778037,
+      "cv_importance": 0.5702203239735303
+    },
+    "rs_vol_60": {
+      "mean_importance": 0.3606746421660352,
+      "std_importance": 0.2484407142878926,
+      "cv_importance": 0.6888222382252309
+    },
+    "yz_vol_60": {
+      "mean_importance": 0.5415059928077881,
+      "std_importance": 0.41342332827348705,
+      "cv_importance": 0.7634695345287433
+    },
+    "gk_vol_240": {
+      "mean_importance": 0.5817966807318778,
+      "std_importance": 0.459136361149701,
+      "cv_importance": 0.7891697844891881
+    },
+    "rs_vol_240": {
+      "mean_importance": 0.9402765926668206,
+      "std_importance": 0.3145181032638787,
+      "cv_importance": 0.33449530246396936
+    },
+    "yz_vol_240": {
+      "mean_importance": 0.7198338170112148,
+      "std_importance": 0.4219367713354705,
+      "cv_importance": 0.5861585846124492
+    },
+    "bipower_var_60": {
+      "mean_importance": 0.4368377222913676,
+      "std_importance": 0.33315575945326564,
+      "cv_importance": 0.7626533663479116
+    },
+    "jump_component_60": {
+      "mean_importance": 0.4116882182445158,
+      "std_importance": 0.34679440079124596,
+      "cv_importance": 0.8423714486414398
+    },
+    "kalman_level_dist": {
+      "mean_importance": 3.2783313113342567,
+      "std_importance": 1.500572073680132,
+      "cv_importance": 0.45772435156024854
+    },
+    "kalman_velocity": {
+      "mean_importance": 0.5300802976888114,
+      "std_importance": 0.16874871195645705,
+      "cv_importance": 0.31834556517609447
+    },
+    "kalman_residual_z": {
+      "mean_importance": 4.840076461655299,
+      "std_importance": 3.2603977630987027,
+      "cv_importance": 0.6736252596273348
+    },
+    "hurst_120": {
+      "mean_importance": 0.29661717301644186,
+      "std_importance": 0.22429158965085272,
+      "cv_importance": 0.7561652191945742
+    },
+    "hurst_480": {
+      "mean_importance": 1.4274197464303087,
+      "std_importance": 0.7069311872080769,
+      "cv_importance": 0.4952510913317337
+    },
+    "fracdiff_log_price": {
+      "mean_importance": 5.402597149527654,
+      "std_importance": 2.929937487391191,
+      "cv_importance": 0.5423201853292641
+    },
+    "ret_240": {
+      "mean_importance": 0.5589273166365903,
+      "std_importance": 0.5486914674995742,
+      "cv_importance": 0.9816866185775075
+    },
+    "sign_ret_240": {
+      "mean_importance": 0.2516744123160534,
+      "std_importance": 0.14115469434152933,
+      "cv_importance": 0.5608623182728122
+    },
+    "ret_accel_5_15": {
+      "mean_importance": 0.28150875402065545,
+      "std_importance": 0.2621005291765681,
+      "cv_importance": 0.9310564074228993
+    },
+    "ret_decel_15_60": {
+      "mean_importance": 0.6883743114322589,
+      "std_importance": 0.3826419671277397,
+      "cv_importance": 0.5558632284397709
+    },
+    "run_length_signed": {
+      "mean_importance": 5.022324966861502,
+      "std_importance": 4.27668212360638,
+      "cv_importance": 0.8515343295833999
+    },
+    "return_autocorr_20": {
+      "mean_importance": 0.3207138067436272,
+      "std_importance": 0.1603057824322814,
+      "cv_importance": 0.4998406026230949
+    },
+    "return_autocorr_60": {
+      "mean_importance": 0.5229143102038687,
+      "std_importance": 0.5857817034173288,
+      "cv_importance": 1.1202250387619914
+    },
+    "return_pacf1_60": {
+      "mean_importance": 0.5410507749831289,
+      "std_importance": 0.42756028559943243,
+      "cv_importance": 0.7902405936166798
+    },
+    "sign_flip_rate_20": {
+      "mean_importance": 0.4882116271693667,
+      "std_importance": 0.2124208322413173,
+      "cv_importance": 0.4350999042626772
+    },
+    "rolling_mean_ret_20": {
+      "mean_importance": 0.35937182878521273,
+      "std_importance": 0.11673470465492122,
+      "cv_importance": 0.324829870637107
+    },
+    "rolling_median_ret_20": {
+      "mean_importance": 0.5217090755936088,
+      "std_importance": 0.3789976956750104,
+      "cv_importance": 0.7264540975136016
+    },
+    "return_dispersion_20": {
+      "mean_importance": 0.5841583166952458,
+      "std_importance": 0.24948147564684686,
+      "cv_importance": 0.4270785307966451
+    },
+    "upside_downside_asymmetry_60": {
+      "mean_importance": 1.7582538198272815,
+      "std_importance": 0.930157279169588,
+      "cv_importance": 0.5290233234135445
+    },
+    "return_skew_60": {
+      "mean_importance": 1.625894631215924,
+      "std_importance": 0.8268704638021711,
+      "cv_importance": 0.5085633766954484
+    },
+    "return_kurt_60": {
+      "mean_importance": 0.7501077793651835,
+      "std_importance": 0.5078222866997516,
+      "cv_importance": 0.6769990935562911
+    },
+    "return_skew_240": {
+      "mean_importance": 0.6737184610362069,
+      "std_importance": 0.6083667859680844,
+      "cv_importance": 0.9029985389332972
+    },
+    "return_percentile_rank_60": {
+      "mean_importance": 3.8738423127064308,
+      "std_importance": 2.329178739910052,
+      "cv_importance": 0.6012580151417647
+    },
+    "return_quantile_pos_240": {
+      "mean_importance": 1.5007042253315428,
+      "std_importance": 0.8331498987461983,
+      "cv_importance": 0.5551726214152124
+    },
+    "directional_entropy_60": {
+      "mean_importance": 1.0121035824102311,
+      "std_importance": 0.653905932923549,
+      "cv_importance": 0.6460859780441963
+    },
+    "realized_variance_20": {
+      "mean_importance": 0.35829024477309923,
+      "std_importance": 0.5190004442704002,
+      "cv_importance": 1.4485475165506576
+    },
+    "realized_semivar_upside_20": {
+      "mean_importance": 0.7516547800721619,
+      "std_importance": 0.5125289352763646,
+      "cv_importance": 0.6818674594567997
+    },
+    "realized_semivar_downside_20": {
+      "mean_importance": 0.2560221053652788,
+      "std_importance": 0.17923368141047907,
+      "cv_importance": 0.7000711175105678
+    },
+    "parkinson_vol_60": {
+      "mean_importance": 0.3934881593259328,
+      "std_importance": 0.27516563822469237,
+      "cv_importance": 0.6992983948896111
+    },
+    "vol_acceleration_30": {
+      "mean_importance": 0.6759419755381192,
+      "std_importance": 0.3760972386823006,
+      "cv_importance": 0.5564046209482532
+    },
+    "vol_of_vol_60": {
+      "mean_importance": 0.5102684272697458,
+      "std_importance": 0.18705157638921469,
+      "cv_importance": 0.36657485823698177
+    },
+    "vol_percentile_252": {
+      "mean_importance": 1.3033244253897986,
+      "std_importance": 1.0511987214339429,
+      "cv_importance": 0.8065518461526185
+    },
+    "vol_zscore_60": {
+      "mean_importance": 0.28242704818425646,
+      "std_importance": 0.19632973549496205,
+      "cv_importance": 0.6951520286643218
+    },
+    "vol_compression_ratio": {
+      "mean_importance": 1.120953704757836,
+      "std_importance": 1.1174290704234975,
+      "cv_importance": 0.9968556825144711
+    },
+    "cusum_distance_to_threshold": {
+      "mean_importance": 0.005068539828987933,
+      "std_importance": 0.008424183753554023,
+      "cv_importance": 1.6620533798263812
+    },
+    "jump_intensity_60": {
+      "mean_importance": 0.36823737746242574,
+      "std_importance": 0.27690754429134895,
+      "cv_importance": 0.7519810894797176
+    },
+    "jump_magnitude_mean_60": {
+      "mean_importance": 0.7286713528124689,
+      "std_importance": 0.3409213408707091,
+      "cv_importance": 0.4678670837749384
+    },
+    "jump_direction_bias_60": {
+      "mean_importance": 0.0547386920931606,
+      "std_importance": 0.08856917051990558,
+      "cv_importance": 1.6180359291224637
+    },
+    "bars_since_last_changepoint": {
+      "mean_importance": 0.006482429310636503,
+      "std_importance": 0.009782031234373345,
+      "cv_importance": 1.5090070042603916
+    },
+    "changepoint_intensity_240": {
+      "mean_importance": 0.7913732646516902,
+      "std_importance": 0.4977237438532227,
+      "cv_importance": 0.6289367686338097
+    },
+    "vol_shock_zscore": {
+      "mean_importance": 1.8802605289576966,
+      "std_importance": 1.9630302770491048,
+      "cv_importance": 1.044020361442832
+    },
+    "tail_probability_60": {
+      "mean_importance": 0.5889152426157895,
+      "std_importance": 0.23831020101524206,
+      "cv_importance": 0.4046595906683239
+    },
+    "shannon_entropy_returns_60": {
+      "mean_importance": 0.5643737829782027,
+      "std_importance": 0.30001291521047674,
+      "cv_importance": 0.5315854922021844
+    },
+    "permutation_entropy_60": {
+      "mean_importance": 0.9583808788630558,
+      "std_importance": 0.7005886199572008,
+      "cv_importance": 0.7310127272033239
+    },
+    "sample_entropy_20": {
+      "mean_importance": 0.05250234656956452,
+      "std_importance": 0.0318978275354842,
+      "cv_importance": 0.6075505119227431
+    },
+    "return_concentration_60": {
+      "mean_importance": 0.7507190503900973,
+      "std_importance": 0.4692786014976523,
+      "cv_importance": 0.6251054921995124
+    },
+    "mi_proxy_sign_lag5_240": {
+      "mean_importance": 0.7967881109596332,
+      "std_importance": 0.6779801380413982,
+      "cv_importance": 0.8508913834380066
+    },
+    "dist_from_high_20": {
+      "mean_importance": 1.6504031350999817,
+      "std_importance": 0.41014746569273597,
+      "cv_importance": 0.24851350374336822
+    },
+    "dist_from_low_20": {
+      "mean_importance": 1.5940725146745627,
+      "std_importance": 0.8894352185620543,
+      "cv_importance": 0.5579640890700864
+    },
+    "range_position_20": {
+      "mean_importance": 2.1061746280937665,
+      "std_importance": 1.4515156737374473,
+      "cv_importance": 0.6891715693352404
+    },
+    "range_position_60": {
+      "mean_importance": 2.5662528766854895,
+      "std_importance": 0.9754647065002461,
+      "cv_importance": 0.38011246489478184
+    },
+    "range_width_20": {
+      "mean_importance": 0.2785867983105747,
+      "std_importance": 0.28429163718523653,
+      "cv_importance": 1.020477778951686
+    },
+    "range_width_ratio_20_60": {
+      "mean_importance": 0.9254965087964424,
+      "std_importance": 0.6348152568826011,
+      "cv_importance": 0.6859185862388002
+    },
+    "displacement_from_equilibrium_60": {
+      "mean_importance": 2.428501737587324,
+      "std_importance": 0.6871628640477382,
+      "cv_importance": 0.2829575344386713
+    },
+    "breakout_magnitude_20": {
+      "mean_importance": 0.06905731265066185,
+      "std_importance": 0.0665480459597304,
+      "cv_importance": 0.9636639974158132
+    },
+    "breakout_failure_magnitude_20": {
+      "mean_importance": 0.27527298084604795,
+      "std_importance": 0.19154710276624584,
+      "cv_importance": 0.6958441841169021
+    },
+    "reversal_frequency_60": {
+      "mean_importance": 0.4042429946029603,
+      "std_importance": 0.16379020774115993,
+      "cv_importance": 0.40517760339182013
+    },
+    "avg_run_length_60": {
+      "mean_importance": 0.5706646855913965,
+      "std_importance": 0.1687345789402286,
+      "cv_importance": 0.29568077927472247
+    },
+    "excursion_from_recent_distribution_20": {
+      "mean_importance": 1.0153695954268465,
+      "std_importance": 0.13613490657494826,
+      "cv_importance": 0.13407423975278593
+    },
+    "high_low_density_60": {
+      "mean_importance": 0.5556437655999238,
+      "std_importance": 0.287233507960934,
+      "cv_importance": 0.5169382358691822
+    },
+    "hurst_240": {
+      "mean_importance": 0.6778452253621228,
+      "std_importance": 0.7506927677287786,
+      "cv_importance": 1.1074692859682513
+    },
+    "mean_reversion_speed_60": {
+      "mean_importance": 0.25527034934736315,
+      "std_importance": 0.18033272511511708,
+      "cv_importance": 0.7064381961170371
+    },
+    "half_life_60": {
+      "mean_importance": 0.6339250783912196,
+      "std_importance": 0.4107963163727992,
+      "cv_importance": 0.648020295103834
+    },
+    "autocorr_decay_rate_60": {
+      "mean_importance": 0.6485548799062495,
+      "std_importance": 0.5037261150002986,
+      "cv_importance": 0.776690039049762
+    },
+    "persistence_score": {
+      "mean_importance": 0.41167505972261764,
+      "std_importance": 0.3802115321839186,
+      "cv_importance": 0.923571936663108
+    },
+    "residual_mean_reversion_60": {
+      "mean_importance": 0.4297477089839167,
+      "std_importance": 0.26468401203875824,
+      "cv_importance": 0.6159055801939459
+    },
+    "fracdiff_slope_60": {
+      "mean_importance": 0.5284867529222568,
+      "std_importance": 0.3026021832033217,
+      "cv_importance": 0.5725823429444334
+    },
+    "hour_sin": {
+      "mean_importance": 1.4836721506081862,
+      "std_importance": 0.8997605985105552,
+      "cv_importance": 0.6064416577083594
+    },
+    "hour_cos": {
+      "mean_importance": 0.9440997578329136,
+      "std_importance": 0.7024682720730858,
+      "cv_importance": 0.7440614895247207
+    },
+    "minute_sin": {
+      "mean_importance": 0.21644922582697648,
+      "std_importance": 0.08790587474380254,
+      "cv_importance": 0.4061270000294298
+    },
+    "minute_cos": {
+      "mean_importance": 0.580825393412214,
+      "std_importance": 0.3417362765992599,
+      "cv_importance": 0.5883631819050453
+    },
+    "dow_sin": {
+      "mean_importance": 0.354166819967161,
+      "std_importance": 0.2684094426048266,
+      "cv_importance": 0.7578616275508643
+    },
+    "dow_cos": {
+      "mean_importance": 0.3099481186917881,
+      "std_importance": 0.2975006643244399,
+      "cv_importance": 0.9598402002893718
+    },
+    "session_asian": {
+      "mean_importance": 0.3208012895648285,
+      "std_importance": 0.5608062188284505,
+      "cv_importance": 1.7481420339338165
+    },
+    "session_london": {
+      "mean_importance": 0.1088540215736589,
+      "std_importance": 0.12129334035366958,
+      "cv_importance": 1.1142752339342217
+    },
+    "session_ny": {
+      "mean_importance": 0.1865574345988338,
+      "std_importance": 0.23835435672265554,
+      "cv_importance": 1.2776459819744193
+    },
+    "session_london_ny_overlap": {
+      "mean_importance": 0.2179732570526589,
+      "std_importance": 0.15411995788998126,
+      "cv_importance": 0.7070590217071826
+    },
+    "session_transition_flag": {
+      "mean_importance": 0.0,
+      "std_importance": 0.0,
+      "cv_importance": 0.0
+    },
+    "vol_conditional_on_session": {
+      "mean_importance": 1.4379565562875456,
+      "std_importance": 0.930517444418461,
+      "cv_importance": 0.6471109578030861
+    },
+    "ret_conditional_on_session": {
+      "mean_importance": 2.019867633287769,
+      "std_importance": 0.7148253795279398,
+      "cv_importance": 0.3538971404598467
+    },
+    "activity_conditional_on_session": {
+      "mean_importance": 0.9126462804466344,
+      "std_importance": 0.5239690552390788,
+      "cv_importance": 0.5741206275257669
+    },
+    "tick_volume_zscore_60": {
+      "mean_importance": 0.6696001933819481,
+      "std_importance": 0.4543451641167549,
+      "cv_importance": 0.6785320085139087
+    },
+    "tick_volume_accel_20": {
+      "mean_importance": 0.36983653390713533,
+      "std_importance": 0.29318119739353665,
+      "cv_importance": 0.792731843704639
+    },
+    "spread_change_1": {
+      "mean_importance": 0.0,
+      "std_importance": 0.0,
+      "cv_importance": 0.0
+    },
+    "spread_percentile_252": {
+      "mean_importance": 1.8558643483258017,
+      "std_importance": 0.3174373953037084,
+      "cv_importance": 0.17104558077753507
+    },
+    "spread_volatility_60": {
+      "mean_importance": 0.0,
+      "std_importance": 0.0,
+      "cv_importance": 0.0
+    },
+    "tick_volume_spread_ratio": {
+      "mean_importance": 1.4238148353675286,
+      "std_importance": 1.6540928220339335,
+      "cv_importance": 1.1617330996603665
+    },
+    "vol_state_tercile": {
+      "mean_importance": 0.04718064446740328,
+      "std_importance": 0.0650485523124087,
+      "cv_importance": 1.378712670136378
+    },
+    "jump_state": {
+      "mean_importance": 0.0,
+      "std_importance": 0.0,
+      "cv_importance": 0.0
+    },
+    "persistence_state": {
+      "mean_importance": 0.301168562288795,
+      "std_importance": 0.2128372455123508,
+      "cv_importance": 0.7067047234108652
+    },
+    "entropy_state": {
+      "mean_importance": 0.32625985257977097,
+      "std_importance": 0.25343894409349105,
+      "cv_importance": 0.776800890730265
+    },
+    "activity_state": {
+      "mean_importance": 0.3772110719195195,
+      "std_importance": 0.45223148704487304,
+      "cv_importance": 1.198881795127582
+    },
+    "changepoint_state": {
+      "mean_importance": 0.0,
+      "std_importance": 0.0,
+      "cv_importance": 0.0
+    },
+    "composite_state_id": {
+      "mean_importance": 0.26429418320264275,
+      "std_importance": 0.20891699765034616,
+      "cv_importance": 0.7904714175648839
+    },
+    "hist_p_reach_10bps_10b_60": {
+      "mean_importance": 0.12284138139205222,
+      "std_importance": 0.09919246486401144,
+      "cv_importance": 0.8074841209041398
+    },
+    "hist_time_to_10bps_60": {
+      "mean_importance": 0.32514609521492,
+      "std_importance": 0.22302610399855072,
+      "cv_importance": 0.6859258262078514
+    },
+    "hist_barrier_hit_freq_60": {
+      "mean_importance": 0.20564672391528224,
+      "std_importance": 0.22121405269679711,
+      "cv_importance": 1.0756993765090463
+    },
+    "hist_path_asymmetry_60": {
+      "mean_importance": 0.34332262519773976,
+      "std_importance": 0.20701484796391023,
+      "cv_importance": 0.602974673879061
+    }
+  },
+  "meta_importance": {
+    "ret_1": {
+      "mean_importance": 0.25078390676480283,
+      "std_importance": 0.03478636945882879,
+      "cv_importance": 0.1387105333335967
+    },
+    "sign_ret_1": {
+      "mean_importance": 0.219562898863156,
+      "std_importance": 0.030966333601444188,
+      "cv_importance": 0.14103627599098223
+    },
+    "ret_5": {
+      "mean_importance": 0.16081665709454296,
+      "std_importance": 0.1363455472508156,
+      "cv_importance": 0.8478322439612648
+    },
+    "sign_ret_5": {
+      "mean_importance": 0.1485076719804883,
+      "std_importance": 0.09029985862394939,
+      "cv_importance": 0.6080484423445373
+    },
+    "ret_15": {
+      "mean_importance": 0.19250665780783138,
+      "std_importance": 0.18352734714305594,
+      "cv_importance": 0.9533558435483359
+    },
+    "sign_ret_15": {
+      "mean_importance": 0.054911470831381294,
+      "std_importance": 0.02866845952330623,
+      "cv_importance": 0.5220850778399205
+    },
+    "ret_60": {
+      "mean_importance": 0.11561997052680788,
+      "std_importance": 0.09320789529794751,
+      "cv_importance": 0.8061574040648639
+    },
+    "sign_ret_60": {
+      "mean_importance": 0.06409895670092478,
+      "std_importance": 0.0515696680075316,
+      "cv_importance": 0.804532096335783
+    },
+    "ewma_vol": {
+      "mean_importance": 0.3646169357054198,
+      "std_importance": 0.1949916901209466,
+      "cv_importance": 0.5347850607753549
+    },
+    "gk_vol_20": {
+      "mean_importance": 0.09857104895575608,
+      "std_importance": 0.047502933197921066,
+      "cv_importance": 0.4819156709922292
+    },
+    "rs_vol_20": {
+      "mean_importance": 0.13384975938468552,
+      "std_importance": 0.11753613761698,
+      "cv_importance": 0.8781199021746463
+    },
+    "yz_vol_20": {
+      "mean_importance": 0.12021886046640615,
+      "std_importance": 0.07165876186679222,
+      "cv_importance": 0.5960692156686719
+    },
+    "gk_vol_60": {
+      "mean_importance": 0.12081468544080413,
+      "std_importance": 0.07439018135885674,
+      "cv_importance": 0.615737905432911
+    },
+    "rs_vol_60": {
+      "mean_importance": 0.09667824260509167,
+      "std_importance": 0.046303284328177326,
+      "cv_importance": 0.4789421392082556
+    },
+    "yz_vol_60": {
+      "mean_importance": 0.09631285290082907,
+      "std_importance": 0.04250188179010029,
+      "cv_importance": 0.44128982280135975
+    },
+    "gk_vol_240": {
+      "mean_importance": 0.3551227312068648,
+      "std_importance": 0.18354095018042335,
+      "cv_importance": 0.5168380789274448
+    },
+    "rs_vol_240": {
+      "mean_importance": 0.3231566767327997,
+      "std_importance": 0.0712628948428062,
+      "cv_importance": 0.22052118979342494
+    },
+    "yz_vol_240": {
+      "mean_importance": 0.3952763248427219,
+      "std_importance": 0.12633061278061947,
+      "cv_importance": 0.31960075734585336
+    },
+    "bipower_var_60": {
+      "mean_importance": 0.20230506986632796,
+      "std_importance": 0.16826946889729205,
+      "cv_importance": 0.8317610083053046
+    },
+    "jump_component_60": {
+      "mean_importance": 0.11803445730910725,
+      "std_importance": 0.01977728889314507,
+      "cv_importance": 0.16755521518053443
+    },
+    "kalman_level_dist": {
+      "mean_importance": 0.19920135770409203,
+      "std_importance": 0.1498107319268649,
+      "cv_importance": 0.7520567814071051
+    },
+    "kalman_velocity": {
+      "mean_importance": 0.12534714468612781,
+      "std_importance": 0.10960322012788334,
+      "cv_importance": 0.8743974216750798
+    },
+    "kalman_residual_z": {
+      "mean_importance": 0.37789029839892685,
+      "std_importance": 0.20522499287073132,
+      "cv_importance": 0.5430808722537824
+    },
+    "hurst_120": {
+      "mean_importance": 0.08587431796465265,
+      "std_importance": 0.07049061057591786,
+      "cv_importance": 0.8208578798254096
+    },
+    "hurst_480": {
+      "mean_importance": 0.1541803333339416,
+      "std_importance": 0.12559163743876126,
+      "cv_importance": 0.814576247975417
+    },
+    "fracdiff_log_price": {
+      "mean_importance": 0.4268330757582758,
+      "std_importance": 0.34073323760962015,
+      "cv_importance": 0.7982821785877351
+    },
+    "ret_240": {
+      "mean_importance": 0.12856380375985083,
+      "std_importance": 0.12454116220045475,
+      "cv_importance": 0.9687109323016755
+    },
+    "sign_ret_240": {
+      "mean_importance": 0.0969451045054062,
+      "std_importance": 0.10251728884691977,
+      "cv_importance": 1.0574777279362553
+    },
+    "ret_accel_5_15": {
+      "mean_importance": 0.09078778096487461,
+      "std_importance": 0.06725710552048625,
+      "cv_importance": 0.7408167135014317
+    },
+    "ret_decel_15_60": {
+      "mean_importance": 0.13726504271207646,
+      "std_importance": 0.061672245309621496,
+      "cv_importance": 0.4492931637298476
+    },
+    "run_length_signed": {
+      "mean_importance": 0.13764592298825068,
+      "std_importance": 0.04202324670187704,
+      "cv_importance": 0.3052996106936208
+    },
+    "return_autocorr_20": {
+      "mean_importance": 0.08399788533409078,
+      "std_importance": 0.06358363036427933,
+      "cv_importance": 0.7569670368650785
+    },
+    "return_autocorr_60": {
+      "mean_importance": 0.20116068207003757,
+      "std_importance": 0.19182283907680953,
+      "cv_importance": 0.9535801783075238
+    },
+    "return_pacf1_60": {
+      "mean_importance": 0.1730670673495191,
+      "std_importance": 0.09259391126308557,
+      "cv_importance": 0.5350175089989058
+    },
+    "sign_flip_rate_20": {
+      "mean_importance": 0.13106939983299054,
+      "std_importance": 0.08305038591241738,
+      "cv_importance": 0.6336367299937339
+    },
+    "rolling_mean_ret_20": {
+      "mean_importance": 0.14922955793648024,
+      "std_importance": 0.1309387424301129,
+      "cv_importance": 0.8774316847192373
+    },
+    "rolling_median_ret_20": {
+      "mean_importance": 0.2023708455612855,
+      "std_importance": 0.2356277230195411,
+      "cv_importance": 1.1643363072680553
+    },
+    "return_dispersion_20": {
+      "mean_importance": 0.08410733462360206,
+      "std_importance": 0.06121740501216275,
+      "cv_importance": 0.7278485911617989
+    },
+    "upside_downside_asymmetry_60": {
+      "mean_importance": 0.2836297540008812,
+      "std_importance": 0.09018990336541208,
+      "cv_importance": 0.31798463346384975
+    },
+    "return_skew_60": {
+      "mean_importance": 0.2102951890249008,
+      "std_importance": 0.07424483967002217,
+      "cv_importance": 0.3530505857707992
+    },
+    "return_kurt_60": {
+      "mean_importance": 0.08296436473295968,
+      "std_importance": 0.05693775284840164,
+      "cv_importance": 0.6862916751266546
+    },
+    "return_skew_240": {
+      "mean_importance": 0.2771064124220067,
+      "std_importance": 0.12212989909546937,
+      "cv_importance": 0.44073285070529933
+    },
+    "return_percentile_rank_60": {
+      "mean_importance": 0.17131386676226196,
+      "std_importance": 0.028761895109778567,
+      "cv_importance": 0.16789005848366276
+    },
+    "return_quantile_pos_240": {
+      "mean_importance": 0.1831274868232273,
+      "std_importance": 0.1393592691719766,
+      "cv_importance": 0.7609959137729002
+    },
+    "directional_entropy_60": {
+      "mean_importance": 0.2185547045281647,
+      "std_importance": 0.09634243906100384,
+      "cv_importance": 0.44081613008055104
+    },
+    "realized_variance_20": {
+      "mean_importance": 0.1504916752608144,
+      "std_importance": 0.10816068138203395,
+      "cv_importance": 0.7187153787382766
+    },
+    "realized_semivar_upside_20": {
+      "mean_importance": 0.1315071202759795,
+      "std_importance": 0.08111410011556486,
+      "cv_importance": 0.6168038654130639
+    },
+    "realized_semivar_downside_20": {
+      "mean_importance": 0.10706378625595833,
+      "std_importance": 0.03545629047966609,
+      "cv_importance": 0.33116977943317294
+    },
+    "parkinson_vol_60": {
+      "mean_importance": 0.1695680493835681,
+      "std_importance": 0.08597276720244972,
+      "cv_importance": 0.5070104156708006
+    },
+    "vol_acceleration_30": {
+      "mean_importance": 0.7104880382622765,
+      "std_importance": 0.16674429829997303,
+      "cv_importance": 0.23468980379711815
+    },
+    "vol_of_vol_60": {
+      "mean_importance": 0.31986311767703646,
+      "std_importance": 0.11492135846187645,
+      "cv_importance": 0.35928293107525994
+    },
+    "vol_percentile_252": {
+      "mean_importance": 0.19344985666286066,
+      "std_importance": 0.10825941262175758,
+      "cv_importance": 0.5596251891281018
+    },
+    "vol_zscore_60": {
+      "mean_importance": 0.21370528235261982,
+      "std_importance": 0.09815997711931035,
+      "cv_importance": 0.4593240561894188
+    },
+    "vol_compression_ratio": {
+      "mean_importance": 0.8178964075566337,
+      "std_importance": 0.22598855026667694,
+      "cv_importance": 0.27630461288097635
+    },
+    "cusum_distance_to_threshold": {
+      "mean_importance": 0.0011786811366979618,
+      "std_importance": 0.0015205356638194401,
+      "cv_importance": 1.2900313888785673
+    },
+    "jump_intensity_60": {
+      "mean_importance": 0.08144570328222107,
+      "std_importance": 0.03226548170828162,
+      "cv_importance": 0.3961594093733476
+    },
+    "jump_magnitude_mean_60": {
+      "mean_importance": 0.14865841225652598,
+      "std_importance": 0.07996933266671476,
+      "cv_importance": 0.5379401774365726
+    },
+    "jump_direction_bias_60": {
+      "mean_importance": 0.11986516130583036,
+      "std_importance": 0.062952098346845,
+      "cv_importance": 0.5251909534099375
+    },
+    "bars_since_last_changepoint": {
+      "mean_importance": 0.0021494935776077114,
+      "std_importance": 0.004309851235140192,
+      "cv_importance": 2.0050542509351716
+    },
+    "changepoint_intensity_240": {
+      "mean_importance": 0.401899809515167,
+      "std_importance": 0.34027031225201865,
+      "cv_importance": 0.8466545745878922
+    },
+    "vol_shock_zscore": {
+      "mean_importance": 0.3603802575561309,
+      "std_importance": 0.20964877246345315,
+      "cv_importance": 0.5817432227979341
+    },
+    "tail_probability_60": {
+      "mean_importance": 0.3022200868614218,
+      "std_importance": 0.05919586695736401,
+      "cv_importance": 0.1958700613586526
+    },
+    "shannon_entropy_returns_60": {
+      "mean_importance": 0.13735833281976598,
+      "std_importance": 0.06068195761093373,
+      "cv_importance": 0.4417784954521634
+    },
+    "permutation_entropy_60": {
+      "mean_importance": 0.5564656645008281,
+      "std_importance": 0.42373394802283104,
+      "cv_importance": 0.7614736632545644
+    },
+    "sample_entropy_20": {
+      "mean_importance": 0.053717394964497976,
+      "std_importance": 0.04443577206413134,
+      "cv_importance": 0.8272138307060329
+    },
+    "return_concentration_60": {
+      "mean_importance": 0.11556965599969962,
+      "std_importance": 0.06097594402269573,
+      "cv_importance": 0.5276120578125993
+    },
+    "mi_proxy_sign_lag5_240": {
+      "mean_importance": 0.2611777892052258,
+      "std_importance": 0.19312435631550276,
+      "cv_importance": 0.7394363697739679
+    },
+    "dist_from_high_20": {
+      "mean_importance": 0.39839568886276666,
+      "std_importance": 0.29414402934382905,
+      "cv_importance": 0.7383213161354046
+    },
+    "dist_from_low_20": {
+      "mean_importance": 0.19530772971447377,
+      "std_importance": 0.09446731079039482,
+      "cv_importance": 0.483684444688899
+    },
+    "range_position_20": {
+      "mean_importance": 0.6247928697663785,
+      "std_importance": 0.18683339676833993,
+      "cv_importance": 0.29903253671604857
+    },
+    "range_position_60": {
+      "mean_importance": 0.4691184807994362,
+      "std_importance": 0.23028547313334605,
+      "cv_importance": 0.4908897912973093
+    },
+    "range_width_20": {
+      "mean_importance": 0.1382635033072856,
+      "std_importance": 0.12889028035636507,
+      "cv_importance": 0.9322075404809549
+    },
+    "range_width_ratio_20_60": {
+      "mean_importance": 0.31975039827995544,
+      "std_importance": 0.19018970462564622,
+      "cv_importance": 0.5948067794402772
+    },
+    "displacement_from_equilibrium_60": {
+      "mean_importance": 0.4222211127747326,
+      "std_importance": 0.10444201990444459,
+      "cv_importance": 0.24736332870253097
+    },
+    "breakout_magnitude_20": {
+      "mean_importance": 0.09597547871284648,
+      "std_importance": 0.1461917007468069,
+      "cv_importance": 1.5232192921298646
+    },
+    "breakout_failure_magnitude_20": {
+      "mean_importance": 0.04396924349959313,
+      "std_importance": 0.040566140286014366,
+      "cv_importance": 0.9226026435135221
+    },
+    "reversal_frequency_60": {
+      "mean_importance": 0.2553036005529129,
+      "std_importance": 0.13453658248971664,
+      "cv_importance": 0.5269670392362261
+    },
+    "avg_run_length_60": {
+      "mean_importance": 0.13770345889363794,
+      "std_importance": 0.11086319581792792,
+      "cv_importance": 0.8050865004310355
+    },
+    "excursion_from_recent_distribution_20": {
+      "mean_importance": 0.24652552677741196,
+      "std_importance": 0.2598212559133151,
+      "cv_importance": 1.053932464153734
+    },
+    "high_low_density_60": {
+      "mean_importance": 0.1602724593544137,
+      "std_importance": 0.08539266172850099,
+      "cv_importance": 0.5327968515143983
+    },
+    "hurst_240": {
+      "mean_importance": 0.1642582100776932,
+      "std_importance": 0.18225738115979492,
+      "cv_importance": 1.1095785171017523
+    },
+    "mean_reversion_speed_60": {
+      "mean_importance": 0.16897406522028824,
+      "std_importance": 0.10072694283061263,
+      "cv_importance": 0.596108892209564
+    },
+    "half_life_60": {
+      "mean_importance": 0.13043630155098265,
+      "std_importance": 0.07043665048083833,
+      "cv_importance": 0.5400080318384931
+    },
+    "autocorr_decay_rate_60": {
+      "mean_importance": 0.261478325788358,
+      "std_importance": 0.21377396140935745,
+      "cv_importance": 0.8175590109230976
+    },
+    "persistence_score": {
+      "mean_importance": 0.08782504695583004,
+      "std_importance": 0.0479279703896844,
+      "cv_importance": 0.5457209765431594
+    },
+    "residual_mean_reversion_60": {
+      "mean_importance": 0.18786938084454957,
+      "std_importance": 0.10450387449434372,
+      "cv_importance": 0.5562581514058126
+    },
+    "fracdiff_slope_60": {
+      "mean_importance": 0.16799919027173038,
+      "std_importance": 0.14296721524112244,
+      "cv_importance": 0.8509994304727305
+    },
+    "hour_sin": {
+      "mean_importance": 1.1220018053819245,
+      "std_importance": 0.3457339132933958,
+      "cv_importance": 0.3081402468650302
+    },
+    "hour_cos": {
+      "mean_importance": 0.5949807646044991,
+      "std_importance": 0.24160639050533084,
+      "cv_importance": 0.4060742882434755
+    },
+    "minute_sin": {
+      "mean_importance": 0.12269445951491223,
+      "std_importance": 0.0823711139216221,
+      "cv_importance": 0.6713515365509292
+    },
+    "minute_cos": {
+      "mean_importance": 0.18977431992729982,
+      "std_importance": 0.16535526672975218,
+      "cv_importance": 0.8713258295068464
+    },
+    "dow_sin": {
+      "mean_importance": 0.16246058124441984,
+      "std_importance": 0.17674336595956233,
+      "cv_importance": 1.087915386032346
+    },
+    "dow_cos": {
+      "mean_importance": 0.08364707938960407,
+      "std_importance": 0.03326047113924878,
+      "cv_importance": 0.397628600806623
+    },
+    "session_asian": {
+      "mean_importance": 0.0672619463617961,
+      "std_importance": 0.05905405436250865,
+      "cv_importance": 0.8779712386683264
+    },
+    "session_london": {
+      "mean_importance": 0.012436471089864717,
+      "std_importance": 0.0141283296110476,
+      "cv_importance": 1.136040079935673
+    },
+    "session_ny": {
+      "mean_importance": 0.1273572836347903,
+      "std_importance": 0.106238257752271,
+      "cv_importance": 0.8341749660499967
+    },
+    "session_london_ny_overlap": {
+      "mean_importance": 0.004975399396454604,
+      "std_importance": 0.006847025060571532,
+      "cv_importance": 1.376175963973992
+    },
+    "session_transition_flag": {
+      "mean_importance": 0.002611346799029026,
+      "std_importance": 0.00363380706861483,
+      "cv_importance": 1.3915451865550696
+    },
+    "vol_conditional_on_session": {
+      "mean_importance": 0.13334845140209947,
+      "std_importance": 0.07804039960575741,
+      "cv_importance": 0.5852366396849564
+    },
+    "ret_conditional_on_session": {
+      "mean_importance": 0.21784169512036264,
+      "std_importance": 0.123175100722649,
+      "cv_importance": 0.5654339985492304
+    },
+    "activity_conditional_on_session": {
+      "mean_importance": 0.23817399870549716,
+      "std_importance": 0.2189725006094721,
+      "cv_importance": 0.9193803765298169
+    },
+    "tick_volume_zscore_60": {
+      "mean_importance": 0.33460264093723474,
+      "std_importance": 0.24377699388600466,
+      "cv_importance": 0.728556694003299
+    },
+    "tick_volume_accel_20": {
+      "mean_importance": 0.506922627753107,
+      "std_importance": 0.3346617009599913,
+      "cv_importance": 0.6601829996095299
+    },
+    "spread_change_1": {
+      "mean_importance": 0.0,
+      "std_importance": 0.0,
+      "cv_importance": 0.0
+    },
+    "spread_percentile_252": {
+      "mean_importance": 0.0828054647882066,
+      "std_importance": 0.0732346340888992,
+      "cv_importance": 0.8844178856578254
+    },
+    "spread_volatility_60": {
+      "mean_importance": 0.0,
+      "std_importance": 0.0,
+      "cv_importance": 0.0
+    },
+    "tick_volume_spread_ratio": {
+      "mean_importance": 0.15601839258891495,
+      "std_importance": 0.12732256539526116,
+      "cv_importance": 0.816074074873576
+    },
+    "vol_state_tercile": {
+      "mean_importance": 0.0,
+      "std_importance": 0.0,
+      "cv_importance": 0.0
+    },
+    "jump_state": {
+      "mean_importance": 0.00012033813516861477,
+      "std_importance": 0.00014402023456319902,
+      "cv_importance": 1.1967962970458323
+    },
+    "persistence_state": {
+      "mean_importance": 0.043027011824091015,
+      "std_importance": 0.03469917138728033,
+      "cv_importance": 0.8064508762342661
+    },
+    "entropy_state": {
+      "mean_importance": 0.055234091467209104,
+      "std_importance": 0.03946628939780409,
+      "cv_importance": 0.7145277191937536
+    },
+    "activity_state": {
+      "mean_importance": 0.12157796437996948,
+      "std_importance": 0.05123510472530437,
+      "cv_importance": 0.4214176885309455
+    },
+    "changepoint_state": {
+      "mean_importance": 6.524731309160816e-06,
+      "std_importance": 1.4589742742204782e-05,
+      "cv_importance": 2.23606797749979
+    },
+    "composite_state_id": {
+      "mean_importance": 0.06910360233397059,
+      "std_importance": 0.05638795796496378,
+      "cv_importance": 0.8159915845261813
+    },
+    "hist_p_reach_10bps_10b_60": {
+      "mean_importance": 0.08051204052886915,
+      "std_importance": 0.05029138080393518,
+      "cv_importance": 0.6246442205858915
+    },
+    "hist_time_to_10bps_60": {
+      "mean_importance": 0.2170279427519938,
+      "std_importance": 0.08733500195273147,
+      "cv_importance": 0.40241362861063723
+    },
+    "hist_barrier_hit_freq_60": {
+      "mean_importance": 0.08935421269455704,
+      "std_importance": 0.0408813258948663,
+      "cv_importance": 0.45751984894783326
+    },
+    "hist_path_asymmetry_60": {
+      "mean_importance": 0.19810972484383288,
+      "std_importance": 0.11271052705443743,
+      "cv_importance": 0.5689298046488407
+    },
+    "assumed_side": {
+      "mean_importance": 76.88915739922875,
+      "std_importance": 9.093487232324586,
+      "cv_importance": 0.1182674845181201
+    }
+  },
+  "mi_primary": {
+    "ret_1": 0.000526964618623893,
+    "sign_ret_1": 0.007308573143827601,
+    "ret_5": 0.0,
+    "sign_ret_5": 0.00653571936285835,
+    "ret_15": 0.0031061552003117665,
+    "sign_ret_15": 0.0026475715669038724,
+    "ret_60": 0.0012865484945892014,
+    "sign_ret_60": 0.003962242253738868,
+    "ewma_vol": 0.0012379614817894513,
+    "gk_vol_20": 0.002513668488723697,
+    "rs_vol_20": 0.0003047922430468031,
+    "yz_vol_20": 0.0,
+    "gk_vol_60": 0.0,
+    "rs_vol_60": 0.000645917023434528,
+    "yz_vol_60": 0.0,
+    "gk_vol_240": 0.0009230129720270153,
+    "rs_vol_240": 0.0,
+    "yz_vol_240": 0.0,
+    "bipower_var_60": 0.0,
+    "jump_component_60": 0.0,
+    "kalman_level_dist": 0.0,
+    "kalman_velocity": 0.0006619994152383679,
+    "kalman_residual_z": 0.0,
+    "hurst_120": 0.0006676478961162857,
+    "hurst_480": 0.0,
+    "fracdiff_log_price": 0.0,
+    "ret_240": 0.0,
+    "sign_ret_240": 0.007466710622580086,
+    "ret_accel_5_15": 0.0019181192121775492,
+    "ret_decel_15_60": 0.0,
+    "run_length_signed": 0.0011767721013278276,
+    "return_autocorr_20": 4.685806304771667e-05,
+    "return_autocorr_60": 0.0,
+    "return_pacf1_60": 0.0,
+    "sign_flip_rate_20": 0.0,
+    "rolling_mean_ret_20": 0.003683793207016839,
+    "rolling_median_ret_20": 0.0028215521353844863,
+    "return_dispersion_20": 0.0,
+    "upside_downside_asymmetry_60": 0.0,
+    "return_skew_60": 0.0,
+    "return_kurt_60": 0.0,
+    "return_skew_240": 0.0,
+    "return_percentile_rank_60": 0.0018096852022049248,
+    "return_quantile_pos_240": 0.0022449026949766804,
+    "directional_entropy_60": 0.0,
+    "realized_variance_20": 0.0,
+    "realized_semivar_upside_20": 0.0,
+    "realized_semivar_downside_20": 0.0,
+    "parkinson_vol_60": 0.0,
+    "vol_acceleration_30": 0.0,
+    "vol_of_vol_60": 0.0005332613792821128,
+    "vol_percentile_252": 0.0017999787921825217,
+    "vol_zscore_60": 0.0,
+    "vol_compression_ratio": 0.0005695484080996405,
+    "cusum_distance_to_threshold": 1.47159249332951e-05,
+    "jump_intensity_60": 0.003980759970588776,
+    "jump_magnitude_mean_60": 0.006509717397704007,
+    "jump_direction_bias_60": 0.0009422360661255347,
+    "bars_since_last_changepoint": 0.001546311079073437,
+    "changepoint_intensity_240": 0.0,
+    "vol_shock_zscore": 0.0019203832744645322,
+    "tail_probability_60": 0.0024279120025261225,
+    "shannon_entropy_returns_60": 0.0,
+    "permutation_entropy_60": 0.0,
+    "sample_entropy_20": 0.006527169593866899,
+    "return_concentration_60": 0.0,
+    "mi_proxy_sign_lag5_240": 0.0,
+    "dist_from_high_20": 0.0,
+    "dist_from_low_20": 0.000189281537815722,
+    "range_position_20": 0.0,
+    "range_position_60": 0.0016547268660298542,
+    "range_width_20": 0.0006401961373014853,
+    "range_width_ratio_20_60": 0.0025568932102202346,
+    "displacement_from_equilibrium_60": 0.0,
+    "breakout_magnitude_20": 0.001965333203558295,
+    "breakout_failure_magnitude_20": 0.0010484764784486345,
+    "reversal_frequency_60": 0.0,
+    "avg_run_length_60": 0.0,
+    "excursion_from_recent_distribution_20": 0.000390768963645316,
+    "high_low_density_60": 0.0008317006796578763,
+    "hurst_240": 0.004395256103743472,
+    "mean_reversion_speed_60": 0.0008828921326373695,
+    "half_life_60": 0.00014557294719308445,
+    "autocorr_decay_rate_60": 0.002336729309935448,
+    "persistence_score": 0.0005315478234448889,
+    "residual_mean_reversion_60": 0.0,
+    "fracdiff_slope_60": 0.0017418536473075008,
+    "hour_sin": 0.003534883782699838,
+    "hour_cos": 0.0015920703944587444,
+    "minute_sin": 6.741190753722925e-05,
+    "minute_cos": 0.0020547545057265637,
+    "dow_sin": 0.0036233592868317732,
+    "dow_cos": 0.005212912074556764,
+    "session_asian": 0.006087307814560905,
+    "session_london": 0.004581380345443975,
+    "session_ny": 0.003941850651701273,
+    "session_london_ny_overlap": 0.000370250008435713,
+    "session_transition_flag": 0.0,
+    "vol_conditional_on_session": 0.0,
+    "ret_conditional_on_session": 0.0018179408833360888,
+    "activity_conditional_on_session": 0.003555965264760541,
+    "tick_volume_zscore_60": 0.0007063380900949046,
+    "tick_volume_accel_20": 8.029966330558302e-05,
+    "spread_change_1": 0.0,
+    "spread_percentile_252": 0.003046437598033025,
+    "spread_volatility_60": 0.0032833721524128112,
+    "tick_volume_spread_ratio": 0.0,
+    "vol_state_tercile": 0.0031778701956282074,
+    "jump_state": 0.011092960377913075,
+    "persistence_state": 0.003932219915370627,
+    "entropy_state": 0.00580118417501696,
+    "activity_state": 0.0004503240082054383,
+    "changepoint_state": 0.0,
+    "composite_state_id": 0.0005266546431066388,
+    "hist_p_reach_10bps_10b_60": 0.0,
+    "hist_time_to_10bps_60": 0.005578328316107495,
+    "hist_barrier_hit_freq_60": 0.0,
+    "hist_path_asymmetry_60": 0.0021150231091273675
+  },
+  "mi_meta": {
+    "ret_1": 0.01424536880244709,
+    "sign_ret_1": 0.019902286958748183,
+    "ret_5": 0.01642233950213856,
+    "sign_ret_5": 0.013802996927807065,
+    "ret_15": 0.00705846581597358,
+    "sign_ret_15": 0.013791419803006688,
+    "ret_60": 0.002374205497122528,
+    "sign_ret_60": 0.007819304479245393,
+    "ewma_vol": 0.0004881731334676065,
+    "gk_vol_20": 0.0,
+    "rs_vol_20": 0.0021123917676348913,
+    "yz_vol_20": 0.0,
+    "gk_vol_60": 0.00021756240157388973,
+    "rs_vol_60": 0.0005585010133792867,
+    "yz_vol_60": 6.410301228321202e-05,
+    "gk_vol_240": 0.00204351087238952,
+    "rs_vol_240": 0.0,
+    "yz_vol_240": 0.002064220560426877,
+    "bipower_var_60": 0.0,
+    "jump_component_60": 0.0,
+    "kalman_level_dist": 0.01150376486952287,
+    "kalman_velocity": 0.0018397236158229635,
+    "kalman_residual_z": 0.009194407314439879,
+    "hurst_120": 0.0,
+    "hurst_480": 0.0,
+    "fracdiff_log_price": 0.005176138254225915,
+    "ret_240": 0.0013104574030939897,
+    "sign_ret_240": 0.0024361415950415743,
+    "ret_accel_5_15": 0.0,
+    "ret_decel_15_60": 0.006612040635185723,
+    "run_length_signed": 0.013759349853053271,
+    "return_autocorr_20": 0.00013268375522357267,
+    "return_autocorr_60": 0.0,
+    "return_pacf1_60": 0.0005027985061900608,
+    "sign_flip_rate_20": 0.003182415739907185,
+    "rolling_mean_ret_20": 0.005913292614950771,
+    "rolling_median_ret_20": 0.0,
+    "return_dispersion_20": 0.0,
+    "upside_downside_asymmetry_60": 0.00014013959779002327,
+    "return_skew_60": 0.0,
+    "return_kurt_60": 0.0007129739697353532,
+    "return_skew_240": 0.0031254191785798913,
+    "return_percentile_rank_60": 0.016033487563533955,
+    "return_quantile_pos_240": 0.00660298394819292,
+    "directional_entropy_60": 0.0017659813227337562,
+    "realized_variance_20": 0.0,
+    "realized_semivar_upside_20": 0.0,
+    "realized_semivar_downside_20": 0.0017468779636955478,
+    "parkinson_vol_60": 5.496109980884789e-05,
+    "vol_acceleration_30": 0.001754096140117234,
+    "vol_of_vol_60": 0.0,
+    "vol_percentile_252": 0.0017416176020714769,
+    "vol_zscore_60": 0.0,
+    "vol_compression_ratio": 0.0034410088154051,
+    "cusum_distance_to_threshold": 0.0012958094931767583,
+    "jump_intensity_60": 0.0022972343232867676,
+    "jump_magnitude_mean_60": 0.0016038308489854103,
+    "jump_direction_bias_60": 0.0,
+    "bars_since_last_changepoint": 0.0010693511140695833,
+    "changepoint_intensity_240": 0.0011781500115370935,
+    "vol_shock_zscore": 0.0,
+    "tail_probability_60": 0.0009091754760019999,
+    "shannon_entropy_returns_60": 0.0,
+    "permutation_entropy_60": 0.0008146471738137429,
+    "sample_entropy_20": 0.006208711983344939,
+    "return_concentration_60": 0.001031090196944362,
+    "mi_proxy_sign_lag5_240": 0.0008864761186695436,
+    "dist_from_high_20": 0.01088701908804457,
+    "dist_from_low_20": 0.009590209163465646,
+    "range_position_20": 0.013306387386350593,
+    "range_position_60": 0.008979067673232644,
+    "range_width_20": 0.0016598119313984139,
+    "range_width_ratio_20_60": 0.0021150465643202665,
+    "displacement_from_equilibrium_60": 0.006841127715590645,
+    "breakout_magnitude_20": 0.0037631811692411254,
+    "breakout_failure_magnitude_20": 0.004092931561993973,
+    "reversal_frequency_60": 0.0,
+    "avg_run_length_60": 0.0,
+    "excursion_from_recent_distribution_20": 0.010304279239459646,
+    "high_low_density_60": 6.748158319780373e-05,
+    "hurst_240": 0.000380092317142644,
+    "mean_reversion_speed_60": 0.0,
+    "half_life_60": 0.0,
+    "autocorr_decay_rate_60": 0.002252919147489818,
+    "persistence_score": 0.0,
+    "residual_mean_reversion_60": 0.0,
+    "fracdiff_slope_60": 0.001274929964967697,
+    "hour_sin": 0.0,
+    "hour_cos": 0.00028336085645830345,
+    "minute_sin": 0.0016424465990692028,
+    "minute_cos": 0.0,
+    "dow_sin": 0.0,
+    "dow_cos": 0.003069127329256238,
+    "session_asian": 0.0,
+    "session_london": 0.00297422006214787,
+    "session_ny": 0.003796454160534868,
+    "session_london_ny_overlap": 0.00030381959531800007,
+    "session_transition_flag": 0.0,
+    "vol_conditional_on_session": 0.0,
+    "ret_conditional_on_session": 0.017272483952775364,
+    "activity_conditional_on_session": 0.0022108218212948394,
+    "tick_volume_zscore_60": 0.0,
+    "tick_volume_accel_20": 0.0031762808189172986,
+    "spread_change_1": 0.0,
+    "spread_percentile_252": 0.0,
+    "spread_volatility_60": 0.0,
+    "tick_volume_spread_ratio": 0.003630165515024597,
+    "vol_state_tercile": 0.0,
+    "jump_state": 0.006049317290560685,
+    "persistence_state": 0.006112595669600207,
+    "entropy_state": 0.003879683507091558,
+    "activity_state": 0.0013090732696838803,
+    "changepoint_state": 0.004471587461002402,
+    "composite_state_id": 0.0010023519293274052,
+    "hist_p_reach_10bps_10b_60": 0.0007678583964043639,
+    "hist_time_to_10bps_60": 0.0006974373113548538,
+    "hist_barrier_hit_freq_60": 0.0018132704617557227,
+    "hist_path_asymmetry_60": 0.0011446336535974044,
+    "assumed_side": 0.022898681121167108
+  },
+  "columns": {
+    "base_cols": [
+      "ret_1",
+      "sign_ret_1",
+      "ret_5",
+      "sign_ret_5",
+      "ret_15",
+      "sign_ret_15",
+      "ret_60",
+      "sign_ret_60",
+      "ewma_vol",
+      "gk_vol_20",
+      "rs_vol_20",
+      "yz_vol_20",
+      "gk_vol_60",
+      "rs_vol_60",
+      "yz_vol_60",
+      "gk_vol_240",
+      "rs_vol_240",
+      "yz_vol_240",
+      "bipower_var_60",
+      "jump_component_60",
+      "kalman_level_dist",
+      "kalman_velocity",
+      "kalman_residual_z",
+      "hurst_120",
+      "hurst_480",
+      "fracdiff_log_price"
+    ],
+    "cand_cols": [
+      "ret_240",
+      "sign_ret_240",
+      "ret_accel_5_15",
+      "ret_decel_15_60",
+      "run_length_signed",
+      "return_autocorr_20",
+      "return_autocorr_60",
+      "return_pacf1_60",
+      "sign_flip_rate_20",
+      "rolling_mean_ret_20",
+      "rolling_median_ret_20",
+      "return_dispersion_20",
+      "upside_downside_asymmetry_60",
+      "return_skew_60",
+      "return_kurt_60",
+      "return_skew_240",
+      "return_percentile_rank_60",
+      "return_quantile_pos_240",
+      "directional_entropy_60",
+      "realized_variance_20",
+      "realized_semivar_upside_20",
+      "realized_semivar_downside_20",
+      "parkinson_vol_60",
+      "vol_acceleration_30",
+      "vol_of_vol_60",
+      "vol_percentile_252",
+      "vol_zscore_60",
+      "vol_compression_ratio",
+      "cusum_distance_to_threshold",
+      "jump_intensity_60",
+      "jump_magnitude_mean_60",
+      "jump_direction_bias_60",
+      "bars_since_last_changepoint",
+      "changepoint_intensity_240",
+      "vol_shock_zscore",
+      "tail_probability_60",
+      "shannon_entropy_returns_60",
+      "permutation_entropy_60",
+      "sample_entropy_20",
+      "return_concentration_60",
+      "mi_proxy_sign_lag5_240",
+      "dist_from_high_20",
+      "dist_from_low_20",
+      "range_position_20",
+      "range_position_60",
+      "range_width_20",
+      "range_width_ratio_20_60",
+      "displacement_from_equilibrium_60",
+      "breakout_magnitude_20",
+      "breakout_failure_magnitude_20",
+      "reversal_frequency_60",
+      "avg_run_length_60",
+      "excursion_from_recent_distribution_20",
+      "high_low_density_60",
+      "hurst_240",
+      "mean_reversion_speed_60",
+      "half_life_60",
+      "autocorr_decay_rate_60",
+      "persistence_score",
+      "residual_mean_reversion_60",
+      "fracdiff_slope_60",
+      "hour_sin",
+      "hour_cos",
+      "minute_sin",
+      "minute_cos",
+      "dow_sin",
+      "dow_cos",
+      "session_asian",
+      "session_london",
+      "session_ny",
+      "session_london_ny_overlap",
+      "session_transition_flag",
+      "vol_conditional_on_session",
+      "ret_conditional_on_session",
+      "activity_conditional_on_session",
+      "tick_volume_zscore_60",
+      "tick_volume_accel_20",
+      "spread_change_1",
+      "spread_percentile_252",
+      "spread_volatility_60",
+      "tick_volume_spread_ratio",
+      "vol_state_tercile",
+      "jump_state",
+      "persistence_state",
+      "entropy_state",
+      "activity_state",
+      "changepoint_state",
+      "composite_state_id",
+      "hist_p_reach_10bps_10b_60",
+      "hist_time_to_10bps_60",
+      "hist_barrier_hit_freq_60",
+      "hist_path_asymmetry_60"
+    ],
+    "all_cols": [
+      "ret_1",
+      "sign_ret_1",
+      "ret_5",
+      "sign_ret_5",
+      "ret_15",
+      "sign_ret_15",
+      "ret_60",
+      "sign_ret_60",
+      "ewma_vol",
+      "gk_vol_20",
+      "rs_vol_20",
+      "yz_vol_20",
+      "gk_vol_60",
+      "rs_vol_60",
+      "yz_vol_60",
+      "gk_vol_240",
+      "rs_vol_240",
+      "yz_vol_240",
+      "bipower_var_60",
+      "jump_component_60",
+      "kalman_level_dist",
+      "kalman_velocity",
+      "kalman_residual_z",
+      "hurst_120",
+      "hurst_480",
+      "fracdiff_log_price",
+      "ret_240",
+      "sign_ret_240",
+      "ret_accel_5_15",
+      "ret_decel_15_60",
+      "run_length_signed",
+      "return_autocorr_20",
+      "return_autocorr_60",
+      "return_pacf1_60",
+      "sign_flip_rate_20",
+      "rolling_mean_ret_20",
+      "rolling_median_ret_20",
+      "return_dispersion_20",
+      "upside_downside_asymmetry_60",
+      "return_skew_60",
+      "return_kurt_60",
+      "return_skew_240",
+      "return_percentile_rank_60",
+      "return_quantile_pos_240",
+      "directional_entropy_60",
+      "realized_variance_20",
+      "realized_semivar_upside_20",
+      "realized_semivar_downside_20",
+      "parkinson_vol_60",
+      "vol_acceleration_30",
+      "vol_of_vol_60",
+      "vol_percentile_252",
+      "vol_zscore_60",
+      "vol_compression_ratio",
+      "cusum_distance_to_threshold",
+      "jump_intensity_60",
+      "jump_magnitude_mean_60",
+      "jump_direction_bias_60",
+      "bars_since_last_changepoint",
+      "changepoint_intensity_240",
+      "vol_shock_zscore",
+      "tail_probability_60",
+      "shannon_entropy_returns_60",
+      "permutation_entropy_60",
+      "sample_entropy_20",
+      "return_concentration_60",
+      "mi_proxy_sign_lag5_240",
+      "dist_from_high_20",
+      "dist_from_low_20",
+      "range_position_20",
+      "range_position_60",
+      "range_width_20",
+      "range_width_ratio_20_60",
+      "displacement_from_equilibrium_60",
+      "breakout_magnitude_20",
+      "breakout_failure_magnitude_20",
+      "reversal_frequency_60",
+      "avg_run_length_60",
+      "excursion_from_recent_distribution_20",
+      "high_low_density_60",
+      "hurst_240",
+      "mean_reversion_speed_60",
+      "half_life_60",
+      "autocorr_decay_rate_60",
+      "persistence_score",
+      "residual_mean_reversion_60",
+      "fracdiff_slope_60",
+      "hour_sin",
+      "hour_cos",
+      "minute_sin",
+      "minute_cos",
+      "dow_sin",
+      "dow_cos",
+      "session_asian",
+      "session_london",
+      "session_ny",
+      "session_london_ny_overlap",
+      "session_transition_flag",
+      "vol_conditional_on_session",
+      "ret_conditional_on_session",
+      "activity_conditional_on_session",
+      "tick_volume_zscore_60",
+      "tick_volume_accel_20",
+      "spread_change_1",
+      "spread_percentile_252",
+      "spread_volatility_60",
+      "tick_volume_spread_ratio",
+      "vol_state_tercile",
+      "jump_state",
+      "persistence_state",
+      "entropy_state",
+      "activity_state",
+      "changepoint_state",
+      "composite_state_id",
+      "hist_p_reach_10bps_10b_60",
+      "hist_time_to_10bps_60",
+      "hist_barrier_hit_freq_60",
+      "hist_path_asymmetry_60"
+    ]
+  }
+}

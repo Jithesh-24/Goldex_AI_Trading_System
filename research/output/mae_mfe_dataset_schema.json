@@ -1,0 +1,32 @@
+{
+  "n_events": 212108,
+  "columns": {
+    "event_time": "datetime64[us]",
+    "resolution_time": "datetime64[us]",
+    "direction": "str",
+    "raw_meta_proba": "float64",
+    "calibrated_proba": "float64",
+    "vol_state": "str",
+    "vol_at_event": "float64",
+    "mae_R": "float64",
+    "mfe_R": "float64",
+    "time_to_mae_bars": "int64",
+    "time_to_mfe_bars": "int64",
+    "touch": "str",
+    "time_to_tp_bars": "int64",
+    "time_to_sl_bars": "int64",
+    "holding_bars": "int64",
+    "label_win": "int8",
+    "tp_R": "float64",
+    "sl_R": "float64"
+  },
+  "generated_at_utc": "2026-08-18T07:16:00Z",
+  "source_model": "v2 (26-feature, spread+tick_volume excluded)",
+  "calibrator": "calibration_global_fallback.json",
+  "tb_cfg_trade": {
+    "pt_mult": 1.5,
+    "sl_mult": 1.0,
+    "max_holding": 45
+  },
+  "notes": "M1 close-resolution only, no intrabar tick path -- same limitation as Phase 1A's realized-vs-nominal R gap. mae_R/mfe_R are vol-normalized R units (R = horizon-scaled vol at event time = the SL distance, sl_mult=1.0)."
+}

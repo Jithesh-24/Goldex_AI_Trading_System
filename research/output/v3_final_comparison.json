@@ -1,0 +1,63 @@
+{
+  "generated_at_utc": "2026-08-18T08:05:55Z",
+  "n_survivors": 17,
+  "survivors": [
+    "run_length_signed",
+    "return_percentile_rank_60",
+    "vol_acceleration_30",
+    "vol_of_vol_60",
+    "vol_compression_ratio",
+    "vol_shock_zscore",
+    "tail_probability_60",
+    "dist_from_high_20",
+    "dist_from_low_20",
+    "range_position_20",
+    "range_position_60",
+    "range_width_ratio_20_60",
+    "displacement_from_equilibrium_60",
+    "excursion_from_recent_distribution_20",
+    "hour_sin",
+    "hour_cos",
+    "ret_conditional_on_session"
+  ],
+  "base26": {
+    "primary_mean_acc": 0.511214226196372,
+    "primary_fold_acc": [
+      0.5166703824560692,
+      0.5148020069162652,
+      0.5075290002211456,
+      0.510786885864744,
+      0.5062828555236364
+    ],
+    "meta_mean_acc": 0.5979797037033975,
+    "meta_fold_acc": [
+      0.6020064475773469,
+      0.5976594612892306,
+      0.5916767752169451,
+      0.5935483870967742,
+      0.6050074473366905
+    ],
+    "meta_mean_logloss": 0.6727126385506658
+  },
+  "expanded": {
+    "primary_mean_acc": 0.5111985981544465,
+    "primary_fold_acc": [
+      0.5139747461440239,
+      0.5153617046794731,
+      0.510142538348646,
+      0.5093712840452238,
+      0.5071427175548651
+    ],
+    "meta_mean_acc": 0.5978868484844869,
+    "meta_fold_acc": [
+      0.6020786219506328,
+      0.5993278204942212,
+      0.5913968461323131,
+      0.5920490686051795,
+      0.6045818852400879
+    ],
+    "meta_mean_logloss": 0.6725653247958849
+  },
+  "delta_primary_acc": -1.5628041925563885e-05,
+  "delta_meta_acc": -9.285521891055915e-05
+}

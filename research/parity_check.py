@@ -17,11 +17,11 @@ import numpy as np
 import pandas as pd
 from catboost import CatBoostClassifier
 
-from core.data import load_raw_m1
-from core.features import build_features
-from core.labeling import cusum_filter, triple_barrier_labels
-from core.train import (TB_CFG_DIR, TB_CFG_TRADE, HORIZON_VOL_SCALE, CUSUM_K,
-                         VAL_FRACTION)
+from learning.data import load_raw_m1
+from features.features import build_features
+from features.labeling import cusum_filter, triple_barrier_labels
+from learning.train import (TB_CFG_DIR, TB_CFG_TRADE, HORIZON_VOL_SCALE, CUSUM_K,
+                             VAL_FRACTION)
 from research.audit_edge import oof_run, build_meta
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

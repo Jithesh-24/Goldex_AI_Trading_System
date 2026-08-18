@@ -1,0 +1,156 @@
+{
+  "n_events": 212108,
+  "horizons_bars": [
+    1,
+    3,
+    5,
+    10,
+    15,
+    20,
+    30
+  ],
+  "generated_at_utc": "2026-08-18T07:39:23Z",
+  "overall_by_horizon": {
+    "1": {
+      "mean_fav_R": 0.26996782524329754,
+      "mean_adv_R": 0.26624836576277544,
+      "frac_mfe_captured": 0.41249168281037435,
+      "frac_mae_incurred": 0.41704432974719685,
+      "fav_over_adv_ratio": 1.013969886612698
+    },
+    "3": {
+      "mean_fav_R": 0.46580832426148183,
+      "mean_adv_R": 0.46008470257975953,
+      "frac_mfe_captured": 0.6072407075745545,
+      "frac_mae_incurred": 0.6066960602557544,
+      "fav_over_adv_ratio": 1.0124403651102267
+    },
+    "5": {
+      "mean_fav_R": 0.5801429723250231,
+      "mean_adv_R": 0.5756197573994118,
+      "frac_mfe_captured": 0.7086925581641862,
+      "frac_mae_incurred": 0.7074160772584744,
+      "fav_over_adv_ratio": 1.0078579910912833
+    },
+    "10": {
+      "mean_fav_R": 0.7391594167803414,
+      "mean_adv_R": 0.7378496936649448,
+      "frac_mfe_captured": 0.8400219470858424,
+      "frac_mae_incurred": 0.8384675095396397,
+      "fav_over_adv_ratio": 1.0017750540884434
+    },
+    "15": {
+      "mean_fav_R": 0.8202541607646441,
+      "mean_adv_R": 0.8215955421022564,
+      "frac_mfe_captured": 0.904799631045209,
+      "frac_mae_incurred": 0.902975394218931,
+      "fav_over_adv_ratio": 0.9983673458911668
+    },
+    "20": {
+      "mean_fav_R": 0.8667440589042876,
+      "mean_adv_R": 0.8698752437496109,
+      "frac_mfe_captured": 0.9408699151176099,
+      "frac_mae_incurred": 0.9394355356473224,
+      "fav_over_adv_ratio": 0.9964004207869783
+    },
+    "30": {
+      "mean_fav_R": 0.9156617842189355,
+      "mean_adv_R": 0.922440681170077,
+      "frac_mfe_captured": 0.9781593858941509,
+      "frac_mae_incurred": 0.9777842545636948,
+      "fav_over_adv_ratio": 0.9926511296720535
+    }
+  },
+  "by_vol_state": {
+    "high": {
+      "1": {
+        "frac_mfe_captured": 0.4172070918414663,
+        "frac_mae_incurred": 0.42198022920910994
+      },
+      "3": {
+        "frac_mfe_captured": 0.6107805546962228,
+        "frac_mae_incurred": 0.6099126157441073
+      },
+      "5": {
+        "frac_mfe_captured": 0.7106532228411837,
+        "frac_mae_incurred": 0.7099226896058841
+      },
+      "10": {
+        "frac_mfe_captured": 0.841077086730389,
+        "frac_mae_incurred": 0.8390444196301342
+      },
+      "15": {
+        "frac_mfe_captured": 0.9050065174249691,
+        "frac_mae_incurred": 0.9030204903848841
+      },
+      "20": {
+        "frac_mfe_captured": 0.9408384892903102,
+        "frac_mae_incurred": 0.939498347968246
+      },
+      "30": {
+        "frac_mfe_captured": 0.9777193011971282,
+        "frac_mae_incurred": 0.9783841758094927
+      }
+    },
+    "low": {
+      "1": {
+        "frac_mfe_captured": 0.40720001650990617,
+        "frac_mae_incurred": 0.41278408651350823
+      },
+      "3": {
+        "frac_mfe_captured": 0.6027019571993999,
+        "frac_mae_incurred": 0.6031517340583832
+      },
+      "5": {
+        "frac_mfe_captured": 0.7052192712867138,
+        "frac_mae_incurred": 0.7042130045743671
+      },
+      "10": {
+        "frac_mfe_captured": 0.8369859213063954,
+        "frac_mae_incurred": 0.8364808732467871
+      },
+      "15": {
+        "frac_mfe_captured": 0.9031809858789579,
+        "frac_mae_incurred": 0.9016617522939641
+      },
+      "20": {
+        "frac_mfe_captured": 0.9396952226368168,
+        "frac_mae_incurred": 0.9385712174723637
+      },
+      "30": {
+        "frac_mfe_captured": 0.9779624869730335,
+        "frac_mae_incurred": 0.9774012491452744
+      }
+    },
+    "medium": {
+      "1": {
+        "frac_mfe_captured": 0.41399657650721694,
+        "frac_mae_incurred": 0.4168516689865608
+      },
+      "3": {
+        "frac_mfe_captured": 0.6091425728520908,
+        "frac_mae_incurred": 0.6076164004919828
+      },
+      "5": {
+        "frac_mfe_captured": 0.7110540110928847,
+        "frac_mae_incurred": 0.7087338433598305
+      },
+      "10": {
+        "frac_mfe_captured": 0.8428837557694652,
+        "frac_mae_incurred": 0.8404721622262729
+      },
+      "15": {
+        "frac_mfe_captured": 0.9067560773184877,
+        "frac_mae_incurred": 0.9047094288523313
+      },
+      "20": {
+        "frac_mfe_captured": 0.9425096296849107,
+        "frac_mae_incurred": 0.9405362090479257
+      },
+      "30": {
+        "frac_mfe_captured": 0.9789607739832975,
+        "frac_mae_incurred": 0.9775772867731192
+      }
+    }
+  }
+}

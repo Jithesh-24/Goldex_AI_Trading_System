@@ -1,0 +1,56 @@
+{
+  "baseline_acc_full118": 0.5110544467162228,
+  "families": {
+    "A_return_dynamics": {
+      "n_cols_dropped": 19,
+      "acc_without_family": 0.5106241682970156,
+      "delta_vs_full118": -0.00043027841920717513
+    },
+    "B_volatility": {
+      "n_cols_dropped": 9,
+      "acc_without_family": 0.5107775944316129,
+      "delta_vs_full118": -0.0002768522846099408
+    },
+    "C_jump_change": {
+      "n_cols_dropped": 7,
+      "acc_without_family": 0.5110815715601524,
+      "delta_vs_full118": 2.7124843929637876e-05
+    },
+    "D_distribution_info": {
+      "n_cols_dropped": 6,
+      "acc_without_family": 0.51150613286654,
+      "delta_vs_full118": 0.0004516861503172098
+    },
+    "E_market_geometry": {
+      "n_cols_dropped": 13,
+      "acc_without_family": 0.5110247134589442,
+      "delta_vs_full118": -2.9733257278619085e-05
+    },
+    "F_mean_reversion": {
+      "n_cols_dropped": 7,
+      "acc_without_family": 0.510647141168457,
+      "delta_vs_full118": -0.00040730554776580163
+    },
+    "G_time_session": {
+      "n_cols_dropped": 14,
+      "acc_without_family": 0.5105446252613927,
+      "delta_vs_full118": -0.0005098214548301394
+    },
+    "H_microstructure": {
+      "n_cols_dropped": 6,
+      "acc_without_family": 0.510797791452801,
+      "delta_vs_full118": -0.0002566552634217789
+    },
+    "I_regime_state": {
+      "n_cols_dropped": 7,
+      "acc_without_family": 0.5104713349762628,
+      "delta_vs_full118": -0.0005831117399599517
+    },
+    "J_first_passage": {
+      "n_cols_dropped": 4,
+      "acc_without_family": 0.5108774829889812,
+      "delta_vs_full118": -0.00017696372724163023
+    }
+  },
+  "generated_at_utc": "2026-08-18T08:03:00Z"
+}
