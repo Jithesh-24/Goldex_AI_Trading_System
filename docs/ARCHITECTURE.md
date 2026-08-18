@@ -152,3 +152,173 @@ file-polling contract), `trading/`'s virtual trade engine (contract exists,
 no manager), `journal/`'s contract adoption in the write path, all four
 unpopulated router roles, EOD learning, champion/challenger promotion
 execution. These are explicitly Phase 2+ scope, not oversights.
+
+## Phase 2: Real-Time Market-State Pipeline
+
+Status: complete, 2026-08-18. Replaces Phase 1's placeholder `market/`
+(external file-polling) with a managed MT5 feed process and an
+incremental `MarketState` builder — live-verified against a real XM
+connection.
+
+### The Wine/native process boundary
+
+`MetaTrader5` (the Python package) is Windows-only and is not, and
+cannot be, installed in this repo's native venv — confirmed by a direct
+`ModuleNotFoundError`. It wraps IPC to the Windows MT5 terminal, which
+here runs under Wine. This means a managed MT5 feed process is
+unavoidably a **separate OS process across a Wine↔native boundary** —
+no design eliminates this, only makes it fast and clean. `market/mt5_feed.py`
+runs under `wine python.exe`, a completely separate Python 3.11
+interpreter with no third-party packages beyond `MetaTrader5` itself
+(confirmed pydantic-free by an automated import-set check).
+
+### Live data flow
+
+```mermaid
+flowchart TD
+    XM[XM Broker] --> MT5T[MT5 Terminal - Wine]
+    MT5T --> Feed["market/mt5_feed.py<br/>Wine Python 3.11, MT5 IPC owner"]
+    Feed -->|"TCP loopback<br/>tick_protocol.py frames"| Listener["market/feed_listener.py<br/>native, background thread"]
+    Listener --> Engine["market/state_engine.py<br/>pure incremental builder"]
+    Engine --> MS["contracts.MarketState<br/>feed_health authoritative"]
+    MS --> Accessor["app/engine.py<br/>get_market_state() - additive, inert"]
+    Accessor -.->|"Phase 3+"| FF["Feature Fabric<br/>NOT BUILT YET"]
+    Feed -.->|"unchanged, separate channel"| Verdict["Verdict tracking<br/>trade-management, out of scope"]
+```
+
+Two processes, bridged by a TCP loopback socket with the **native side as
+server**: `feed_listener.py` binds a port and persists/restarts
+independently of the Wine side; `mt5_feed.py` (Wine) is the client and
+owns reconnect, extending the same MT5-reconnect discipline one level
+out. Wire format (`tick_protocol.py`) is newline-delimited JSON, stdlib-only
+on both sides — no pydantic dependency added to the Wine process.
+
+### Tick and MarketState contracts
+
+`contracts/tick.py`'s `Tick` carries `market_timestamp` (broker-clock,
+offset-corrected to true UTC) and `ingestion_timestamp` (native-side wall
+clock) as two distinct fields, plus `bid`/`ask`/`mid`/`spread`/optional
+`tick_volume`. `last` stays `Optional`/unset — confirmed `UNSUPPORTED_BY_DATA`
+for `GOLD.i#` (never read anywhere in the proven ticker code this was
+ported from). `internal_seq` is `feed_listener.py`'s own monotonic
+counter, explicitly not a broker sequence (MT5 provides none).
+
+`contracts/market_state.py`'s `MarketState` adds identity/versioning
+(`symbol`, `source`, `state_version`, `sequence`), three named timestamps
+(`market_timestamp`/`ingestion_timestamp`/`processing_timestamp`, never
+mixed), price with `DataQuality` on `last`, activity counts, `current_m1`/
+`completed_m1` (`M1BarState.complete` is explicit, never inferred),
+window-bounded volatility inputs, and `FeedHealthState` — authoritative:
+a consumer must check it before trusting price fields.
+
+### Timestamp handling
+
+Three points, always kept separate: `market_timestamp` (MT5 server time,
+offset-corrected — the offset is measured live, not assumed, and rounds
+to the nearest 0.5h), `ingestion_timestamp` (stamped by `feed_listener.py`
+at actual socket receipt — **never** sent over the wire by `mt5_feed.py`,
+which cannot know when the native side will receive a tick; an earlier
+draft got this backwards and was caught before Task 10 could inherit the
+mistake). `processing_timestamp` is stamped by `state_engine.py` when it
+finishes updating state. UTC internally, everywhere — presentation-layer
+conversion only at the log-formatting boundary.
+
+### Latency measurement
+
+`feed_latency_sec` (ingestion − market), `state_update_latency_sec`
+(processing − ingestion), and a decision-ready latency measured at
+`app/engine.py`'s accessor call site. **Live-measured** (2026-08-18, 90s
+window, real XM connection, 504 ticks): `state_update_latency_sec`
+consistently ~100–400μs. `feed_latency_sec` ran ~0.15–1.2s — real, but
+attributable to the 0.5h-granularity offset measurement rather than true
+network/processing delay (residual sub-offset broker clock skew shows up
+directly as apparent feed latency); documented as a limitation, not
+hidden. **Synthetic** (`tests/test_performance.py`, labeled throughout,
+never blended with the live numbers): 20,000 ticks in 22.2s → 902
+ticks/sec sustained, p50=1274μs p95=1646μs p99=1892μs per-tick processing,
+~762KB steady-state memory.
+
+### Feed health and reconnect
+
+`FeedHealthState`: `CONNECTED`/`STALE`/`RECONNECTING`/`DISCONNECTED`/
+`INVALID`/`UNKNOWN`. `feed_listener.py` classifies every anomaly
+explicitly (malformed frame, timestamp reversal, duplicate tick, spread
+anomaly) rather than silently continuing — a duplicate is identical
+`market_timestamp`+`bid`+`ask`; out-of-order is any earlier
+`market_timestamp` than the last accepted tick; both are rejected, never
+crash the listener. Reconnect is `mt5_feed.py`-side, bounded exponential
+backoff (1s/2s/4s/8s, capped), independent of the MT5 connection itself —
+a socket failure never blocks or pauses the tick loop. Live-verified:
+`feed_health` stayed `CONNECTED` for the entire 90s/504-tick window.
+
+### M1 construction
+
+Ported behavior-preserving from the proven bar-build logic (MT5
+convention: OHLC from bid, minute-bucketed). `current_m1` (`complete=False`)
+updates in place; on minute rollover the finished bar copies into
+`completed_m1` (`complete=True`) and a fresh `current_m1` starts.
+Downstream code reads `complete` explicitly — never infers it from field
+presence, which is what actually prevents lookahead.
+
+### State buffering and incremental correctness
+
+Bounded, in-memory only: a 300s tick ring buffer plus a separate 60s
+ring buffer (added after profiling showed the original single-buffer
+rescan was O(window) per tick where O(1) was achievable — see below), and
+up to 480 completed M1 bars (~8h). No historical dataset load in the live
+process — `StateEngine.bootstrap()` is the one explicit, startup-only
+exception, seeded via a `backfill` wire frame sent once per connection.
+Incremental spread statistics are proven to match a from-scratch reference
+calculation on the same window (`tests/test_state_engine.py`).
+
+Two real performance bugs were found and fixed via `tests/test_performance.py`,
+not left as an "unoptimized baseline": `tick_count_60s` originally rescanned
+the full 300s buffer every tick (fixed with a dedicated O(1)-amortized 60s
+buffer), and `spread_std_60s` used `statistics.pstdev`, which profiled at
+~94% of `on_tick`'s total runtime (it uses exact `Fraction` arithmetic
+internally) — replaced with plain float variance, re-verified against the
+correctness reference to 1e-9.
+
+### Legacy retirement — precise scope
+
+`market/xm_ticker.py` is archived (`.archive/legacy-xm-ticker-2026-08-18/`),
+`trading/watchdog.py` now launches/monitors `mt5_feed.py`. **Scope
+correction made during implementation:** `mt5_feed.py` is a
+behavior-preserving *superset* of `xm_ticker.py`, not a replacement of
+its market-data half — it keeps every existing STATE/BARS_LIVE/
+BARS_BACKFILL/OFFSET_FILE write unchanged (`app/engine.py`'s real signal
+generation, market-closed gating, and trade-verdict tracking still depend
+on those files) and *additively* pushes the new socket frames alongside.
+The original plan draft considered splitting market-data from
+verdict-tracking file writes; that was reconsidered while writing the
+file as unnecessary risk to live trading behavior for a phase whose
+charter is infrastructure, not trading changes. Verdict-tracking itself
+is untouched, unmigrated, exactly as confirmed in scope discussions.
+
+### Model routing compatibility
+
+No change to `decision/router.py`, `models/registry/`, or
+`config/models.yaml`. `MarketState`'s shape is deliberately
+family-agnostic raw state, not a feature vector tied to any one model's
+input schema — Phase 1's router already supports arbitrary future model
+families via the `ModelFamily` literal; Phase 2 adds no new roles and
+hardcodes nothing beyond what was already CatBoost-specific in Phase 1.
+
+### MT5/XM limitations discovered
+
+- `last` and `real_volume` are `UNSUPPORTED_BY_DATA` for `GOLD.i#` —
+  never read by any proven code path.
+- No MT5 session-hours API is used or assumed to exist; XM session hours
+  (Fri ≥21:00 UTC close, Sat all day, Sun <22:00 UTC, daily break
+  21:00–22:00 UTC Mon–Thu) are empirically reverse-engineered from live
+  bars, ported unchanged into `state_engine.is_market_closed()`.
+- MT5 server clock offset is not fixed, must be measured live, and is
+  only known to 0.5h granularity — the dominant contributor to measured
+  `feed_latency_sec` in the live-verification window (Section above),
+  not real network delay.
+- No raw tick-level history is persisted anywhere in this system — only
+  M1 OHLC bars. Any tick-level replay must be synthetic and labeled as
+  such; there is no real XM tick dataset to validate against.
+- `time_msc` (millisecond MT5 timestamp) is available per the documented
+  API surface but unused/unverified against XM's actual sub-second
+  precision — noted as a future opportunity, not implemented here.
