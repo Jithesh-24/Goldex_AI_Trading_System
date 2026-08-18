@@ -18,10 +18,10 @@ import time
 import numpy as np
 import pandas as pd
 
-from core.train import (assemble_dataset, label_events, train_primary_oof,
-                         build_meta_labels, TB_CFG_TRADE, EMBARGO_BARS, N_SPLITS,
-                         _fit_with_early_stopping)
-from core.cv import PurgedWalkForwardCV
+from learning.train import (assemble_dataset, label_events, train_primary_oof,
+                             build_meta_labels, TB_CFG_TRADE, EMBARGO_BARS, N_SPLITS,
+                             _fit_with_early_stopping)
+from learning.cv import PurgedWalkForwardCV
 
 THRESHOLDS = [0.45, 0.48, 0.50, 0.52, 0.55, 0.58, 0.60, 0.65]
 
