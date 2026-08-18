@@ -95,12 +95,15 @@ class FeedListener:
             self.engine.bootstrap(frame["bars"])
             return
         if frame["type"] == FRAME_TICK:
-            now = datetime.now(timezone.utc)
+            # Stamped here, unconditionally -- this IS "when feed_listener.py
+            # received it." Never taken from the wire (see tick_protocol.py's
+            # encode_tick_frame docstring for why).
+            ingestion_timestamp = datetime.now(timezone.utc)
             try:
                 tick = Tick(
                     symbol=frame["symbol"],
                     market_timestamp=frame["market_timestamp"],
-                    ingestion_timestamp=frame.get("ingestion_timestamp") or now.isoformat(),
+                    ingestion_timestamp=ingestion_timestamp,
                     bid=frame["bid"], ask=frame["ask"],
                     mid=(frame["bid"] + frame["ask"]) / 2,
                     spread=frame["ask"] - frame["bid"],

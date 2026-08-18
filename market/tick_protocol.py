@@ -11,13 +11,16 @@ FRAME_TICK = "tick"
 FRAME_BACKFILL = "backfill"
 
 
-def encode_tick_frame(symbol, market_timestamp_iso, ingestion_timestamp_iso,
-                       bid, ask, tick_volume, source, internal_seq):
+def encode_tick_frame(symbol, market_timestamp_iso, bid, ask, tick_volume, source, internal_seq):
+    """No ingestion_timestamp on the wire, deliberately: ingestion_timestamp
+    means "when feed_listener.py received it" -- the sender (mt5_feed.py)
+    cannot know that in advance, and stamping it here would make
+    feed_latency_sec (ingestion - market) meaningless. feed_listener.py
+    stamps it itself, at actual receipt."""
     return json.dumps({
         "type": FRAME_TICK,
         "symbol": symbol,
         "market_timestamp": market_timestamp_iso,
-        "ingestion_timestamp": ingestion_timestamp_iso,
         "bid": bid,
         "ask": ask,
         "tick_volume": tick_volume,

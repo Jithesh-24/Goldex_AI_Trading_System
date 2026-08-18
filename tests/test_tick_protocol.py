@@ -9,7 +9,7 @@ from market.tick_protocol import encode_tick_frame, encode_backfill_frame, decod
 
 
 def test_tick_frame_roundtrip():
-    line = encode_tick_frame("GOLD.i#", "2026-08-18T12:00:00", "2026-08-18T12:00:00.010",
+    line = encode_tick_frame("GOLD.i#", "2026-08-18T12:00:00",
                               2500.10, 2500.35, 3, "mt5_live", 1)
     frame = decode_frame(line)
     assert frame["type"] == FRAME_TICK

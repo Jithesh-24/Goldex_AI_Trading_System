@@ -32,7 +32,7 @@ def test_backfill_then_tick_produces_state():
             "low": 2498.8, "close": 2499.2, "tick_volume": 30, "spread": 25,
         }])
         tk = encode_tick_frame("GOLD.i#", "2026-08-18T12:00:00+00:00",
-                                "2026-08-18T12:00:00.010+00:00", 2500.0, 2500.2, 1, "mt5_live", 1)
+                                2500.0, 2500.2, 1, "mt5_live", 1)
         sock = _connect_and_send(TEST_PORT, [bf, tk])
         time.sleep(0.3)
         state = fl.get_latest_state()
@@ -51,7 +51,7 @@ def test_stale_after_no_ticks():
     time.sleep(0.2)
     try:
         tk = encode_tick_frame("GOLD.i#", "2026-08-18T12:00:00+00:00",
-                                "2026-08-18T12:00:00.010+00:00", 2500.0, 2500.2, 1, "mt5_live", 1)
+                                2500.0, 2500.2, 1, "mt5_live", 1)
         sock = _connect_and_send(TEST_PORT + 1, [tk])
         time.sleep(0.2)
         assert fl.get_health() == FeedHealthState.CONNECTED
@@ -68,7 +68,7 @@ def test_disconnect_then_reconnect():
     time.sleep(0.2)
     try:
         tk = encode_tick_frame("GOLD.i#", "2026-08-18T12:00:00+00:00",
-                                "2026-08-18T12:00:00.010+00:00", 2500.0, 2500.2, 1, "mt5_live", 1)
+                                2500.0, 2500.2, 1, "mt5_live", 1)
         sock1 = _connect_and_send(TEST_PORT + 2, [tk])
         time.sleep(0.2)
         assert fl.get_health() == FeedHealthState.CONNECTED
@@ -76,7 +76,7 @@ def test_disconnect_then_reconnect():
         time.sleep(0.2)
         assert fl.get_health() == FeedHealthState.DISCONNECTED
         tk2 = encode_tick_frame("GOLD.i#", "2026-08-18T12:00:05+00:00",
-                                 "2026-08-18T12:00:05.010+00:00", 2501.0, 2501.2, 1, "mt5_live", 2)
+                                 2501.0, 2501.2, 1, "mt5_live", 2)
         sock2 = _connect_and_send(TEST_PORT + 2, [tk2])
         time.sleep(0.2)
         assert fl.get_health() == FeedHealthState.CONNECTED
