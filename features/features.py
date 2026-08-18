@@ -15,11 +15,11 @@ don't fill them.
 import numpy as np
 import pandas as pd
 
-from core.volatility import (bipower_variation, ewma_vol, garman_klass,
-                              jump_component, rogers_satchell, yang_zhang)
-from core.kalman import kalman_local_level
-from core.hurst import rolling_hurst
-from core.fracdiff import frac_diff_ffd
+from features.volatility import (bipower_variation, ewma_vol, garman_klass,
+                                  jump_component, rogers_satchell, yang_zhang)
+from features.kalman import kalman_local_level
+from features.hurst import rolling_hurst
+from features.fracdiff import frac_diff_ffd
 
 VOL_WINDOWS = (20, 60, 240)
 RET_HORIZONS = (1, 5, 15, 60)
@@ -85,7 +85,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
 if __name__ == "__main__":
     import time
-    from core.data import load_raw_m1, to_m5
+    from learning.data import load_raw_m1, to_m5
 
     df = load_raw_m1()
     df5 = to_m5(df)
