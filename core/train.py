@@ -74,7 +74,9 @@ HORIZON_VOL_SCALE = 0.45
 CUSUM_K = 2.5
 N_SPLITS = 6
 EMBARGO_BARS = TB_CFG_DIR.max_holding * 2
-META_PROB_THRESHOLD = 0.55  # only used at inference; kept here as the documented default
+META_PROB_THRESHOLD = 0.60  # only used at inference; kept here as the documented default --
+# calibrated from core/backtest.py's sequential (one-trade-at-a-time) OOF sweep: 0.60 gives
+# ~5 signals/day at 58.3% win rate / net +0.21R, the best fit for manual one-at-a-time execution.
 
 CATBOOST_KW = dict(depth=4, iterations=2000, learning_rate=0.02, l2_leaf_reg=15,
                     loss_function="Logloss", random_seed=42, verbose=False,
@@ -94,10 +96,15 @@ def _fit_with_early_stopping(X, y, train_pos):
     return model
 
 
-def assemble_dataset(rows: int = None):
+def assemble_dataset(rows: int = None, exclude: frozenset = frozenset()):
     """Returns (feat_df, close/high/low arrays, horizon-scaled vol, event
     t0_idx, feature_cols). `rows` caps to the most recent N raw M1 bars for
-    a fast dry run."""
+    a fast dry run. `exclude` drops named columns from the PREDICTIVE
+    feature_cols list (e.g. {"spread", "tick_volume"} -- see Phase 2 data-
+    semantics fix) -- the columns are still computed in `feat` (spread stays
+    available for the execution-cost layer in core/signal.py and the
+    backtest), they are just never shown to the model. Default excludes
+    nothing, preserving exact prior behavior for existing callers."""
     df = load_raw_m1()
     if rows:
         df = df.tail(rows).reset_index(drop=True)
@@ -114,7 +121,7 @@ def assemble_dataset(rows: int = None):
 
     vol_tb = vol_filled * np.sqrt(TB_CFG_DIR.max_holding) * HORIZON_VOL_SCALE
 
-    feature_cols = [c for c in feat.columns if c != "time"]
+    feature_cols = [c for c in feat.columns if c != "time" and c not in exclude]
     warmup_ok = feat[feature_cols].notna().all(axis=1).to_numpy()
     horizon_ok = np.arange(len(df)) < (len(df) - TB_CFG_DIR.max_holding - 1)
     valid = event_mask & warmup_ok & horizon_ok
@@ -177,7 +184,14 @@ def build_meta_labels(close, high, low, vol, t0_nz, oof_pred, has_oof):
     return has_oof, side, meta_labels
 
 
-def train_final_models(X, y_bin, t0, has_oof, side, meta_labels, feature_cols, out_dir):
+FEATURE_SCHEMA_VERSION = "v2-2026-08-18"  # bumped from the implicit unversioned original 28-col
+# schema when spread/tick_volume were dropped from the predictive matrix (Phase 2 data-semantics
+# fix) -- see feature_cols.json's "excluded_features"/"schema_version" fields for what produced
+# any given model artifact.
+
+
+def train_final_models(X, y_bin, t0, has_oof, side, meta_labels, feature_cols, out_dir,
+                        excluded_features=frozenset(), dataset_meta=None):
     os.makedirs(out_dir, exist_ok=True)
     all_pos = np.arange(len(X))
 
@@ -199,7 +213,15 @@ def train_final_models(X, y_bin, t0, has_oof, side, meta_labels, feature_cols, o
                    # vol that's ALREADY *sqrt(max_holding)*HORIZON_VOL_SCALE -- live engine
                    # must apply the same scaling to raw per-bar vol before calling score().
                    "horizon_vol_scale": HORIZON_VOL_SCALE, "max_holding": TB_CFG_TRADE.max_holding,
-                   "cusum_k": CUSUM_K, "meta_prob_threshold": META_PROB_THRESHOLD}, f, indent=2)
+                   "cusum_k": CUSUM_K, "meta_prob_threshold": META_PROB_THRESHOLD,
+                   # -- versioning (Phase 2 step 10): "what exact model+features produced this
+                   # signal" should always be answerable from this one file.
+                   "schema_version": FEATURE_SCHEMA_VERSION,
+                   "excluded_features": sorted(excluded_features),
+                   "catboost_kw": CATBOOST_KW, "val_fraction": VAL_FRACTION,
+                   "n_splits": N_SPLITS, "embargo_bars": EMBARGO_BARS,
+                   "trained_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                   "dataset": dataset_meta or {}}, f, indent=2)
 
     print(f"saved primary.cbm, meta.cbm, feature_cols.json -> {out_dir}")
     print(f"meta training set: {len(X_meta):,} rows, win rate {y_meta.mean():.3f} "
@@ -211,11 +233,21 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rows", type=int, default=None, help="cap to most recent N raw bars (dry run)")
     ap.add_argument("--out-dir", type=str, default=os.path.join(BASE, "models"))
+    ap.add_argument("--exclude-features", type=str, default="",
+                     help="comma-separated feature names to drop from the PREDICTIVE matrix "
+                          "(e.g. spread,tick_volume) -- Phase 2 data-semantics fix. Empty by "
+                          "default so retrain_daily.py's scheduled nightly call is UNCHANGED "
+                          "unless explicitly opted in; pass this flag by hand to build a "
+                          "validated v2 artifact without touching the automatic promotion path.")
     args = ap.parse_args()
+    exclude = frozenset(c.strip() for c in args.exclude_features.split(",") if c.strip())
 
     t_start = time.time()
-    feat, close, high, low, vol, t0_idx, feature_cols = assemble_dataset(rows=args.rows)
+    feat, close, high, low, vol, t0_idx, feature_cols = assemble_dataset(rows=args.rows, exclude=exclude)
     X, y_bin, t0, t1, t0_nz = label_events(close, high, low, vol, t0_idx, feature_cols, feat)
+    dataset_meta = {"n_bars": int(len(feat)), "excluded_features": sorted(exclude),
+                     "date_range": [str(pd.to_datetime(feat["time"].to_numpy())[0]),
+                                    str(pd.to_datetime(feat["time"].to_numpy())[-1])]}
 
     print("\n== primary OOF training (purged walk-forward, binary direction) ==")
     oof_pred, oof_proba, has_oof, fold_metrics = train_primary_oof(X, y_bin, t0, t1)
@@ -227,13 +259,15 @@ def main():
     print(f"meta training set size: {has_oof.sum():,}")
 
     print("\n== final model fit (full data) ==")
-    train_final_models(X, y_bin, t0, has_oof, side, meta_labels, feature_cols, args.out_dir)
+    train_final_models(X, y_bin, t0, has_oof, side, meta_labels, feature_cols, args.out_dir,
+                        excluded_features=exclude, dataset_meta=dataset_meta)
 
     summary = {
         "n_bars": int(len(feat)), "n_events": int(len(t0_idx)), "n_directional": int(len(X)),
         "fold_metrics": fold_metrics, "mean_oof_acc": float(mean_oof_acc),
         "n_meta_train": int(has_oof.sum()),
         "meta_win_rate_baseline": float(meta_labels["label"].mean()),
+        "schema_version": FEATURE_SCHEMA_VERSION, "excluded_features": sorted(exclude),
         "elapsed_sec": time.time() - t_start,
     }
     with open(os.path.join(args.out_dir, "train_summary.json"), "w") as f:

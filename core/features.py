@@ -1,17 +1,17 @@
 """
-Tier-1 (price/vol, single-instrument) + Tier-2 (cross-asset macro) feature
-matrix. Deliberately excludes classic lagging indicators (SMA/EMA crossovers,
-RSI, MACD, Bollinger) — those are smoothed transforms of price that react
-after the move. Everything here is either a statistical estimator of the
-CURRENT state (volatility, regime persistence, trend level via Kalman which
-adapts its own lag) or genuinely different information (cross-asset macro).
+Pure price/volatility feature matrix, single-instrument (XAUUSD), no
+cross-asset macro dependency (macro_daily.csv was a stale, slow-moving daily
+join — dropped 2026-08-17 in favor of a purely self-contained model: the
+system learns entirely from gold's own price action). Deliberately excludes
+classic lagging indicators (SMA/EMA crossovers, RSI, MACD, Bollinger) — those
+are smoothed transforms of price that react after the move. Everything here
+is a statistical estimator of the CURRENT state (volatility, regime
+persistence, trend level via Kalman which adapts its own lag).
 
 Every column is causal: value at row i depends only on data at or before i.
 Leading NaNs from warmup windows are expected — drop them before training,
 don't fill them.
 """
-import os
-
 import numpy as np
 import pandas as pd
 
@@ -20,9 +20,6 @@ from core.volatility import (bipower_variation, ewma_vol, garman_klass,
 from core.kalman import kalman_local_level
 from core.hurst import rolling_hurst
 from core.fracdiff import frac_diff_ffd
-
-BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MACRO_CSV = os.path.join(BASE, "macro_daily.csv")
 
 VOL_WINDOWS = (20, 60, 240)
 RET_HORIZONS = (1, 5, 15, 60)
@@ -81,41 +78,9 @@ def build_tier1_features(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def load_macro_daily(path: str = MACRO_CSV) -> pd.DataFrame:
-    m = pd.read_csv(path, parse_dates=["date"])
-    m["date"] = m["date"].dt.tz_localize(None).dt.normalize()
-    m = m.sort_values("date").reset_index(drop=True)
-    return m
-
-
-def merge_tier2_macro(df: pd.DataFrame, macro: pd.DataFrame = None) -> pd.DataFrame:
-    """As-of merge of daily cross-asset macro features onto the bar series.
-    Shifted by 1 calendar day (row for date D reflects D's close, which
-    isn't known until D ends) so no same-day lookahead leaks into intraday
-    bars trading on day D."""
-    if macro is None:
-        macro = load_macro_daily()
-    m = macro.copy()
-    m["date"] = m["date"] + pd.Timedelta(days=1)  # available starting next day
-    macro_cols = [c for c in m.columns if c != "date"]
-
-    # df["time"] is chronological -> bar_date is non-decreasing, satisfies
-    # merge_asof's sorted-key requirement without needing an explicit sort
-    # (which would silently desync row order from df).
-    left = pd.DataFrame({"date": pd.to_datetime(df["time"]).dt.normalize()})
-    merged = pd.merge_asof(left, m.sort_values("date"), on="date", direction="backward")
-
-    result = df.reset_index(drop=True).copy()
-    for c in macro_cols:
-        result[f"macro_{c}"] = merged[c].to_numpy()
-    return result
-
-
-def build_features(df: pd.DataFrame, macro: pd.DataFrame = None) -> pd.DataFrame:
-    """Full Tier-1 + Tier-2 feature matrix, aligned to df's row order."""
-    tier1 = build_tier1_features(df)
-    full = merge_tier2_macro(tier1, macro=macro)
-    return full
+def build_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Full feature matrix, aligned to df's row order."""
+    return build_tier1_features(df)
 
 
 if __name__ == "__main__":
