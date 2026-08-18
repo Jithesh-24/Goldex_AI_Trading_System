@@ -9,8 +9,14 @@ from datetime import datetime, timedelta, timezone
 
 
 def generate_ticks(n, start_time=None, seed=42, base_price=2500.0):
+    """Anchored in the past by default (worst-case drift + a safety
+    buffer) so that a batch processed near-instantly by a real
+    datetime.now()-stamping engine never sees a synthetic tick "from the
+    future" -- a replay is ticks that already happened, fed through now."""
     rng = random.Random(seed)
-    start_time = start_time or datetime.now(timezone.utc)
+    if start_time is None:
+        worst_case_drift_ms = n * 45 + 1000
+        start_time = datetime.now(timezone.utc) - timedelta(milliseconds=worst_case_drift_ms)
     ticks = []
     t = start_time
     price = base_price
