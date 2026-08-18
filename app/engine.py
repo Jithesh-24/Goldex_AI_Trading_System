@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """AI Signal Engine v8 (2026-08-17 rebuild, relocated into app/ for V3
 Phase 1) -- pure-learned two-stage model (learning.train / decision.signal),
-XM-native live bars (market/xm_ticker.py), signal-only Telegram delivery.
-No hardcoded direction/entry logic anywhere: primary+meta CatBoost models
-decide side and precision; TP/SL are the same vol-scaled barrier widths
-the models were trained against (decision/signal.py).
+XM-native live bars (market/mt5_feed.py, Phase 2's rewrite of the old
+xm_ticker.py), signal-only Telegram delivery. No hardcoded direction/entry
+logic anywhere: primary+meta CatBoost models decide side and precision;
+TP/SL are the same vol-scaled barrier widths the models were trained
+against (decision/signal.py).
 
-Contract with market/xm_ticker.py (unchanged from the old engine, so the
-ticker and watchdog need no changes beyond the path updates in trading/watchdog.py):
+Contract with market/mt5_feed.py (unchanged from the old ticker -- Phase 2
+kept every existing file output behavior-preserving, see market/README.md):
   ACTIVE (.active_signal_ai.json) : engine writes {time,direction,sl,tp} to
     open a trade, {} to clear it. Ticker tracks first-touch TP/SL against its
     own 25ms XM tick stream and reports the verdict in STATE.
