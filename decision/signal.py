@@ -9,15 +9,11 @@ barrier widths (pt_mult*vol, sl_mult*vol) the models were trained against,
 read from feature_cols.json so training and inference can never silently
 drift apart.
 """
-import json
-import os
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 from catboost import CatBoostClassifier
-
-BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 @dataclass
@@ -31,21 +27,31 @@ class Signal:
 
 
 class SignalEngine:
-    def __init__(self, model_dir: str = os.path.join(BASE, "models")):
-        with open(os.path.join(model_dir, "feature_cols.json")) as f:
-            meta_cfg = json.load(f)
-        self.primary_cols = meta_cfg["primary"]
-        self.meta_cols = meta_cfg["meta"]
-        self.pt_mult = meta_cfg["tb_cfg_trade"]["pt_mult"]
-        self.sl_mult = meta_cfg["tb_cfg_trade"]["sl_mult"]
-        self.horizon_vol_scale = meta_cfg["horizon_vol_scale"]
-        self.max_holding = meta_cfg["max_holding"]
-        self.meta_prob_threshold = meta_cfg["meta_prob_threshold"]
+    def __init__(self, router, meta_prob_threshold: float):
+        """router: a decision.router.ModelRouter already configured with
+        config/models.yaml's role map. meta_prob_threshold: the decision
+        policy threshold from config/decision.yaml -- kept separate from
+        the router/registry because it's a tunable operating parameter,
+        not something training-locked to a specific model artifact."""
+        direction_entry = router.resolve("direction")
+        meta_entry = router.resolve("opportunity_meta")
+        if direction_entry is None or meta_entry is None:
+            raise RuntimeError(
+                "SignalEngine requires both 'direction' and 'opportunity_meta' "
+                "roles configured in config/models.yaml"
+            )
+        self.primary_cols = direction_entry.feature_cols
+        self.meta_cols = meta_entry.feature_cols
+        self.pt_mult = meta_entry.training_config["tb_cfg_trade"]["pt_mult"]
+        self.sl_mult = meta_entry.training_config["tb_cfg_trade"]["sl_mult"]
+        self.horizon_vol_scale = meta_entry.training_config["horizon_vol_scale"]
+        self.max_holding = meta_entry.training_config["max_holding"]
+        self.meta_prob_threshold = meta_prob_threshold
 
         self.primary = CatBoostClassifier()
-        self.primary.load_model(os.path.join(model_dir, "primary.cbm"))
+        self.primary.load_model(router.artifact_path("direction"))
         self.meta = CatBoostClassifier()
-        self.meta.load_model(os.path.join(model_dir, "meta.cbm"))
+        self.meta.load_model(router.artifact_path("opportunity_meta"))
 
     def score(self, feat_row: pd.Series, close: float, vol: float, is_cusum_event: bool,
               prob_threshold: float = None) -> Signal | None:
