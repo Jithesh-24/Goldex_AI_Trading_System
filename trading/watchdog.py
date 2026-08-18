@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Watchdog for ai_signal_engine.py + xm_ticker.py + Xvfb (v2, 2026-08-04).
+"""Watchdog for app.engine + market/mt5_feed.py + Xvfb (v2, 2026-08-04).
 
 v1 bug (2026-08-03→04): only checked PID EXISTENCE. A frozen-but-alive engine
 (dead data feed → stale-loop sleep, no journal output for 7h) passed every
@@ -146,7 +146,7 @@ def restart_ticker():
         # before the failure, so the watchdog would believe the restart worked
         # while the ticker is dead. The ticker holds the ONLY MT5 IPC connection.
         subprocess.Popen(
-            ["wine", WINE_PY, f"{BASE}/market/xm_ticker.py"],
+            ["wine", WINE_PY, f"{BASE}/market/mt5_feed.py"],
             env={**os.environ, **WINE_ENV},
             stdout=open(f"{BASE}/ticker.log", "a"),
             stderr=subprocess.STDOUT)
@@ -231,7 +231,7 @@ def main():
     #    check; only a dead process gets restarted. Without this the watchdog
     #    killed+respawned the ticker every 5 min all weekend (IPC churn, and a
     #    duplicate-ticker risk on Monday reopen).
-    if not is_alive("xm_ticker.py"):
+    if not is_alive("mt5_feed.py"):
         if restart_ticker():
             msgs.append("ticker restarted (was dead)")
         else:
