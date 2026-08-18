@@ -10,6 +10,7 @@ from contracts.model_registry import ModelRegistryEntry
 from contracts.market_state import MarketState
 from contracts.feature_schema import FeatureDescriptor, FeatureSetSchema
 from contracts.virtual_trade import VirtualTrade
+from contracts.journal import SignalEvent, LearningEvent
 
 
 def test_model_registry_entry_valid():
@@ -90,6 +91,13 @@ def test_virtual_trade_rejects_bad_direction_type():
         pass
 
 
+def test_journal_events_valid():
+    sig = SignalEvent(trade_id="t-1", timestamp="2026-08-18T12:00:00", payload={"side": 1})
+    learn = LearningEvent(timestamp="2026-08-18T23:59:00", payload={"note": "eod"})
+    assert sig.schema_version == "v1"
+    assert learn.trade_id is None
+
+
 if __name__ == "__main__":
     test_model_registry_entry_valid()
     test_model_registry_entry_rejects_bad_family()
@@ -99,4 +107,5 @@ if __name__ == "__main__":
     test_feature_descriptor_rejects_missing_required_field()
     test_virtual_trade_valid()
     test_virtual_trade_rejects_bad_direction_type()
-    print("contracts/: OK")
+    test_journal_events_valid()
+    print("contracts/: ALL OK")
