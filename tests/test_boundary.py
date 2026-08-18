@@ -32,16 +32,28 @@ def _walk_py_files(pkg_dir):
                 yield os.path.join(root, f)
 
 
-def test_app_never_imports_learning_or_research():
+def _check_no_forbidden_imports(pkg_name):
     violations = []
-    for path in _walk_py_files(os.path.join(BASE, "app")):
+    for path in _walk_py_files(os.path.join(BASE, pkg_name)):
         for name in _module_imports(path):
             top = name.split(".")[0]
             if top in FORBIDDEN_ROOTS:
                 violations.append((path, name))
-    assert not violations, f"app/ imports research-only code: {violations}"
+    assert not violations, f"{pkg_name}/ imports research-only code: {violations}"
+
+
+def test_app_never_imports_learning_or_research():
+    _check_no_forbidden_imports("app")
+
+
+def test_market_never_imports_learning_or_research():
+    # Note: this only inspects import *names* via ast.walk, never executes
+    # `import MetaTrader5` -- safe to run under the native venv even though
+    # market/mt5_feed.py imports a Windows-only package.
+    _check_no_forbidden_imports("market")
 
 
 if __name__ == "__main__":
     test_app_never_imports_learning_or_research()
+    test_market_never_imports_learning_or_research()
     print("tests/test_boundary.py: OK")
