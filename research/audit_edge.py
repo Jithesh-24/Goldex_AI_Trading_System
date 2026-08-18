@@ -556,7 +556,7 @@ def main():
 
     # ================= 5. SPREAD SCENARIOS =================
     log("== spread cost scenarios ==")
-    seed_path = os.path.join(BASE, "gold_seed.csv")
+    seed_path = os.path.join(BASE, "data", "gold_seed.csv")
     live_real = pd.read_csv(seed_path, usecols=["time", "spread", "src"], parse_dates=["time"])
     live_real = live_real[live_real["src"] == "xmlive"]
     empirical = {

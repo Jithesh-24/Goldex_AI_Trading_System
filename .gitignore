@@ -7,3 +7,4 @@ __pycache__/
 models/*.txt
 rotator_keys.json
 *.env
+catboost_info/

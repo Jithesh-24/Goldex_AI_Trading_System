@@ -19,8 +19,8 @@ import numpy as np
 import pandas as pd
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-HIST_CSV = os.path.join(BASE, "gold_seed_merged_full6yr.csv")
-RECENT_CSV = os.path.join(BASE, "gold_seed.csv")
+HIST_CSV = os.path.join(BASE, "data", "gold_seed_merged_full6yr.csv")
+RECENT_CSV = os.path.join(BASE, "data", "gold_seed.csv")
 
 OHLCV_COLS = ["time", "open", "high", "low", "close", "tick_volume", "spread"]
 

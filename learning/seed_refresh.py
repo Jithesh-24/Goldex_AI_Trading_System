@@ -16,8 +16,8 @@ import pandas as pd
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTDIR = "/home/jith/.hermes/profiles/trading/cron/output"
-SEED = os.path.join(BASE, "gold_seed.csv")
-BACKFILL = os.path.join(BASE, "xm_bars_backfill.csv")
+SEED = os.path.join(BASE, "data", "gold_seed.csv")
+BACKFILL = os.path.join(BASE, "data", "xm_bars_backfill.csv")
 LIVE_JSONL = os.path.join(OUTDIR, "xm_live_bars.jsonl")
 
 COLS = ["time", "open", "high", "low", "close", "tick_volume", "spread", "real_volume", "src"]
