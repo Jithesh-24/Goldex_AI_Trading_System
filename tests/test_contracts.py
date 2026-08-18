@@ -7,6 +7,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from contracts.model_registry import ModelRegistryEntry
+from contracts.market_state import MarketState
 
 
 def test_model_registry_entry_valid():
@@ -34,7 +35,23 @@ def test_model_registry_entry_rejects_bad_family():
         assert "family" in str(e).lower() or "literal" in str(e).lower()
 
 
+def test_market_state_valid():
+    ms = MarketState(timestamp="2026-08-18T12:00:00", bid=2500.10, ask=2500.35)
+    assert ms.spread is None
+    assert ms.ask > ms.bid
+
+
+def test_market_state_rejects_nonpositive_bid():
+    try:
+        MarketState(timestamp="2026-08-18T12:00:00", bid=0, ask=2500.35)
+        assert False, "expected validation error for bid <= 0"
+    except Exception as e:
+        assert "bid" in str(e).lower() or "greater than" in str(e).lower()
+
+
 if __name__ == "__main__":
     test_model_registry_entry_valid()
     test_model_registry_entry_rejects_bad_family()
-    print("contracts/model_registry.py: OK")
+    test_market_state_valid()
+    test_market_state_rejects_nonpositive_bid()
+    print("contracts/: OK")
