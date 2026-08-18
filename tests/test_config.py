@@ -14,6 +14,9 @@ def test_load_config_valid():
     assert cfg.models.direction == "direction_catboost_20260818"
     assert cfg.models.regime is None
     assert cfg.learning.acc_regression_tolerance == 0.01
+    assert cfg.market.feed_host == "127.0.0.1"
+    assert cfg.market.feed_port == 47115
+    assert cfg.market.feed_mode == "managed_socket_feed"
 
 
 if __name__ == "__main__":

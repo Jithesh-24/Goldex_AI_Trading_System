@@ -1,5 +1,7 @@
 symbol: XAUUSD
-feed_mode: external_file_legacy
+feed_mode: managed_socket_feed
+feed_host: 127.0.0.1
+feed_port: 47115
 state_dir: /home/jith/.hermes/profiles/trading/cron/output
 tick_state_file: xm_tick_state.json
 active_signal_file: .active_signal_ai.json

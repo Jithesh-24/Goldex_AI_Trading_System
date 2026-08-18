@@ -8,16 +8,20 @@ from pydantic import BaseModel, Field
 
 class MarketConfig(BaseModel):
     symbol: str
-    feed_mode: Literal["external_file_legacy"] = "external_file_legacy"
+    feed_mode: Literal["managed_socket_feed"] = "managed_socket_feed"
+    feed_host: str = "127.0.0.1"
+    feed_port: int = 47115
     state_dir: str
     tick_state_file: str
     active_signal_file: str
     bars_file: str
     legacy_note: str = (
-        "TEMPORARY: market feed is a polling-file contract with an "
-        "unmanaged external process (xm_ticker.py is not wired as live "
-        "infra in Phase 1). Phase 2 replaces this with an integrated "
-        "real-time MT5 market-state pipeline."
+        "Market-data path (bid/ask/M1) is now the managed feed "
+        "(market/mt5_feed.py -> market/feed_listener.py -> MarketState), "
+        "Phase 2. tick_state_file/active_signal_file/bars_file remain "
+        "referenced ONLY for the untouched verdict-tracking channel "
+        "(trade-management, deliberately out of Phase 2 scope) -- not "
+        "for market-data reads anymore."
     )
 
 
