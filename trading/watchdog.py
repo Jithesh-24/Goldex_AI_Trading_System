@@ -129,7 +129,7 @@ def restart_engine():
              "--setenv=DISPLAY=:99", "--setenv=HOME=/home/jith",
              "--setenv=PYTHONUNBUFFERED=1",
              "/usr/bin/bash", "-c",
-             f"cd {BASE} && exec /home/jith/.hermes/hermes-agent/venv/bin/python3 -u ai_signal_engine.py"],
+             f"cd {BASE} && exec /home/jith/.hermes/hermes-agent/venv/bin/python3 -u -m app.engine"],
             capture_output=True, timeout=30)
         return True
     except Exception as e:
@@ -146,7 +146,7 @@ def restart_ticker():
         # before the failure, so the watchdog would believe the restart worked
         # while the ticker is dead. The ticker holds the ONLY MT5 IPC connection.
         subprocess.Popen(
-            ["wine", WINE_PY, f"{BASE}/xm_ticker.py"],
+            ["wine", WINE_PY, f"{BASE}/market/xm_ticker.py"],
             env={**os.environ, **WINE_ENV},
             stdout=open(f"{BASE}/ticker.log", "a"),
             stderr=subprocess.STDOUT)
@@ -215,7 +215,7 @@ def main():
     #    Market closed (weekend): journal is legitimately silent → skip the
     #    stale check; only a dead process gets restarted. This prevents the
     #    watchdog from restart-churning a healthy engine on Sat/Sun.
-    if not is_alive("ai_signal_engine.py"):
+    if not is_alive("app.engine"):
         if restart_engine():
             msgs.append(f"engine restarted (was dead | unit {ENGINE_UNIT})")
         else:
