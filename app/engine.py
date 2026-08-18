@@ -36,6 +36,7 @@ from decision.router import ModelRouter
 from features.features import build_features
 from features.labeling import cusum_filter
 from config.loader import load_config
+from market.feed_listener import FeedListener
 
 _cfg = load_config()
 BASE = _cfg.runtime.base_dir
@@ -214,6 +215,32 @@ class LiveEngine:
         log(f"engine start: buffer={len(self.buf):,} bars, last_bar={self.buf['time'].iloc[-1]}, "
             f"active_trade={'yes' if self.active else 'no'}")
 
+        # Phase 2: managed market-state feed listener. Additive and inert --
+        # proves MT5 -> market/mt5_feed.py -> this listener -> MarketState
+        # reaches the V3 application boundary. Not wired into the signal
+        # generation loop above (that stays on gold_seed.csv buffer +
+        # build_features(), unchanged) -- get_market_state() is a standalone
+        # accessor for later-phase use.
+        self.feed_listener = FeedListener(
+            symbol="GOLD.i#", host=_cfg.market.feed_host, port=_cfg.market.feed_port,
+        )
+        self.feed_listener.start()
+        log(f"market feed listener started on {_cfg.market.feed_host}:{_cfg.market.feed_port} "
+            f"(inert until market/mt5_feed.py connects)")
+
+    def get_market_state(self):
+        """Phase 2 accessor: proves MT5 -> managed feed -> MarketState -> V3
+        application boundary. Not yet wired into the signal-generation
+        loop (that's later-phase work) -- additive and inert."""
+        t0 = time.time()
+        state = self.feed_listener.get_latest_state()
+        if state is not None:
+            decision_ready_latency = time.time() - t0
+            log(f"market_state accessed: seq={state.sequence} bid={state.bid} "
+                f"ask={state.ask} feed_health={state.feed_health.value} "
+                f"decision_ready_latency_sec={decision_ready_latency:.6f}")
+        return state
+
     def poll_new_bars(self):
         """Tail xm_live_bars.jsonl for bars newer than self.last_bar_t."""
         new_rows = []
@@ -352,24 +379,27 @@ class LiveEngine:
 
     def run(self):
         log("live engine running")
-        while True:
-            try:
-                st = read_tick_state()
-                if st and st.get("market_closed"):
-                    time.sleep(30)
-                    continue
+        try:
+            while True:
+                try:
+                    st = read_tick_state()
+                    if st and st.get("market_closed"):
+                        time.sleep(30)
+                        continue
 
-                got_new_bar = self.poll_new_bars()
+                    got_new_bar = self.poll_new_bars()
 
-                if self.active is None:
-                    self.active = load_active()  # pick up externally-cleared/opened state on restart
-                if self.active is not None:
-                    self.check_for_close()
-                elif got_new_bar and len(self.buf) >= 500:  # only recompute on a fresh bar
-                    self.check_for_signal()
-            except Exception as e:
-                log(f"loop error: {e}")
-            time.sleep(LOOP_SLEEP)
+                    if self.active is None:
+                        self.active = load_active()  # pick up externally-cleared/opened state on restart
+                    if self.active is not None:
+                        self.check_for_close()
+                    elif got_new_bar and len(self.buf) >= 500:  # only recompute on a fresh bar
+                        self.check_for_signal()
+                except Exception as e:
+                    log(f"loop error: {e}")
+                time.sleep(LOOP_SLEEP)
+        finally:
+            self.feed_listener.stop()
 
 
 if __name__ == "__main__":
