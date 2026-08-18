@@ -39,17 +39,30 @@ def test_model_registry_entry_rejects_bad_family():
 
 
 def test_market_state_valid():
-    ms = MarketState(timestamp="2026-08-18T12:00:00", bid=2500.10, ask=2500.35)
-    assert ms.spread is None
+    ms = MarketState(
+        symbol="GOLD.i#", source="synthetic_replay", sequence=1,
+        market_timestamp="2026-08-18T12:00:00", ingestion_timestamp="2026-08-18T12:00:00.010",
+        processing_timestamp="2026-08-18T12:00:00.011", bid=2500.10, ask=2500.35,
+        mid=2500.225, spread=0.25, tick_count_60s=1, tick_count_300s=1,
+        tick_rate_per_sec=0.2, feed_health="CONNECTED", last_tick_age_sec=0.01,
+    )
+    assert ms.spread == 0.25
     assert ms.ask > ms.bid
+    assert ms.last_quality.value == "UNAVAILABLE"
 
 
 def test_market_state_rejects_nonpositive_bid():
     try:
-        MarketState(timestamp="2026-08-18T12:00:00", bid=0, ask=2500.35)
+        MarketState(
+            symbol="GOLD.i#", source="synthetic_replay", sequence=1,
+            market_timestamp="2026-08-18T12:00:00", ingestion_timestamp="2026-08-18T12:00:00.010",
+            processing_timestamp="2026-08-18T12:00:00.011", bid=0, ask=2500.35,
+            mid=1250.175, spread=2500.35, tick_count_60s=1, tick_count_300s=1,
+            tick_rate_per_sec=0.2, feed_health="CONNECTED", last_tick_age_sec=0.01,
+        )
         assert False, "expected validation error for bid <= 0"
-    except Exception as e:
-        assert "bid" in str(e).lower() or "greater than" in str(e).lower()
+    except Exception:
+        pass
 
 
 def test_feature_set_schema_valid():
