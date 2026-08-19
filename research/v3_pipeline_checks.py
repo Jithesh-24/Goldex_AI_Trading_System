@@ -26,7 +26,7 @@ import pandas as pd
 
 from learning.data import load_raw_m1
 from features.features import build_features
-from research.features_v3 import build_candidate_features
+from features.replay_engine import build_candidate_features
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(BASE, "research", "output")
