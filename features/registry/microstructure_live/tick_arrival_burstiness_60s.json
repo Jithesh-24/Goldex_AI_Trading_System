@@ -1,0 +1,23 @@
+{
+  "feature_id": "tick_arrival_burstiness_60s",
+  "family": "microstructure_live",
+  "mathematical_definition": "(std_interarrival - mean_interarrival) / (std_interarrival + mean_interarrival) -- Goh-Barabasi burstiness coefficient of tick inter-arrival gaps within TickActivityTracker's trailing 60s ring buffer (self._times); ranges toward -1 for regular/periodic arrivals and toward +1 for bursty/clustered arrivals",
+  "source_module": "features.microstructure_live.TickActivityTracker",
+  "required_state": [
+    "market_timestamp"
+  ],
+  "update_trigger": "TICK",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "Stateful: derived from self._times, the same tick-timestamp deque that self._spreads is kept in lockstep with (both appended together on every update() call, both evicted together once a tick ages out of the trailing TICK_WINDOW_SEC=60.0s window). 0.0 returned (not a raw division) whenever (std + mean) <= 1e-12 to avoid a divide-by-near-zero blow-up during a degenerate all-identical-timestamp stretch. Genuinely new for Task 21 (spec section 7) -- the 6.7-year historical CSV has no tick-level timestamp series, so this feature has no historical analogue and cannot be backfilled.",
+  "missing_value_policy": "None until at least 3 ticks are in the trailing 60s window (need at least 2 interarrival gaps to define both mean and std), never zero-filled",
+  "warmup_bars": 3,
+  "dependencies": [],
+  "historical_coverage": "LIVE_ONLY",
+  "status": "OPTIONAL",
+  "status_reason": "no historical evidence exists or can exist for this feature; live data only since 2026-08-18 (Phase 2 live verification date)",
+  "evidence_ref": null,
+  "version": "v1"
+}

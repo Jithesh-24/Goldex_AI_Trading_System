@@ -1,0 +1,23 @@
+{
+  "feature_id": "tick_interarrival_mean_60s",
+  "family": "microstructure_live",
+  "mathematical_definition": "mean(t_i - t_{i-1}) for consecutive tick market_timestamps in TickActivityTracker's trailing 60s ring buffer (self._times) -- average tick inter-arrival time in seconds",
+  "source_module": "features.microstructure_live.TickActivityTracker",
+  "required_state": [
+    "market_timestamp"
+  ],
+  "update_trigger": "TICK",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "Stateful: derived from self._times, the same tick-timestamp deque that self._spreads is kept in lockstep with (both appended together on every update() call, both evicted together once a tick ages out of the trailing TICK_WINDOW_SEC=60.0s window). No division-by-zero risk (a simple mean of positive interarrival gaps). Genuinely new for Task 21 (spec section 7) -- the 6.7-year historical CSV has no tick-level timestamp series, so this feature has no historical analogue and cannot be backfilled.",
+  "missing_value_policy": "None until at least 2 ticks are in the trailing 60s window (a single tick has no interarrival gap to average), never zero-filled",
+  "warmup_bars": 2,
+  "dependencies": [],
+  "historical_coverage": "LIVE_ONLY",
+  "status": "OPTIONAL",
+  "status_reason": "no historical evidence exists or can exist for this feature; live data only since 2026-08-18 (Phase 2 live verification date)",
+  "evidence_ref": null,
+  "version": "v1"
+}

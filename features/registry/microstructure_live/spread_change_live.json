@@ -1,0 +1,23 @@
+{
+  "feature_id": "spread_change_live",
+  "family": "microstructure_live",
+  "mathematical_definition": "spread_t - spread_{t-1} -- tick-over-tick change in quoted spread, computed from TickActivityTracker's own last-seen spread (not a bar-level diff)",
+  "source_module": "features.microstructure_live.TickActivityTracker",
+  "required_state": [
+    "spread"
+  ],
+  "update_trigger": "TICK",
+  "window": 1,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "Stateful: TickActivityTracker keeps only the single last-seen spread value (self._last_spread), not a ring buffer. No division involved, so no blow-up risk. Genuinely new for Task 21 (spec section 7) -- exists only because Phase 2 gave the live engine a real tick stream; the 6.7-year historical CSV has no tick-level spread series to diff, so this feature has no historical analogue and cannot be backfilled.",
+  "missing_value_policy": "None on the very first tick seen by the tracker (no previous spread to diff against), never zero-filled",
+  "warmup_bars": 1,
+  "dependencies": [],
+  "historical_coverage": "LIVE_ONLY",
+  "status": "OPTIONAL",
+  "status_reason": "no historical evidence exists or can exist for this feature; live data only since 2026-08-18 (Phase 2 live verification date)",
+  "evidence_ref": null,
+  "version": "v1"
+}
