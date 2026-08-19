@@ -1,0 +1,25 @@
+{
+  "feature_id": "persistence_score",
+  "family": "persistence",
+  "mathematical_definition": "hurst_120 - 0.5 -- a signed recentering of the base feature set's rolling Hurst exponent so positive values indicate trend-persistence (H>0.5) and negative values indicate mean-reversion (H<0.5)",
+  "source_module": "features.persistence.compute_persistence",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 120,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "Pure arithmetic shift of hurst_120; NaN propagates unchanged from hurst_120's own degenerate-window guard",
+  "missing_value_policy": "NaN whenever the base hurst_120 feature is NaN (first 120 bars, or a degenerate near-constant window), never zero-filled",
+  "warmup_bars": 120,
+  "dependencies": [
+    "hurst_120"
+  ],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.088 (<0.3), MI rank 106 (outside top 15). catboost_importance=0.088, mi_rank=106, family=F_mean_reversion, family_ablation_delta=-0.0004 (<0.1pp). Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

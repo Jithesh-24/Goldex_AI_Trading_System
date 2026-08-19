@@ -1,0 +1,25 @@
+{
+  "feature_id": "residual_mean_reversion_60",
+  "family": "persistence",
+  "mathematical_definition": "Rolling lag-1 autocorrelation (numba kernel rolling_autocorr_lag1, imported from features.returns_dynamics -- the one kernel shared across two families) of the nan-to-zero'd Kalman filter residual (kalman_residual_z) over a trailing 60-bar window -- persistence of the mean-reversion residual itself, distinct from persistence of raw returns",
+  "source_module": "features.persistence.compute_persistence",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "kalman_residual_z is passed through np.nan_to_num before the kernel runs, so any upstream Kalman NaN becomes 0.0 rather than propagating; 0.0 when the kernel's own autocorrelation denominator is below 1e-12",
+  "missing_value_policy": "NaN for the first 60 bars, never zero-filled beyond the upstream nan_to_num applied to the input residual",
+  "warmup_bars": 60,
+  "dependencies": [
+    "kalman_residual_z"
+  ],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.188 (<0.3), MI rank 107 (outside top 15). catboost_importance=0.188, mi_rank=107, family=F_mean_reversion, family_ablation_delta=-0.0004 (<0.1pp). Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

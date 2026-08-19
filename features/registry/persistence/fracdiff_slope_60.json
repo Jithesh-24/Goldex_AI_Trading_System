@@ -1,0 +1,25 @@
+{
+  "feature_id": "fracdiff_slope_60",
+  "family": "persistence",
+  "mathematical_definition": "Rolling OLS slope of the base feature set's fracdiff_log_price against a bar-index regressor, computed as rolling_cov(fracdiff_log_price, index) / rolling_var(index) over a trailing 60-bar window (pandas rolling cov/var) -- the local linear trend of the fractionally-differenced price series",
+  "source_module": "features.persistence.compute_persistence",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "The index regressor's rolling variance is deterministic and nonzero for window>=2, so division-by-zero is not expected in steady state; NaN propagates from fracdiff_log_price's own warmup",
+  "missing_value_policy": "NaN for the first 60 bars, and NaN whenever the upstream fracdiff_log_price value is NaN, never zero-filled",
+  "warmup_bars": 60,
+  "dependencies": [
+    "fracdiff_log_price"
+  ],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.168 (<0.3), MI rank 59 (outside top 15). catboost_importance=0.168, mi_rank=59, family=F_mean_reversion, family_ablation_delta=-0.0004 (<0.1pp). Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}
