@@ -52,16 +52,53 @@ from features.registry import load_all
 CUSUM_K_LIVE = 2.5  # verified identical to features.replay_engine.CUSUM_K (2026-08-19)
 
 
+def _vol_percentile_pct(today_val: float, prior_hist: pd.Series):
+    """Percentile rank of today_val against prior_hist (a distribution that
+    must NOT include today_val itself -- see on_m1_close's causality note).
+    Average tie convention, matching pandas .rank(pct=True) (method=
+    "average", the default) used by the batch/reference implementation.
+    Returns None if prior_hist has fewer than 60 observations (registry's
+    min_periods=60)."""
+    if len(prior_hist) < 60:
+        return None
+    prior_vals = prior_hist.to_numpy()
+    return (np.sum(prior_vals < today_val) + 0.5 * np.sum(prior_vals == today_val)) / len(prior_vals)
+
+
 class LiveFeatureEngine:
     def __init__(self, state_engine, daily_bootstrap_csv: str = None, daily_buffer_size: int = 252):
         self.state_engine = state_engine
         self.tick_tracker = TickActivityTracker()
         self.daily_buffer = DailyBuffer(size=daily_buffer_size)
         if daily_bootstrap_csv:
-            self.daily_buffer.bootstrap_from_csv(daily_bootstrap_csv, value_cols=["close", "spread"])
+            self._bootstrap_daily_buffer(daily_bootstrap_csv)
         self._descriptors = {d.feature_id: d for d in load_all()}
         self._last_tick_snapshot: dict = {}
         self._last_m1_snapshot: dict = {}
+
+    def _bootstrap_daily_buffer(self, csv_path: str) -> None:
+        """Warm DailyBuffer's "ewma_vol" key -- the ONLY key on_m1_close's
+        vol_percentile_252 override reads/writes (grep daily_buffer.series(
+        across features/ confirms nothing else reads any other key) -- so
+        a fresh live process doesn't need 60 real calendar days to
+        accumulate before vol_percentile_252 ever goes VALID. Runs the
+        exact build_tier1_features/build_shared_inputs pipeline on_m1_close
+        already uses, but over the small rolling seed CSV (~70k M1 rows,
+        ~2.5mo -- confirmed via `wc -l`, NOT the 6.7yr historical set;
+        measured <1s end-to-end, so eager compute at __init__ time is fine,
+        no caching/laziness needed), then daily-resamples ewma_vol the same
+        way compute_volatility_dynamics does internally. Previously this
+        bootstrapped "close"/"spread" under those exact DailyBuffer keys,
+        but nothing in this file (or anywhere else -- grepped) ever calls
+        daily_buffer.series("close") or series("spread"), so that was dead
+        code that silently did nothing; dropped rather than kept."""
+        df = pd.read_csv(csv_path, parse_dates=["time"])
+        base_feat = build_tier1_features(df)
+        shared = build_shared_inputs(df, base_feat)
+        ev_daily = pd.Series(shared.ewma_vol, index=shared.times).resample("1D").last().dropna()
+        ev_daily = ev_daily.tail(self.daily_buffer.size)
+        for day, val in ev_daily.items():
+            self.daily_buffer.record(day.date(), {"ewma_vol": float(val)})
 
     def on_tick(self, state) -> dict:
         live_vals = self.tick_tracker.update(state)
@@ -120,13 +157,33 @@ class LiveFeatureEngine:
         # the brief's sketch named this key "close" while storing
         # ewma_vol, which would collide with a real close-price series
         # bootstrapped under the same key name.
+        #
+        # Causality: the registry (vol_percentile_252.json) documents this
+        # feature as ranked pct within a trailing 252-day window "shifted
+        # by 1 day to avoid same-day lookahead" -- the batch implementation
+        # (volatility_dynamics.py) does .rolling(252, min_periods=60)
+        # .rank(pct=True).shift(1), which NEVER ranks a day's value against
+        # a distribution that includes that same day's own entry. We must
+        # match that: rank today's (still-forming) ewma_vol against
+        # vol_hist with today's own entry excluded, not against vol_hist
+        # with today already appended (self-inclusion would let today's
+        # value partially rank against itself, breaking the causal
+        # contract). Filtering by index (not "buffer state before this
+        # record() call") matters because on_m1_close/record() run once per
+        # bar -- multiple times within the same calendar day -- so an
+        # earlier bar this same day may have already written a same-day
+        # entry via DailyBuffer's update-in-place semantics.
         today = bars[-1].start_time.date()
-        if len(shared.ewma_vol) and not np.isnan(shared.ewma_vol[-1]):
-            self.daily_buffer.record(today, {"ewma_vol": float(shared.ewma_vol[-1])})
+        today_ewma = float(shared.ewma_vol[-1]) if len(shared.ewma_vol) and not np.isnan(shared.ewma_vol[-1]) else None
+        if today_ewma is not None:
+            self.daily_buffer.record(today, {"ewma_vol": today_ewma})
         vol_hist = self.daily_buffer.series("ewma_vol")
-        if len(vol_hist) >= 60 and "vol_percentile_252" in merged:
-            vp = np.asarray(merged["vol_percentile_252"])
-            merged["vol_percentile_252"] = np.append(vp[:-1], vol_hist.rank(pct=True).iloc[-1])
+        prior_hist = vol_hist[vol_hist.index != today]
+        if today_ewma is not None and "vol_percentile_252" in merged:
+            pct = _vol_percentile_pct(today_ewma, prior_hist)
+            if pct is not None:
+                vp = np.asarray(merged["vol_percentile_252"])
+                merged["vol_percentile_252"] = np.append(vp[:-1], pct)
 
         out = {}
         for feature_id, values in merged.items():
