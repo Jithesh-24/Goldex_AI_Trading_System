@@ -1,0 +1,22 @@
+{
+  "feature_id": "tail_probability_60",
+  "family": "distribution_info",
+  "mathematical_definition": "Rolling(60).mean of the indicator |ret1| > 2 * rolling(60).std(ret1) -- the empirical frequency of 1-bar log returns exceeding 2 rolling standard deviations over the trailing 60 bars",
+  "source_module": "features.distribution_info.compute_distribution_info",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN for the first ~120 bars (the inner rolling(60).std needs 60 bars, then the outer rolling(60).mean needs 60 more), never zero-filled",
+  "warmup_bars": 120,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "USEFUL",
+  "status_reason": "Survived v3 feature selection (research/output/v3_feature_survivors.json): catboost_importance=0.302 (>= 0.3), stable (cv=0.20). catboost_importance=0.302, mi_rank=65, family=D_distribution_info.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

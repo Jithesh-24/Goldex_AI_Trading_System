@@ -1,0 +1,22 @@
+{
+  "feature_id": "shannon_entropy_returns_60",
+  "family": "distribution_info",
+  "mathematical_definition": "Shannon entropy (base 2) of ret1's value distribution over a trailing 60-bar window, discretized into 8 equal-width bins spanning [min, max] of the window (numba kernel shannon_entropy_returns)",
+  "source_module": "features.distribution_info.compute_distribution_info",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN for the first 60 bars, never zero-filled; 0.0 for windows where max-min < 1e-15 (degenerate zero-range window)",
+  "warmup_bars": 60,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.137 (<0.3), MI rank 101 (outside top 15). catboost_importance=0.137, mi_rank=101, family=D_distribution_info. Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}
