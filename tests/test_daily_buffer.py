@@ -25,7 +25,45 @@ def test_record_and_ring_eviction():
     assert list(s.values) == [2.0, 3.0, 4.0]
 
 
+def test_series_index_reflects_key_specific_days_when_keys_absent_on_some_days():
+    # A key that's missing from record() on some days (e.g. NaN-filtered in
+    # bootstrap_from_csv) must NOT have its series index positionally
+    # length-matched against the shared _days deque -- that misattributes
+    # values to the wrong days.
+    buf = DailyBuffer(size=10)
+    day1, day2, day3 = date(2026, 1, 1), date(2026, 1, 2), date(2026, 1, 3)
+    buf.record(day1, {"x": 1.0, "y": 10.0})
+    buf.record(day2, {"x": 2.0})  # y missing this day
+    buf.record(day3, {"x": 3.0, "y": 30.0})
+
+    sx = buf.series("x")
+    assert list(sx.index) == [day1, day2, day3]
+    assert list(sx.values) == [1.0, 2.0, 3.0]
+
+    sy = buf.series("y")
+    assert list(sy.index) == [day1, day3]
+    assert list(sy.values) == [10.0, 30.0]
+
+
+def test_same_day_update_in_place_per_key():
+    buf = DailyBuffer(size=10)
+    day1, day2 = date(2026, 1, 1), date(2026, 1, 2)
+    buf.record(day1, {"x": 1.0, "y": 10.0})
+    buf.record(day1, {"x": 1.5})  # same-day update for x only, y untouched
+    buf.record(day2, {"x": 2.0, "y": 20.0})
+
+    sx = buf.series("x")
+    assert list(sx.index) == [day1, day2]
+    assert list(sx.values) == [1.5, 2.0]
+
+    sy = buf.series("y")
+    assert list(sy.index) == [day1, day2]
+    assert list(sy.values) == [10.0, 20.0]
+
+
 if __name__ == "__main__":
     test_bootstrap_from_real_csv()
     test_record_and_ring_eviction()
+    test_series_index_reflects_key_specific_days_when_keys_absent_on_some_days()
+    test_same_day_update_in_place_per_key()
     print("tests/test_daily_buffer.py: OK")
