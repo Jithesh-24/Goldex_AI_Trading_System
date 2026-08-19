@@ -1,0 +1,27 @@
+{
+  "feature_id": "jump_state",
+  "family": "regime_state",
+  "mathematical_definition": "np.where(bars_since <= 5, 2.0, np.where(bars_since <= 20, 1.0, 0.0)) -- discretized recency-since-last-CUSUM-changepoint bucket (2=very recent, <=5 bars; 1=recent, <=20 bars; 0=stale), where bars_since is family C's bars_since_last_changepoint array, consumed via jump_detection's internal (non-registered) `_bars_since_last_changepoint_internal` key rather than recomputing the CUSUM loop",
+  "source_module": "features.regime_state.compute_regime_state",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": null,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "Pure threshold bucketing of bars_since via np.where; numpy's NaN-comparison-is-False semantics mean a NaN bars_since (before the first observed CUSUM changepoint) fails both <=5 and <=20 comparisons and buckets to 0.0 rather than propagating NaN -- unchanged from research/features_v3.py's original behavior",
+  "missing_value_policy": "No NaNs produced by this bucketing itself; a NaN bars_since (before the first CUSUM changepoint) buckets to 0.0",
+  "warmup_bars": 1,
+  "dependencies": [
+    "jump_detection",
+    "distribution_info",
+    "microstructure_history"
+  ],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.000 (<0.3), MI rank 23 (outside top 15). catboost_importance=0.000, cv_importance=1.197, mi_rank=23, family=I_regime_state, family_ablation_delta=-0.0006 (<0.1pp). Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}
