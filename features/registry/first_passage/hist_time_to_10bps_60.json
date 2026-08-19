@@ -1,0 +1,23 @@
+{
+  "feature_id": "hist_time_to_10bps_60",
+  "family": "first_passage",
+  "mathematical_definition": "Among the trailing 60 fully-resolved historical start points t0 whose forward sub_horizon=10-bar path reached the 0.001 (10bps) threshold (see hist_p_reach_10bps_10b_60), hist_time_to_10bps_60 is the average number of bars taken to first reach it (total_time/n_timed) -- a LOCAL empirical first-passage TIME, distinct from the probability and frequency features in this family (numba kernel first_passage_stats, window=60, sub_horizon=10, r_threshold_frac=0.001)",
+  "source_module": "features.first_passage.compute_first_passage",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "HIGH",
+  "numerical_stability_notes": "When none of the 60 historical windows registered a hit (n_timed==0), this returns sub_horizon (10.0) as a deliberate fallback ('never reached, so treat time-to-reach as the full horizon') rather than NaN -- a real value, not a missing-data marker. Causality verified by direct code read during Phase 3 design (spec section 2): first_passage_stats's inner loop bound is t0 in [i-window-sub_horizon, i-sub_horizon) and j in (t0, t0+sub_horizon], so the maximum index ever read is j=i-1 -- every inner-loop index is strictly < i, no lookahead.",
+  "missing_value_policy": "NaN for the first window+sub_horizon=70 bars; 10.0 (sub_horizon) fallback thereafter whenever no historical window hit the threshold, never zero-filled",
+  "warmup_bars": 70,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.217 (<0.3), MI rank 70 (outside top 15). catboost_importance=0.2170, cv_importance=0.4024, mi_rank=70, family=J_first_passage, family_ablation_delta=-0.000177 (<0.1pp). Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}
