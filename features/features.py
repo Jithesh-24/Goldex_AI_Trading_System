@@ -83,17 +83,3 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     return build_tier1_features(df)
 
 
-if __name__ == "__main__":
-    import time
-    from learning.data import load_raw_m1, to_m5
-
-    df = load_raw_m1()
-    df5 = to_m5(df)
-    print(f"building features on {len(df5):,} M5 bars...")
-    t0 = time.time()
-    feats = build_features(df5)
-    print(f"done in {time.time() - t0:.1f}s, shape={feats.shape}")
-    print(feats.tail(3).T)
-    nan_frac = feats.drop(columns=["time"]).isna().mean().sort_values(ascending=False)
-    print("\ntop NaN fractions (warmup expected at top of file, should be near-0 elsewhere):")
-    print(nan_frac.head(10))

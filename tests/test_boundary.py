@@ -53,7 +53,12 @@ def test_market_never_imports_learning_or_research():
     _check_no_forbidden_imports("market")
 
 
+def test_features_never_imports_learning_or_research():
+    _check_no_forbidden_imports("features")
+
+
 if __name__ == "__main__":
     test_app_never_imports_learning_or_research()
     test_market_never_imports_learning_or_research()
+    test_features_never_imports_learning_or_research()
     print("tests/test_boundary.py: OK")
