@@ -1,0 +1,22 @@
+{
+  "feature_id": "vol_of_vol_60",
+  "family": "volatility_dynamics",
+  "mathematical_definition": "rolling_std_60(ewma_vol) -- volatility of the EWMA volatility series itself",
+  "source_module": "features.volatility_dynamics.compute_volatility_dynamics",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN for windows with fewer than 60 observed bars, never zero-filled",
+  "warmup_bars": 60,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "USEFUL",
+  "status_reason": "Survived v3 feature selection (research/output/v3_feature_survivors.json): catboost_importance=0.320 (>= 0.3), stable (cv=0.36). catboost_importance=0.320, mi_rank=97, family=B_volatility.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

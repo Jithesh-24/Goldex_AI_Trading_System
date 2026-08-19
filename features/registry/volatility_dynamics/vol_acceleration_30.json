@@ -1,0 +1,22 @@
+{
+  "feature_id": "vol_acceleration_30",
+  "family": "volatility_dynamics",
+  "mathematical_definition": "ewma_vol_t - ewma_vol_{t-30} (30-bar change in EWMA volatility)",
+  "source_module": "features.volatility_dynamics.compute_volatility_dynamics",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 30,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN for the first 30 bars (shift(30) has no prior value), never zero-filled",
+  "warmup_bars": 30,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "USEFUL",
+  "status_reason": "Survived v3 feature selection (research/output/v3_feature_survivors.json): catboost_importance=0.710 (>= 0.3), stable (cv=0.23). catboost_importance=0.710, mi_rank=50, family=B_volatility.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

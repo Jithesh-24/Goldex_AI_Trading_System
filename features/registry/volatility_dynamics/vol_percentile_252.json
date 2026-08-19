@@ -1,0 +1,24 @@
+{
+  "feature_id": "vol_percentile_252",
+  "family": "volatility_dynamics",
+  "mathematical_definition": "Daily-resampled ewma_vol (last value per day), ranked pct within a trailing 252-day window (min_periods=60), shifted by 1 day to avoid same-day lookahead, then ffill-reindexed back onto the intraday bar timeline",
+  "source_module": "features.volatility_dynamics.compute_volatility_dynamics",
+  "required_state": [
+    "ewma_vol_daily_history"
+  ],
+  "update_trigger": "DAILY",
+  "window": 252,
+  "causal": true,
+  "live_compatible": false,
+  "computational_cost": "MEDIUM",
+  "missing_value_policy": "NaN until at least 60 daily observations of ewma_vol are available (min_periods=60), and for any intraday bar before the first daily percentile is computed; ffill thereafter within each day",
+  "warmup_bars": 60,
+  "dependencies": [
+    "daily_buffer"
+  ],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.193 (<0.3), MI rank 52 (outside top 15). catboost_importance=0.193, mi_rank=52, family=B_volatility. Kept registered per spec section 9 -- Phase 4 may find it useful for a different target. Batch/replay implementation uses resample('1D') + reindex(..., method='ffill') against the full times array; Task 20's DailyBuffer and Task 22's live_engine.py wiring are required before this feature is live-compatible.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

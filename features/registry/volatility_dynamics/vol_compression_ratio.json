@@ -1,0 +1,25 @@
+{
+  "feature_id": "vol_compression_ratio",
+  "family": "volatility_dynamics",
+  "mathematical_definition": "gk_vol_20 / gk_vol_240 where gk_vol_240 > 1e-12, else NaN (ratio of short- to long-window Garman-Klass volatility)",
+  "source_module": "features.volatility_dynamics.compute_volatility_dynamics",
+  "required_state": [
+    "open",
+    "high",
+    "low",
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 240,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN for the first 240 bars (gk_vol_240 warmup) and wherever gk_vol_240 <= 1e-12 (guards divide-by-zero), never zero-filled",
+  "warmup_bars": 240,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "USEFUL",
+  "status_reason": "Survived v3 feature selection (research/output/v3_feature_survivors.json): catboost_importance=0.818 (>= 0.3), stable (cv=0.28). catboost_importance=0.818, mi_rank=32, family=B_volatility.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

@@ -1,0 +1,22 @@
+{
+  "feature_id": "realized_variance_20",
+  "family": "volatility_dynamics",
+  "mathematical_definition": "sum(ret1^2) over a trailing 20-bar window",
+  "source_module": "features.volatility_dynamics.compute_volatility_dynamics",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 20,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN while the trailing 20-bar window contains the undefined ret1[0], and for any window with fewer than 20 observed bars",
+  "warmup_bars": 20,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.150 (<0.3), MI rank 95 (outside top 15). catboost_importance=0.150, mi_rank=95, family=B_volatility. Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}
