@@ -185,11 +185,37 @@ class LiveFeatureEngine:
                 vp = np.asarray(merged["vol_percentile_252"])
                 merged["vol_percentile_252"] = np.append(vp[:-1], pct)
 
+        # Task 24 finding: the NaN check below is necessary but not
+        # sufficient. Most kernels NaN-fill during warmup (rolling(...,
+        # min_periods=window) etc.), which the NaN check catches correctly.
+        # But some kernels zero-fill by construction and never emit NaN at
+        # all -- e.g. breakout_failure_magnitude_20's numba kernel returns
+        # 0.0 both "still warming up" AND "no qualifying breakout found",
+        # a real steady-state value indistinguishable from a warmup
+        # placeholder by inspecting the number alone (registry:
+        # "the kernel never emits NaN, it zero-fills by construction").
+        # For those, only comparing against the feature's own declared
+        # warmup_bars (contracts/feature_schema.py's required int field)
+        # catches it. This only applies to M1_CLOSE-triggered features,
+        # where warmup_bars is denominated in the same units as `bars`
+        # (M1 bar count): DAILY-triggered features (vol_percentile_252,
+        # vol_state_tercile, spread_percentile_252) declare warmup_bars in
+        # DAILY observations instead, which `bars` (M1 count) cannot be
+        # compared against -- those already have their own correct
+        # handling above (vol_percentile_252's DailyBuffer override) or
+        # fall through to the NaN check, which is conservative-correct for
+        # them since their bounded-window internal daily resample is
+        # structurally NaN until real calendar days accumulate.
+        num_bars = len(bars)
         out = {}
         for feature_id, values in merged.items():
             descriptor = self._descriptors.get(feature_id)
             if descriptor is not None and not descriptor.live_compatible:
                 out[feature_id] = (None, "UNAVAILABLE")
+                continue
+            if descriptor is not None and descriptor.update_trigger == "M1_CLOSE" \
+                    and num_bars < descriptor.warmup_bars:
+                out[feature_id] = (None, "WARMING_UP")
                 continue
             last_val = values[-1] if hasattr(values, "__len__") and len(values) else None
             if last_val is None or (isinstance(last_val, float) and last_val != last_val):  # NaN check
