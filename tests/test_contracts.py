@@ -82,12 +82,12 @@ def test_feature_descriptor_rejects_missing_required_field():
             source_module="m", causal=True, live_compatible=True,
             computational_cost="LOW", missing_value_policy="NaN",
             warmup_bars=0, historical_coverage="FULL_HISTORY",
-            status="REQUIRED", status_reason="test", version="v1",
+            status="REQUIRED",
+            # Missing: status_reason (required field with no default)
+            version="v1",
             update_trigger="M1_CLOSE"
         )
-        # This should pass since all required fields are provided
-        # The old test that checked missing fields is no longer relevant
-        pass
+        assert False, "expected validation error for missing status_reason field"
     except Exception:
         pass
 
