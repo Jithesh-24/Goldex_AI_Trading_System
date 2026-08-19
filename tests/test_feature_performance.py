@@ -61,6 +61,7 @@ def test_m1_close_latency_synthetic():
 
     assert len(m1_close_latencies_us) > 5, "not enough M1 closes in this synthetic run to measure"
     arr = np.array(m1_close_latencies_us)
+    # Caveat: at n≈10 samples, p99 is essentially the observed max, not a statistically robust tail estimate.
     p50, p95, p99 = np.percentile(arr, [50, 95, 99])
     print(f"[SYNTHETIC] on_m1_close latency over {len(arr)} bar closes: "
           f"p50={p50:.0f}us p95={p95:.0f}us p99={p99:.0f}us")
@@ -70,7 +71,7 @@ def test_m1_close_latency_synthetic():
     # at this synthetic cadence; calls 3-11 are consistently ~25-30ms. This
     # is one-time numba JIT compilation (@numba.njit(cache=True) kernels in
     # first_passage.py, distribution_info.py, persistence.py, hurst.py,
-    # fracdiff.py, kalman.py, labeling.py -- the family modules on_m1_close
+    # fracdiff.py, kalman.py, market_geometry.py, returns_dynamics.py -- the family modules on_m1_close
     # calls), not a bug in live_engine.py or the families themselves: a
     # real live process pays this cost exactly once at process warmup, not
     # per bar close, and even including it p99 is still <1s, well under
