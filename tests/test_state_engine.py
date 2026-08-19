@@ -94,6 +94,25 @@ def test_bootstrap_seeds_completed_bars_without_live_ticks():
     print("OK  bootstrap() seeds completed_m1 from backfill without touching current_m1")
 
 
+def test_completed_m1_window_returns_bounded_recent_bars():
+    engine = StateEngine("GOLD.i#")
+    # feed enough synthetic ticks to build several completed M1 bars
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    for i in range(300):
+        t = base + timedelta(seconds=i * 2)
+        engine.on_tick(Tick(symbol="GOLD.i#", market_timestamp=t,
+                             ingestion_timestamp=t, bid=2000.0 + i * 0.01,
+                             ask=2000.2 + i * 0.01, mid=2000.1 + i * 0.01,
+                             spread=0.2, source="synthetic_replay", internal_seq=i))
+    window = engine.completed_m1_window(3)
+    assert len(window) <= 3
+    assert all(bar.complete for bar in window)
+    # fewer than requested during warmup
+    fresh = StateEngine("GOLD.i#")
+    assert fresh.completed_m1_window(5) == []
+    print("OK  completed_m1_window returns bounded, oldest-first, complete-only bars")
+
+
 def test_is_market_closed_matches_known_hours():
     # Saturday, always closed
     assert is_market_closed(datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc)) is True
@@ -111,5 +130,6 @@ if __name__ == "__main__":
     test_out_of_order_tick_rejected()
     test_incremental_matches_reference_spread_stats()
     test_bootstrap_seeds_completed_bars_without_live_ticks()
+    test_completed_m1_window_returns_bounded_recent_bars()
     test_is_market_closed_matches_known_hours()
     print("market/state_engine.py: OK")

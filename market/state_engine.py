@@ -67,6 +67,15 @@ class StateEngine:
                 end_time=start, complete=True,
             ))
 
+    def completed_m1_window(self, n: int) -> list:
+        """Last n completed M1 bars (fewer during warmup), oldest first.
+        Read-only view into the same bounded ring buffer MarketState's
+        completed_m1 field already draws its single latest entry from --
+        no separate storage, no unbounded growth (Phase 3 spec section 6)."""
+        if n <= 0:
+            return []
+        return list(self.completed_m1)[-n:]
+
     def on_tick(self, tick: Tick):
         market_ts = tick.market_timestamp.timestamp()
 
