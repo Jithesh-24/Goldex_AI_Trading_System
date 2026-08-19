@@ -1,0 +1,23 @@
+{
+  "feature_id": "vol_shock_zscore",
+  "family": "jump_detection",
+  "mathematical_definition": "shock - rolling(60).mean(shock), where shock = |ret1| / clip(ewma_vol, 1e-9, None). Despite the name, this is a demeaned series only -- NOT divided by rolling(60).std(shock), so it is not a true z-score",
+  "source_module": "features.jump_detection.compute_jump_detection",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "Name is misleading (see mathematical_definition) -- verified against research/features_v3.py source, not a naming bug introduced in this move",
+  "missing_value_policy": "NaN for windows with fewer than 60 observed bars and at bar 0 (ret1[0] undefined), never zero-filled",
+  "warmup_bars": 60,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "USEFUL",
+  "status_reason": "Survived v3 feature selection (research/output/v3_feature_survivors.json): catboost_importance=0.360 (>= 0.3), stable (cv=0.58). catboost_importance=0.360, mi_rank=100, family=C_jump_change.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

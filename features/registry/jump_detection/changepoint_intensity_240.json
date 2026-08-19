@@ -1,0 +1,22 @@
+{
+  "feature_id": "changepoint_intensity_240",
+  "family": "jump_detection",
+  "mathematical_definition": "rolling(240).sum() of the changepoint indicator (count of CUSUM changepoints -- bars where both cusum_pos==0 and cusum_neg==0 -- over the trailing 240 bars)",
+  "source_module": "features.jump_detection.compute_jump_detection",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 240,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN for windows with fewer than 240 observed bars, never zero-filled",
+  "warmup_bars": 240,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.402 (<0.3), MI rank 60 (outside top 15). catboost_importance=0.402, mi_rank=60, family=C_jump_change. Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

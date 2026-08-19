@@ -1,0 +1,22 @@
+{
+  "feature_id": "jump_direction_bias_60",
+  "family": "jump_detection",
+  "mathematical_definition": "rolling(60, min_periods=1).mean() of sign1 where is_jump else NaN (mean signed direction of jump bars only, over the trailing 60 bars -- positive means jumps have been predominantly upward)",
+  "source_module": "features.jump_detection.compute_jump_detection",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN whenever no jump bar occurred within the trailing (up to 60) window, including bar 0 (min_periods=1 but sign1[0]=0 from an undefined ret1[0]); never zero-filled",
+  "warmup_bars": 1,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.120 (<0.3), MI rank 99 (outside top 15). catboost_importance=0.120, mi_rank=99, family=C_jump_change. Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}
