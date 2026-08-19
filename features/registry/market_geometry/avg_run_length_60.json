@@ -1,0 +1,22 @@
+{
+  "feature_id": "avg_run_length_60",
+  "family": "market_geometry",
+  "mathematical_definition": "Numba kernel avg_run_length(sign1, window=60): over the trailing 60 bars of sign(ret_1), the AVERAGE consecutive same-sign run length (total run-length mass / number of distinct runs) -- how persistent directionality has been on average, not just the current run",
+  "source_module": "features.market_geometry.avg_run_length",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN for the first 60 bars (kernel loop starts at window=60); also NaN whenever the trailing window contains zero runs (all-flat segment), never zero-filled",
+  "warmup_bars": 60,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.138 (<0.3), MI rank 103 (outside top 15). catboost_importance=0.138, mi_rank=103, family=E_market_geometry. Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

@@ -1,0 +1,23 @@
+{
+  "feature_id": "dist_from_low_20",
+  "family": "market_geometry",
+  "mathematical_definition": "(close - rolling(20).min(low)) / close -- signed fractional distance of the current close above (or below, on the rare intrabar case) the trailing 20-bar low",
+  "source_module": "features.market_geometry.compute_market_geometry",
+  "required_state": [
+    "close",
+    "low"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 20,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN for the first 20 bars (rolling(20).min needs 20 bars), never zero-filled",
+  "warmup_bars": 20,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "USEFUL",
+  "status_reason": "Survived v3 feature selection (research/output/v3_feature_survivors.json): top-15 by meta MI (rank 13, MI=0.0096) despite catboost_importance=0.195. catboost_importance=0.195, mi_rank=13, family=E_market_geometry. Family E (market_geometry) had the highest survivor rate of any family: 7 of 13 candidates kept.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

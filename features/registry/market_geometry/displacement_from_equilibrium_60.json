@@ -1,0 +1,22 @@
+{
+  "feature_id": "displacement_from_equilibrium_60",
+  "family": "market_geometry",
+  "mathematical_definition": "(close - rolling(60).mean(close)) / rolling(60).std(close) -- z-scored displacement of the current close from its trailing 60-bar mean ('equilibrium')",
+  "source_module": "features.market_geometry.compute_market_geometry",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN for the first 60 bars (rolling(60).mean/std need 60 bars); also NaN/inf where the rolling std is ~0, never zero-filled",
+  "warmup_bars": 60,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "USEFUL",
+  "status_reason": "Survived v3 feature selection (research/output/v3_feature_survivors.json): catboost_importance=0.422 (>= 0.3), stable (cv=0.25). catboost_importance=0.422, mi_rank=18, family=E_market_geometry. Family E (market_geometry) had the highest survivor rate of any family: 7 of 13 candidates kept.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

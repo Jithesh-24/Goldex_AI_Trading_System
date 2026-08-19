@@ -1,0 +1,22 @@
+{
+  "feature_id": "excursion_from_recent_distribution_20",
+  "family": "market_geometry",
+  "mathematical_definition": "(close - close.shift(20)) / rolling(20).std(close) -- the 20-bar price excursion (close vs. its value 20 bars ago) scaled by the trailing 20-bar close volatility, guarded to NaN where that std is ~0",
+  "source_module": "features.market_geometry.compute_market_geometry",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 20,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN for the first 20 bars (rolling(20).std and the 20-bar shift both need 20 bars); NaN where the rolling std is <= 1e-9 (guarded via np.where), never zero-filled",
+  "warmup_bars": 20,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "USEFUL",
+  "status_reason": "Survived v3 feature selection (research/output/v3_feature_survivors.json): top-15 by meta MI (rank 12, MI=0.0103) despite catboost_importance=0.247. catboost_importance=0.247, mi_rank=12, family=E_market_geometry. Family E (market_geometry) had the highest survivor rate of any family: 7 of 13 candidates kept.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

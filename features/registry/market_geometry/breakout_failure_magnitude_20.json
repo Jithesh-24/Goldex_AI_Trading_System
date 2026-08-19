@@ -1,0 +1,24 @@
+{
+  "feature_id": "breakout_failure_magnitude_20",
+  "family": "market_geometry",
+  "mathematical_definition": "Numba kernel breakout_failure_magnitude(close, high, low, window=20, lookback=5): if the high broke the trailing 20-bar high at any point within the last 5 bars, how far (fractionally) has price since retraced back below that broken level; 0 if no breakout occurred or the breakout is still holding",
+  "source_module": "features.market_geometry.breakout_failure_magnitude",
+  "required_state": [
+    "close",
+    "high",
+    "low"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 20,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "0.0 for the first 25 bars (window=20 + lookback=5, per the kernel's own loop start) and 0.0 whenever no qualifying breakout is found or the breakout still holds -- the kernel never emits NaN, it zero-fills by construction",
+  "warmup_bars": 25,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.044 (<0.3), MI rank 27 (outside top 15). catboost_importance=0.044, mi_rank=27, family=E_market_geometry. Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

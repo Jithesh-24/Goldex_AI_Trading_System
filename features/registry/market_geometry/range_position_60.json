@@ -1,0 +1,24 @@
+{
+  "feature_id": "range_position_60",
+  "family": "market_geometry",
+  "mathematical_definition": "(close - rolling(60).min(low)) / (rolling(60).max(high) - rolling(60).min(low)) -- fractional position of the current close within the trailing 60-bar high-low range, 0=at the low, 1=at the high",
+  "source_module": "features.market_geometry.compute_market_geometry",
+  "required_state": [
+    "close",
+    "high",
+    "low"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN for the first 60 bars (rolling(60).max/min need 60 bars); also NaN/inf where the 60-bar range is ~0, never zero-filled",
+  "warmup_bars": 60,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "USEFUL",
+  "status_reason": "Survived v3 feature selection (research/output/v3_feature_survivors.json): catboost_importance=0.469 (>= 0.3), stable (cv=0.49). catboost_importance=0.469, mi_rank=15, family=E_market_geometry. Family E (market_geometry) had the highest survivor rate of any family: 7 of 13 candidates kept.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

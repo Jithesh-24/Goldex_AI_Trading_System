@@ -1,0 +1,23 @@
+{
+  "feature_id": "high_low_density_60",
+  "family": "market_geometry",
+  "mathematical_definition": "Numba kernel high_low_density(high, low, window=60): fraction of the trailing 60 bars whose [low,high] range overlaps the current bar's [low,high] range -- a purely statistical price-congestion proxy, not a hardcoded support/resistance rule",
+  "source_module": "features.market_geometry.high_low_density",
+  "required_state": [
+    "high",
+    "low"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN for the first 60 bars (kernel loop starts at window=60), never zero-filled",
+  "warmup_bars": 60,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.160 (<0.3), MI rank 80 (outside top 15). catboost_importance=0.160, mi_rank=80, family=E_market_geometry. Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

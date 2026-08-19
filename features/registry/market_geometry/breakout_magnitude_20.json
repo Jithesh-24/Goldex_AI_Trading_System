@@ -1,0 +1,23 @@
+{
+  "feature_id": "breakout_magnitude_20",
+  "family": "market_geometry",
+  "mathematical_definition": "max(0, close - prior_high_20) / close, where prior_high_20 = rolling(20).max(high) shifted by 1 bar -- how far (fractionally) the current close has broken above the prior, fully-resolved 20-bar high; 0 when no breakout",
+  "source_module": "features.market_geometry.compute_market_geometry",
+  "required_state": [
+    "close",
+    "high"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 20,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN for the first 21 bars (rolling(20).max needs 20 bars, plus the 1-bar shift to keep the compared level fully resolved before the current bar), never zero-filled",
+  "warmup_bars": 21,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.096 (<0.3), MI rank 30 (outside top 15). catboost_importance=0.096, mi_rank=30, family=E_market_geometry. Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}
