@@ -9,7 +9,7 @@
   "update_trigger": "DAILY",
   "window": 252,
   "causal": true,
-  "live_compatible": false,
+  "live_compatible": true,
   "computational_cost": "MEDIUM",
   "missing_value_policy": "NaN until at least 60 daily observations of ewma_vol are available (min_periods=60), and for any intraday bar before the first daily percentile is computed; ffill thereafter within each day",
   "warmup_bars": 60,
