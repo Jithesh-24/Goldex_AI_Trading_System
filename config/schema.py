@@ -27,6 +27,9 @@ class MarketConfig(BaseModel):
 
 class FeaturesConfig(BaseModel):
     schema_version: str
+    registry_dir: str
+    daily_buffer_bootstrap_csv: str
+    daily_buffer_size: int
 
 
 class ModelRoleConfig(BaseModel):

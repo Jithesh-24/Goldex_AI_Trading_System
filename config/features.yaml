@@ -1,1 +1,4 @@
 schema_version: root-28col-2026-08-18
+registry_dir: features/registry
+daily_buffer_bootstrap_csv: data/gold_seed.csv
+daily_buffer_size: 252

@@ -17,6 +17,8 @@ def test_load_config_valid():
     assert cfg.market.feed_host == "127.0.0.1"
     assert cfg.market.feed_port == 47115
     assert cfg.market.feed_mode == "managed_socket_feed"
+    assert cfg.features.registry_dir == "features/registry"
+    assert cfg.features.daily_buffer_size == 252
 
 
 if __name__ == "__main__":
