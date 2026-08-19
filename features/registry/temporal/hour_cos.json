@@ -1,0 +1,22 @@
+{
+  "feature_id": "hour_cos",
+  "family": "temporal",
+  "mathematical_definition": "cos(2*pi*hour_of_day/24), UTC hour from the bar timestamp",
+  "source_module": "features.temporal.compute_temporal",
+  "required_state": [
+    "time"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": null,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "Never NaN -- every bar has a valid timestamp",
+  "warmup_bars": 0,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "USEFUL",
+  "status_reason": "Survived v3 feature selection (research/output/v3_feature_survivors.json): catboost_importance=0.595 (>= 0.3), stable (cv=0.41). catboost_importance=0.595, mi_rank=76, family=G_time_session.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

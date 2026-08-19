@@ -1,0 +1,27 @@
+{
+  "feature_id": "session_transition_flag",
+  "family": "temporal",
+  "mathematical_definition": "1.0 where the categorical session_id (0=asian,1=london,2=ny,3=london_ny_overlap, priority order overlap>london>ny>asian) differs from the previous bar's session_id, else 0.0",
+  "source_module": "features.temporal.compute_temporal",
+  "required_state": [
+    "time"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": null,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "0.0 for the first bar (diff() has no prior value to compare, NaN>0 evaluates False), never NaN thereafter",
+  "warmup_bars": 1,
+  "dependencies": [
+    "session_asian",
+    "session_london",
+    "session_ny",
+    "session_london_ny_overlap"
+  ],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.003 (<0.3), MI rank 112 (outside top 15). catboost_importance=0.003, mi_rank=112, family=G_time_session. Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

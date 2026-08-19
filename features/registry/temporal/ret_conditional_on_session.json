@@ -1,0 +1,26 @@
+{
+  "feature_id": "ret_conditional_on_session",
+  "family": "temporal",
+  "mathematical_definition": "base_feat.ret_5 minus that hour-of-day's expanding (since dataset inception), causally shifted-by-1, per-hour-bucket mean of ret_5 (pandas groupby(hour).expanding(min_periods=20).mean().shift(1)) -- how anomalous the current 5-bar return is relative to its own hour-of-day's historical norm",
+  "source_module": "features.temporal.compute_temporal",
+  "required_state": [
+    "time",
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": null,
+  "causal": true,
+  "live_compatible": false,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "Implementation is pandas groupby(hour_of_day).expanding(min_periods=20).mean().shift(1) -- an expanding mean PER HOUR-OF-DAY computed SINCE THE START OF THE ENTIRE DATASET, not a trailing/rolling window. A bounded live buffer (a few hundred M1 bars, roughly 8 hours) cannot reproduce this since-inception per-hour running average -- it would need the full historical hour-grouped state. This is a real v3 survivor (mi_rank=2) but the math is genuinely not live-reproducible as implemented; marked live_compatible=false / historical_coverage=RESEARCH_ONLY rather than silently computed wrong -- this does not downgrade its research value. Phase 4 or later could build a proper incremental per-hour accumulator to make this survivor live-usable.",
+  "missing_value_policy": "NaN until that bar's hour-of-day bucket has accumulated >=20 prior observations since dataset inception (expanding min_periods=20, shifted by 1 for causality); never zero-filled",
+  "warmup_bars": 20,
+  "dependencies": [
+    "ret_5"
+  ],
+  "historical_coverage": "RESEARCH_ONLY",
+  "status": "USEFUL",
+  "status_reason": "Survived v3 feature selection (research/output/v3_feature_survivors.json): top-15 by meta MI (rank 2, MI=0.0173) despite catboost_importance=0.218. catboost_importance=0.218, mi_rank=2, family=G_time_session.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

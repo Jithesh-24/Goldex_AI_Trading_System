@@ -1,0 +1,26 @@
+{
+  "feature_id": "vol_conditional_on_session",
+  "family": "temporal",
+  "mathematical_definition": "ewma_vol minus that hour-of-day's expanding (since dataset inception), causally shifted-by-1, per-hour-bucket mean (pandas groupby(hour).expanding(min_periods=20).mean().shift(1)) -- how anomalous current volatility is relative to its own hour-of-day's historical norm",
+  "source_module": "features.temporal.compute_temporal",
+  "required_state": [
+    "time",
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": null,
+  "causal": true,
+  "live_compatible": false,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "Implementation is pandas groupby(hour_of_day).expanding(min_periods=20).mean().shift(1) -- an expanding mean PER HOUR-OF-DAY computed SINCE THE START OF THE ENTIRE DATASET, not a trailing/rolling window. A bounded live buffer (a few hundred M1 bars, roughly 8 hours) cannot reproduce this since-inception per-hour running average -- it would need the full historical hour-grouped state. Not something the live buffer can approximate; therefore marked live_compatible=false / historical_coverage=RESEARCH_ONLY rather than silently computed wrong. Phase 4 or later could build a proper incremental per-hour accumulator.",
+  "missing_value_policy": "NaN until that bar's hour-of-day bucket has accumulated >=20 prior observations since dataset inception (expanding min_periods=20, shifted by 1 for causality); never zero-filled",
+  "warmup_bars": 20,
+  "dependencies": [
+    "ewma_vol"
+  ],
+  "historical_coverage": "RESEARCH_ONLY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.133 (<0.3), MI rank 113 (outside top 15). catboost_importance=0.133, mi_rank=113, family=G_time_session. Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

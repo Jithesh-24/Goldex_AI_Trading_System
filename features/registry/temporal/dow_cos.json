@@ -1,0 +1,22 @@
+{
+  "feature_id": "dow_cos",
+  "family": "temporal",
+  "mathematical_definition": "cos(2*pi*day_of_week/7), UTC day-of-week (Monday=0) from the bar timestamp",
+  "source_module": "features.temporal.compute_temporal",
+  "required_state": [
+    "time"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": null,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "Never NaN -- every bar has a valid timestamp",
+  "warmup_bars": 0,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.084 (<0.3), MI rank 36 (outside top 15). catboost_importance=0.084, mi_rank=36, family=G_time_session. Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}
