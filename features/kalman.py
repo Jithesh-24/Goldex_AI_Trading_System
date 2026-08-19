@@ -60,3 +60,47 @@ def kalman_local_level(price: np.ndarray, q: float, r: float):
         residual[i] = y
 
     return level, velocity, residual
+
+
+class StatefulKalman:
+    """O(1)-per-update incremental version of kalman_local_level -- same
+    2-state (level, velocity) constant-velocity model, same math, just
+    persisting state across calls instead of looping over a full array.
+    First .update() call seeds state from that first price (matches
+    kalman_local_level's row-0 initialization)."""
+
+    def __init__(self, q: float, r: float):
+        self.q = q
+        self.r = r
+        self._initialized = False
+        self.x0 = 0.0
+        self.x1 = 0.0
+        self.p00, self.p01, self.p10, self.p11 = 1.0, 0.0, 0.0, 1.0
+
+    def update(self, price: float) -> tuple:
+        if not self._initialized:
+            self.x0, self.x1 = price, 0.0
+            self._initialized = True
+            return self.x0, self.x1, 0.0
+
+        q, r = self.q, self.r
+        x0_pred = self.x0 + self.x1
+        x1_pred = self.x1
+        p00_pred = self.p00 + self.p01 + self.p10 + self.p11 + q
+        p01_pred = self.p01 + self.p11
+        p10_pred = self.p10 + self.p11
+        p11_pred = self.p11 + q
+
+        y = price - x0_pred
+        s = p00_pred + r
+        k0 = p00_pred / s
+        k1 = p10_pred / s
+
+        self.x0 = x0_pred + k0 * y
+        self.x1 = x1_pred + k1 * y
+        self.p00 = (1 - k0) * p00_pred
+        self.p01 = (1 - k0) * p01_pred
+        self.p10 = p10_pred - k1 * p00_pred
+        self.p11 = p11_pred - k1 * p01_pred
+
+        return self.x0, self.x1, y
