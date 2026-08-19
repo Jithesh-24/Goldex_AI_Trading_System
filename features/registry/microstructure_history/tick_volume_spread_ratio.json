@@ -1,0 +1,24 @@
+{
+  "feature_id": "tick_volume_spread_ratio",
+  "family": "microstructure_history",
+  "mathematical_definition": "tick_volume / (spread + 1.0) -- pointwise ratio of tick activity to quoted spread (no rolling window)",
+  "source_module": "features.microstructure_history.compute_microstructure_history",
+  "required_state": [
+    "tick_volume",
+    "spread"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": null,
+  "causal": true,
+  "live_compatible": false,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "live_compatible=false: this feature needs BOTH tick_volume (available live per-bar) and spread (NOT available as per-bar history live -- MarketState's bounded buffer only holds the current live tick's instantaneous spread plus Task 21's tick-level ring buffers). It inherits the spread limitation from spread_change_1/spread_percentile_252/spread_volatility_60, so it is marked live_compatible=false even though its tick_volume half alone would be live-computable. Task 21's live-tick spread family replaces the spread side for live use (spec section 7). +1.0 denominator offset avoids division by zero when spread==0.",
+  "missing_value_policy": "No rolling-window NaNs (pointwise ratio); NaN only wherever tick_volume or spread themselves are NaN (e.g. missing source rows), never zero-filled",
+  "warmup_bars": 0,
+  "dependencies": [],
+  "historical_coverage": "PARTIAL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.156 (<0.3), MI rank 31 (outside top 15). catboost_importance=0.156, cv_importance=0.816, mi_rank=31, family=H_microstructure. SUMMARY.md finding #8 (tick_volume: small/unstable, fold CV=0.92) and finding #9 (spread: zero CatBoost importance, constant for 98.9% of history) both apply since this feature mixes the two. research/historical_coverage.py's measure_coverage('data/gold_seed_merged_full6yr.csv') (freshly run 2026-08-19 against the real 2,456,224-row merged CSV): tick_volume_degrades_after='2020-09-28' (tick_volume_nonzero_frac=0.406 overall) and spread_constant_frac=0.9889492977839155 -- historical_coverage=PARTIAL_HISTORY reflects the tick_volume-side degradation date. Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json; research/historical_coverage.py",
+  "version": "v1"
+}

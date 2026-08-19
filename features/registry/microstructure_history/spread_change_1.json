@@ -1,0 +1,23 @@
+{
+  "feature_id": "spread_change_1",
+  "family": "microstructure_history",
+  "mathematical_definition": "spread.diff(1) -- bar-over-bar change in quoted spread",
+  "source_module": "features.microstructure_history.compute_microstructure_history",
+  "required_state": [
+    "spread"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 1,
+  "causal": true,
+  "live_compatible": false,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "live_compatible=false: MarketState's bounded live buffer (built in an earlier phase of this project) does not retain per-bar spread history -- only the current live tick's instantaneous spread, plus small tick-level ring buffers a later, different family (Task 21) will use for live spread dynamics. There is no prior M1 bar's spread available live to diff against, so this feature genuinely cannot run from the live engine's bounded window as implemented; Task 21's live-tick spread family replaces it for live use (spec section 7).",
+  "missing_value_policy": "NaN for the first bar, never zero-filled",
+  "warmup_bars": 1,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.000 (<0.3), MI rank 115 (outside top 15). catboost_importance=0.0, cv_importance=0.0, mi_rank=115, family=H_microstructure. SUMMARY.md finding #9: spread is dead weight -- zero CatBoost importance (the model never splits on it), because it is a constant for 98.9% of training history. research/historical_coverage.py's measure_coverage('data/gold_seed_merged_full6yr.csv') (freshly run 2026-08-19 against the real 2,456,224-row merged CSV): spread_constant_frac=0.9889492977839155. spread is present for the entire dataset (historical_coverage=FULL_HISTORY) but is degenerate (near-constant) for almost all of it. Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json; research/historical_coverage.py",
+  "version": "v1"
+}
