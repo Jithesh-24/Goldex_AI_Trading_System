@@ -1,0 +1,22 @@
+{
+  "feature_id": "return_percentile_rank_60",
+  "family": "returns_dynamics",
+  "mathematical_definition": "pd.Series(ret1).rolling(60).rank(pct=True) -- percentile rank of the current return within its trailing 60-bar window",
+  "source_module": "features.returns_dynamics.compute_returns_dynamics",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN for first 60 bars, never zero-filled",
+  "warmup_bars": 60,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "USEFUL",
+  "status_reason": "Survived v3 feature selection (research/output/v3_feature_survivors.json): top-15 by meta MI (rank 4, MI=0.0160) despite catboost_importance=0.171. catboost_importance=0.171, mi_rank=4, family=A_return_dynamics.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

@@ -1,0 +1,22 @@
+{
+  "feature_id": "directional_entropy_60",
+  "family": "returns_dynamics",
+  "mathematical_definition": "Shannon entropy (base 2) of the {up, down, flat} proportions of sign(ret1) over a trailing 60-bar window (numba kernel directional_entropy)",
+  "source_module": "features.returns_dynamics.compute_returns_dynamics",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN for first 60 bars, never zero-filled",
+  "warmup_bars": 60,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.219 (<0.3), MI rank 49 (outside top 15). catboost_importance=0.219, mi_rank=49, family=A_return_dynamics. Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

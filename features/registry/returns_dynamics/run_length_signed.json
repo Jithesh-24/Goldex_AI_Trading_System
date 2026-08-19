@@ -1,0 +1,22 @@
+{
+  "feature_id": "run_length_signed",
+  "family": "returns_dynamics",
+  "mathematical_definition": "Signed consecutive-run length of sign(ret1): accumulates +1/-1 per bar while the return sign persists, resets to the new sign on a flip, resets to 0 on a zero return (numba kernel run_length_signed, backward-scanning, unbounded lookback within the run)",
+  "source_module": "features.returns_dynamics.compute_returns_dynamics",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": null,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "0.0 for the first bar (ret1[0] is undefined so sign1[0]=0), never NaN thereafter",
+  "warmup_bars": 1,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "USEFUL",
+  "status_reason": "Survived v3 feature selection (research/output/v3_feature_survivors.json): top-15 by meta MI (rank 8, MI=0.0138) despite catboost_importance=0.138. catboost_importance=0.138, mi_rank=8, family=A_return_dynamics.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}

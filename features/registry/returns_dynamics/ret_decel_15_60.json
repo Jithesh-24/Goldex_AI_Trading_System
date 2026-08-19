@@ -1,0 +1,25 @@
+{
+  "feature_id": "ret_decel_15_60",
+  "family": "returns_dynamics",
+  "mathematical_definition": "base_feat.ret_15 - base_feat.ret_60 (deceleration: mid-horizon minus long-horizon log return)",
+  "source_module": "features.returns_dynamics.compute_returns_dynamics",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN for first 60 bars (bound by ret_60's warmup), never zero-filled",
+  "warmup_bars": 60,
+  "dependencies": [
+    "ret_15",
+    "ret_60"
+  ],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REDUNDANT",
+  "status_reason": "Not a v3 survivor (research/output/v3_feature_survivors.json): catboost_importance=0.137 (<0.3), MI rank 19 (outside top 15). catboost_importance=0.137, mi_rank=19, family=A_return_dynamics. Kept registered per spec section 9 -- Phase 4 may find it useful for a different target.",
+  "evidence_ref": "research/output/v3_feature_survivors.json",
+  "version": "v1"
+}
