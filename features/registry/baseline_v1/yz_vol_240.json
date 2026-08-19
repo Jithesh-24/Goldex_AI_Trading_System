@@ -1,0 +1,26 @@
+{
+  "feature_id": "yz_vol_240",
+  "family": "baseline_v1",
+  "mathematical_definition": "sqrt(clip(overnight_var + k*open_var + (1-k)*rs_var, 0, None)) over a trailing 240-bar window, where overnight_var = causal_rolling_var(log(o/c_{t-1}), ddof=1), open_var = causal_rolling_var(log(c/o), ddof=1), rs_var = causal_rolling_mean(per-bar Rogers-Satchell), and k = 0.34/(1.34 + (window+1)/max(window-1,1)) -- Yang-Zhang volatility estimator, IS sqrt'd (true std, unlike gk_vol/rs_vol), combines overnight jump variance with drift-independent intrabar variance",
+  "source_module": "features.features.build_tier1_features",
+  "required_state": [
+    "open",
+    "high",
+    "low",
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 240,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "overnight_var uses min_periods=2 (pandas rolling var ddof=1); result clipped at 0 before sqrt",
+  "missing_value_policy": "NaN for windows with fewer than 240 observed bars (min_periods=2 on the overnight-var component), never zero-filled",
+  "warmup_bars": 240,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REQUIRED",
+  "status_reason": "currently deployed production feature, models/registry/direction_catboost_20260818.json",
+  "evidence_ref": "models/registry/direction_catboost_20260818.json",
+  "version": "v1"
+}

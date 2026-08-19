@@ -1,0 +1,25 @@
+{
+  "feature_id": "kalman_residual_z",
+  "family": "baseline_v1",
+  "mathematical_definition": "residual_t / (ewma_vol_t * c_t), where residual is the same Kalman filter's pre-update innovation (price_t - predicted_level_t) and the denominator is NaN-guarded to np.nan wherever ewma_vol <= 1e-8 -- volatility-normalized Kalman residual (z-score-like)",
+  "source_module": "features.features.build_tier1_features",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": null,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "Denominator forced to NaN (via np.where) whenever ewma_vol <= 1e-8, guarding division by near-zero volatility",
+  "missing_value_policy": "NaN wherever ewma_vol is NaN (its own 1-bar warmup) or <= 1e-8 (division guard), never zero-filled",
+  "warmup_bars": 2,
+  "dependencies": [
+    "ewma_vol"
+  ],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REQUIRED",
+  "status_reason": "currently deployed production feature, models/registry/direction_catboost_20260818.json",
+  "evidence_ref": "models/registry/direction_catboost_20260818.json",
+  "version": "v1"
+}

@@ -1,0 +1,22 @@
+{
+  "feature_id": "ret_5",
+  "family": "baseline_v1",
+  "mathematical_definition": "log(c_t) - log(c_{t-5}) -- 5-bar log return",
+  "source_module": "features.features.build_tier1_features",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 5,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN for the first 5 bars (no t-5 close available), never zero-filled",
+  "warmup_bars": 5,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REQUIRED",
+  "status_reason": "currently deployed production feature, models/registry/direction_catboost_20260818.json",
+  "evidence_ref": "models/registry/direction_catboost_20260818.json",
+  "version": "v1"
+}

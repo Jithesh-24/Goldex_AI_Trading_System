@@ -1,0 +1,23 @@
+{
+  "feature_id": "tick_volume",
+  "family": "baseline_v1",
+  "mathematical_definition": "Raw pass-through of the input DataFrame's tick_volume column (df['tick_volume'].to_numpy(dtype=float64)); NaN if the column is absent",
+  "source_module": "features.features.build_tier1_features",
+  "required_state": [
+    "tick_volume"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": null,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "Coverage degrades after 2020-09-28 (tick_volume_degrades_after=2020-09-28, measured 2026-08-19 via research/historical_coverage.py against data/gold_seed_merged_full6yr.csv: trailing-30-day nonzero fraction drops below 5% starting that date). Full-pipeline ablation without tick_volume: primary accuracy delta -0.03pp (noise-level); permutation importance small but positive and unstable (fold CV=0.92) -- no evidence it is actively harmful, weak evidence it helps, real evidence of a source-scale reliability concern documented in the prior masterplan",
+  "missing_value_policy": "NaN if the 'tick_volume' column is absent from the input df, else the raw broker-reported value is passed through unmodified",
+  "warmup_bars": 0,
+  "dependencies": [],
+  "historical_coverage": "PARTIAL_HISTORY",
+  "status": "REQUIRED",
+  "status_reason": "currently deployed production feature, models/registry/direction_catboost_20260818.json",
+  "evidence_ref": "models/registry/direction_catboost_20260818.json",
+  "version": "v1"
+}

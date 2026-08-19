@@ -1,0 +1,24 @@
+{
+  "feature_id": "sign_ret_1",
+  "family": "baseline_v1",
+  "mathematical_definition": "np.sign(ret_1) -- explicit sign of the base feature set's ret_1, registered as its own feature because GBDT histogram binning cannot reproduce an exact zero-threshold split as precisely as sign() does",
+  "source_module": "features.features.build_tier1_features",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 1,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "missing_value_policy": "NaN for the first 1 bar, inherited from ret_1",
+  "warmup_bars": 1,
+  "dependencies": [
+    "ret_1"
+  ],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REQUIRED",
+  "status_reason": "currently deployed production feature, models/registry/direction_catboost_20260818.json",
+  "evidence_ref": "models/registry/direction_catboost_20260818.json",
+  "version": "v1"
+}

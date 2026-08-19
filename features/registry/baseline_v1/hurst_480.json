@@ -1,0 +1,23 @@
+{
+  "feature_id": "hurst_480",
+  "family": "baseline_v1",
+  "mathematical_definition": "Rolling Hurst exponent (rescaled-range method, numba kernel features.hurst.rolling_hurst) of ret1 over a trailing 480-bar window: log(R/S) / log(n), NaN when the trailing window's std or rescaled range R is below 1e-12 (degenerate near-constant window)",
+  "source_module": "features.features.build_tier1_features",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 480,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "NaN when trailing std < 1e-12 or rescaled range R < 1e-12 (degenerate near-constant window guard inside the numba kernel)",
+  "missing_value_policy": "NaN for the first 480 bars, and whenever the trailing window is degenerate (std<1e-12 or range<1e-12), never zero-filled",
+  "warmup_bars": 480,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REQUIRED",
+  "status_reason": "currently deployed production feature, models/registry/direction_catboost_20260818.json",
+  "evidence_ref": "models/registry/direction_catboost_20260818.json",
+  "version": "v1"
+}

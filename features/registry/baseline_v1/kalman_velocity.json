@@ -1,0 +1,23 @@
+{
+  "feature_id": "kalman_velocity",
+  "family": "baseline_v1",
+  "mathematical_definition": "velocity_t / c_t, where velocity is the latent trend-slope state of the same local-level Kalman filter (features.kalman.kalman_local_level, q=1e-5, r=1.0) -- normalized trend slope",
+  "source_module": "features.features.build_tier1_features",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": null,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "velocity[0]=0 by construction (filter seeded with zero initial slope)",
+  "missing_value_policy": "Defined from the first bar (velocity[0]=0 by construction); never NaN unless the input close itself is NaN",
+  "warmup_bars": 1,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REQUIRED",
+  "status_reason": "currently deployed production feature, models/registry/direction_catboost_20260818.json",
+  "evidence_ref": "models/registry/direction_catboost_20260818.json",
+  "version": "v1"
+}

@@ -1,0 +1,26 @@
+{
+  "feature_id": "rs_vol_60",
+  "family": "baseline_v1",
+  "mathematical_definition": "causal_rolling_mean(log(h/c)*log(h/o) + log(l/c)*log(l/o), window=60) -- Rogers-Satchell per-bar variance proxy (NOT sqrt'd despite the '_vol' name: features.volatility.rogers_satchell returns the rolling-averaged variance quantity directly), drift-independent, rolling-averaged over a trailing 60-bar window",
+  "source_module": "features.features.build_tier1_features",
+  "required_state": [
+    "open",
+    "high",
+    "low",
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "Non-finite per-bar values are set to NaN before the rolling mean",
+  "missing_value_policy": "NaN for windows with fewer than 60 observed bars, never zero-filled",
+  "warmup_bars": 60,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REQUIRED",
+  "status_reason": "currently deployed production feature, models/registry/direction_catboost_20260818.json",
+  "evidence_ref": "models/registry/direction_catboost_20260818.json",
+  "version": "v1"
+}

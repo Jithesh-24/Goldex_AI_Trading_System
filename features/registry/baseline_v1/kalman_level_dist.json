@@ -1,0 +1,23 @@
+{
+  "feature_id": "kalman_level_dist",
+  "family": "baseline_v1",
+  "mathematical_definition": "(c_t - level_t) / c_t, where level is the price-level state of a hand-rolled 2-state (level, velocity) constant-velocity local-level Kalman filter (features.kalman.kalman_local_level, q=1e-5, r=1.0) -- normalized distance from the adaptive trend",
+  "source_module": "features.features.build_tier1_features",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": null,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "Filter state initialized to level[0]=price[0], velocity[0]=0, so kalman_level_dist[0]=0 exactly rather than NaN",
+  "missing_value_policy": "Defined from the first bar (Kalman state seeded with price[0]); never NaN unless the input close itself is NaN",
+  "warmup_bars": 1,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REQUIRED",
+  "status_reason": "currently deployed production feature, models/registry/direction_catboost_20260818.json",
+  "evidence_ref": "models/registry/direction_catboost_20260818.json",
+  "version": "v1"
+}

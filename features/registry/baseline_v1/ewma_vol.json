@@ -1,0 +1,23 @@
+{
+  "feature_id": "ewma_vol",
+  "family": "baseline_v1",
+  "mathematical_definition": "sqrt(EWMA variance of ret1, span=100, ddof=1, computed via pandas s.ewm(span=100, min_periods=1, adjust=False).var(bias=False).clip(lower=0)) -- causal EWMA volatility (de Prado-style), applied at whatever bar frequency the input is sampled",
+  "source_module": "features.features.build_tier1_features",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 100,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "Variance clipped at 0 before sqrt to guard against tiny negative floating-point noise",
+  "missing_value_policy": "NaN for the first bar (ewm variance with ddof=1 needs >=2 observations), never zero-filled",
+  "warmup_bars": 2,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REQUIRED",
+  "status_reason": "currently deployed production feature, models/registry/direction_catboost_20260818.json",
+  "evidence_ref": "models/registry/direction_catboost_20260818.json",
+  "version": "v1"
+}

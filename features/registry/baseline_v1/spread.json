@@ -1,0 +1,23 @@
+{
+  "feature_id": "spread",
+  "family": "baseline_v1",
+  "mathematical_definition": "Raw pass-through of the input DataFrame's spread column (df['spread'].to_numpy(dtype=float64)); NaN if the column is absent",
+  "source_module": "features.features.build_tier1_features",
+  "required_state": [
+    "spread"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": null,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "Constant for 98.89% of training history (spread_constant_frac=0.9889, measured 2026-08-19 via research/historical_coverage.py against data/gold_seed_merged_full6yr.csv). research/output/SUMMARY.md finding #9: zero CatBoost importance in the deployed model (never split on); removing it from the feature set costs exactly 0.0pp accuracy -- confirmed dead weight as a *feature* (separate from its potential use as a *cost* input)",
+  "missing_value_policy": "NaN if the 'spread' column is absent from the input df, else the raw broker-reported value is passed through unmodified",
+  "warmup_bars": 0,
+  "dependencies": [],
+  "historical_coverage": "PARTIAL_HISTORY",
+  "status": "REQUIRED",
+  "status_reason": "currently deployed production feature, models/registry/direction_catboost_20260818.json",
+  "evidence_ref": "models/registry/direction_catboost_20260818.json",
+  "version": "v1"
+}

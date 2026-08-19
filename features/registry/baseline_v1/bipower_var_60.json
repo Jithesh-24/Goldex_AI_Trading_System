@@ -1,0 +1,23 @@
+{
+  "feature_id": "bipower_var_60",
+  "family": "baseline_v1",
+  "mathematical_definition": "(pi/2) * causal_rolling_mean(|ret1_t| * |ret1_{t-1}|, window=60) -- Barndorff-Nielsen & Shephard bipower variation, robust to jumps",
+  "source_module": "features.features.build_tier1_features",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 60,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "pi/2 is the (E|Z|)^-2 BNS scaling constant for a standard normal",
+  "missing_value_policy": "NaN for the first bar (no t-1 return to pair with), and for windows with fewer than 60 observed bars",
+  "warmup_bars": 60,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REQUIRED",
+  "status_reason": "currently deployed production feature, models/registry/direction_catboost_20260818.json",
+  "evidence_ref": "models/registry/direction_catboost_20260818.json",
+  "version": "v1"
+}

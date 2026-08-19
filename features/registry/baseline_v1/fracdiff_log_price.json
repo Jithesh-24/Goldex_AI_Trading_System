@@ -1,0 +1,23 @@
+{
+  "feature_id": "fracdiff_log_price",
+  "family": "baseline_v1",
+  "mathematical_definition": "Fixed-width-window fractional differentiation (de Prado FFD, ch. 5) of log(close) at d=0.4, weight threshold 1e-5 (features.fracdiff.frac_diff_ffd) -- causal convolution: output[i] uses only log_close[i-1457:i+1]. Truncated weight vector length is 1458 for these params (verified by re-running features.fracdiff.ffd_weights(0.4) at task-15 execution time)",
+  "source_module": "features.features.build_tier1_features",
+  "required_state": [
+    "close"
+  ],
+  "update_trigger": "M1_CLOSE",
+  "window": 1458,
+  "causal": true,
+  "live_compatible": true,
+  "computational_cost": "LOW",
+  "numerical_stability_notes": "Weight vector truncated once |w_k| < 1e-5 (measured length 1458 for d=0.4); minimal differencing order chosen to make the series stationary while retaining long-range memory",
+  "missing_value_policy": "NaN for the first 1457 bars (width-1 of the truncated FFD weight vector), never zero-filled",
+  "warmup_bars": 1457,
+  "dependencies": [],
+  "historical_coverage": "FULL_HISTORY",
+  "status": "REQUIRED",
+  "status_reason": "currently deployed production feature, models/registry/direction_catboost_20260818.json",
+  "evidence_ref": "models/registry/direction_catboost_20260818.json",
+  "version": "v1"
+}
