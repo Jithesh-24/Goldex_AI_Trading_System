@@ -28,11 +28,16 @@ def load_family(family: str, registry_dir: str = REGISTRY_DIR) -> list[FeatureDe
     return out
 
 
+NON_FAMILY_DIRS = {"schemas"}  # features/registry/schemas/ holds saved FeatureSetSchema
+# slices (features/registry/schemas.py's save_schema), not FeatureDescriptor family
+# JSON -- excluded here so load_all() doesn't try to parse them as descriptors.
+
+
 def load_all(registry_dir: str = REGISTRY_DIR) -> list[FeatureDescriptor]:
     out = []
     for entry in sorted(os.listdir(registry_dir)):
         full = os.path.join(registry_dir, entry)
-        if os.path.isdir(full) and not entry.startswith("__"):
+        if os.path.isdir(full) and not entry.startswith("__") and entry not in NON_FAMILY_DIRS:
             out.extend(load_family(entry, registry_dir=registry_dir))
     return out
 

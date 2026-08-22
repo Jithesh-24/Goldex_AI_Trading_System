@@ -1,0 +1,58 @@
+{
+  "model_id": "direction_v3_candidate_h45",
+  "family": "direction",
+  "algorithm": "catboost",
+  "artifact_path": "registry/direction_v3_candidate_h45.json",
+  "feature_schema_version": "direction_v3_h45__2026-08-22",
+  "feature_cols": [
+    "fracdiff_log_price",
+    "kalman_residual_z",
+    "return_percentile_rank_60",
+    "kalman_level_dist",
+    "sign_ret_1",
+    "vol_shock_zscore",
+    "ret_1",
+    "run_length_signed",
+    "hour_sin",
+    "range_position_20",
+    "hurst_480",
+    "range_position_60",
+    "tick_volume",
+    "displacement_from_equilibrium_60",
+    "sign_ret_5",
+    "vol_compression_ratio",
+    "excursion_from_recent_distribution_20",
+    "dist_from_low_20",
+    "hour_cos",
+    "dist_from_high_20"
+  ],
+  "target_definition": "symmetric triple-barrier sign, max_holding=45, pt=sl=1.0*vol_tb",
+  "training_config": {
+    "n_splits": 6,
+    "embargo_bars": 90,
+    "catboost": "CATBOOST_KW (learning.train)"
+  },
+  "training_period": null,
+  "validation_period": null,
+  "created_at": "2026-08-22T15:58:53.836612Z",
+  "status": "validated",
+  "is_champion": false,
+  "metrics": {
+    "n_events": 300547,
+    "mean_oof_acc": 0.5115396626731861,
+    "oos_log_loss": 0.6928153417862584,
+    "oos_brier": 0.2498341273325943,
+    "roc_auc": 0.5141607011022613,
+    "pr_auc": 0.5121372776244226,
+    "op_region_precision_p55": 0.38666666666666666,
+    "op_region_recall_p55": 0.000011078140454995055,
+    "mean_economic_r_p55_cutoff": 0.00033247397817547217,
+    "baseline_mean_oof_acc": 0.5115,
+    "baseline_ref": "direction_catboost_20260818"
+  },
+  "lineage": {
+    "data_snapshot": "data/gold_seed_merged_full6yr.csv",
+    "code_commit": null,
+    "config_snapshot": null
+  }
+}

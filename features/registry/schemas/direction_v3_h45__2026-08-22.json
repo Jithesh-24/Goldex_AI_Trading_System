@@ -1,0 +1,27 @@
+{
+  "schema_id": "direction_v3_h45",
+  "schema_version": "2026-08-22",
+  "feature_ids": [
+    "fracdiff_log_price",
+    "kalman_residual_z",
+    "return_percentile_rank_60",
+    "kalman_level_dist",
+    "sign_ret_1",
+    "vol_shock_zscore",
+    "ret_1",
+    "run_length_signed",
+    "hour_sin",
+    "range_position_20",
+    "hurst_480",
+    "range_position_60",
+    "tick_volume",
+    "displacement_from_equilibrium_60",
+    "sign_ret_5",
+    "vol_compression_ratio",
+    "excursion_from_recent_distribution_20",
+    "dist_from_low_20",
+    "hour_cos",
+    "dist_from_high_20"
+  ],
+  "created_at": "2026-08-22T15:58:53.832891Z"
+}
