@@ -322,3 +322,202 @@ hardcodes nothing beyond what was already CatBoost-specific in Phase 1.
 - `time_msc` (millisecond MT5 timestamp) is available per the documented
   API surface but unused/unverified against XM's actual sub-second
   precision — noted as a future opportunity, not implemented here.
+
+## Phase 3: Quantitative Feature Fabric
+
+Status: complete, 2026-08-19. Builds the quantitative language on top of
+Phase 2's `MarketState`: a broad, research-grade, non-redundant,
+data-honest feature universe, formally registered with metadata,
+versioned, and reproducible identically in both live inference and
+historical replay. No new models, no dynamic SL/TP, no EV gate — the
+production signal path (`app/engine.py`'s CatBoost call, `app/shadow.py`)
+is untouched. Full design:
+`docs/superpowers/specs/2026-08-19-golex-v3-phase3-feature-fabric-design.md`.
+
+### Architecture
+
+```mermaid
+flowchart TD
+    MT5[XM / MT5] --> MS[MarketState<br/>Phase 2, unchanged]
+    MS --> LB[Live bounded buffers<br/>completed_m1 window accessor<br/>+ daily-resampled long buffer]
+    LB --> LE[features/live_engine.py<br/>trigger-driven: TICK / M1_CLOSE / DAILY]
+    HIST[data/gold_seed*.csv<br/>6.7yr history] --> RE[features/replay_engine.py<br/>batch mode, same family functions]
+    LE --> FAM[features/&lt;family&gt;/*.py<br/>returns, volatility, jumps, distribution,<br/>geometry, persistence, temporal,<br/>microstructure, regime, path]
+    RE --> FAM
+    FAM --> REG[features/registry/<br/>FeatureMeta per feature]
+    REG --> SCHEMA[contracts/feature_schema.py<br/>FeatureSetSchema, versioned]
+    SCHEMA -.referenced by.-> MODELS[models/registry/*.json<br/>feature_schema_version + feature_cols<br/>Phase 4, not built here]
+    FAM -. imported by .-> BASELINE[features/features.py<br/>PRODUCTION 28-col, unmodified]
+    BASELINE --> ENGINE[app/engine.py, app/shadow.py<br/>UNCHANGED live signal path]
+```
+
+Two entry points into the same family math: `live_engine.py` (bounded,
+trigger-driven, `MarketState`-fed) and `replay_engine.py` (batch,
+historical CSV-fed, for future Phase 4 dataset building). Both call the
+*same* functions in `features/<family>.py` — the core design choice that
+makes live/replay numerical equivalence close to true by construction
+instead of a second implementation to maintain and drift-check forever.
+`research/features_v3.py`'s original 92 candidate functions moved into
+`features/<family>.py` (function bodies preserved, behavior-preserving —
+same pattern Phase 2 used for `mt5_feed.py`). `features/features.py`
+itself was not edited; it became registry family `baseline_v1`, its 28
+columns individually registered against their real implementations.
+
+### Registry design
+
+`contracts/feature_schema.py`'s `FeatureDescriptor` (extended from a
+Phase 1 stub, not replaced) carries the full metadata set per feature:
+`family`, `mathematical_definition`, `source_module`, `required_state`,
+`update_trigger` (`TICK`/`M1_CLOSE`/`DAILY`/`EVENT`), `causal`,
+`live_compatible`, `computational_cost`, `warmup_bars`,
+`historical_coverage` (`FULL_HISTORY`/`PARTIAL_HISTORY`/`LIVE_ONLY`/
+`RESEARCH_ONLY`/`UNSUPPORTED`), `status`
+(`REQUIRED`/`USEFUL`/`OPTIONAL`/`UNSUPPORTED_BY_DATA`/`REDUNDANT`/
+`REJECTED`) with a mandatory `status_reason`, an optional `evidence_ref`
+pointing into `research/output/*.json`, and `version`. `features/registry/`
+holds one validated JSON per feature, one subdirectory per family, plus
+`build_schema(schema_id, schema_version, feature_ids) -> FeatureSetSchema`
+in `features/registry/__init__.py`. The registry currently holds 125
+descriptors: 28 `baseline_v1` (the production set) + 92 candidates moved
+from `research/features_v3.py` + 5 new live-only `microstructure_live`
+features. The registry preserves the *entire* quantitative universe —
+`build_schema()` lets a future model role construct its own named slice
+from it; nothing here pre-selects one universal feature set.
+
+### Live/replay equivalence
+
+`tests/test_live_replay_equivalence.py` (Task 23) feeds an identical
+synthetic tick sequence through both `LiveFeatureEngine.on_m1_close` and
+`replay_engine.build_candidate_features`, asserting agreement on every
+feature the two engines actually share. Real verified result: over a
+6000-tick / 3-completed-bar run, 97 features were in the live snapshot
+(26 `VALID`, 64 `WARMING_UP`, 7 `UNAVAILABLE`); of the 26 `VALID`
+features, 21 matched replay within tolerance and the other 5 were the
+`microstructure_live` TICK-triggered features with no batch/replay
+column to compare against at all (a structural, by-design difference,
+not a gap) — `checked=21`, confirmed non-vacuous by instrumenting the
+VALID/WARMING_UP/UNAVAILABLE breakdown rather than trusting the assertion
+count alone. No genuine discrepancy was found; `features/live_engine.py`
+required no changes.
+
+### Historical coverage findings
+
+`research/historical_coverage.py`'s `measure_coverage()` (Task 1),
+executed against the real `data/gold_seed_merged_full6yr.csv` (2,456,224
+rows), measured:
+
+- `real_volume_nonzero_frac` = 0.2383 — real volume is nonzero for only
+  ~24% of rows, matching Phase 2's live finding that `real_volume` is
+  `UNSUPPORTED_BY_DATA` for `GOLD.i#`.
+- `tick_volume_nonzero_frac` = 0.4062, `tick_volume_degrades_after` =
+  `2020-09-28` — tick_volume is real in early history and degrades to
+  near-zero after that date; features depending on it are marked
+  `PARTIAL_HISTORY`, not silently assumed valid across the full 6.7 years.
+- `spread_constant_frac` = 0.9889 — the historical spread column is
+  constant for 98.9% of rows, across 107 unique spread values observed
+  in total (range 20.0–194.0) — a near-dead historical feature (matching
+  `research/output/SUMMARY.md` finding #9's zero CatBoost importance),
+  but Phase 2's live feed provides a genuinely dynamic real-time spread
+  with no historical analogue, captured instead by the new live-only
+  `microstructure_live` family.
+
+### The causality-test gap (found and closed)
+
+`research/features_v3.py`'s own docstring claimed causality was
+"verified by `research/v3_causality_check.py`'s truncation test" — that
+file did not exist anywhere in the repo; the claim was backed only by a
+code-construction argument, not an executable test. Task 17 built the
+real test and, during review, found a second, more concrete gap in its
+own first draft: at the brief's literal `n=500`/`check_rows=250`
+parameters, 4 candidate columns (3 DAILY-resample features needing
+~86,400 minute-rows, plus `fracdiff_slope_60` needing ~1516 rows) were
+only vacuously checked (NaN compared against NaN), and the 28 baseline
+columns were never compared at all despite the report initially claiming
+"120 columns checked." Both were fixed in place: the comparison was
+extended to cover the 28 baseline columns, and a second, appropriately
+scaled test (a longer minute-frequency series for `fracdiff_slope_60`,
+dedicated daily-frequency synthetic data for the 3 DAILY-resample
+features) was added so those get real, non-vacuous coverage too. Final
+state: 120/120 columns genuinely exercised, zero real causality
+violations found — this was a coverage gap in the test, not a bug in any
+feature.
+
+### The new live-only family and its diagnostics
+
+`features/microstructure_live.py` (Task 21) exists only because Phase 2
+gave this system a real live bid/ask tick stream — a thing the 6.7-year
+OHLC-only CSV cannot express at all. Its 5 features
+(`spread_change_live`, `spread_shock_zscore_live`,
+`tick_interarrival_mean_60s`, `tick_interarrival_std_60s`,
+`tick_arrival_burstiness_60s`) are registered `historical_coverage=
+LIVE_ONLY`, `status=OPTIONAL`, no `evidence_ref` — explicitly not
+validated, pending real Phase 4 evaluation.
+
+`features/registry/diagnostics.py`'s `correlation_redundancy()` and
+`distribution_stability()` were generalized from the original
+92-feature-selection methodology and applied fresh to this family, since
+it has no prior evidence to lean on (Task 26). The honest result, after a
+fix round corrected an initial threshold-only readout that had
+overstated the family as "well-designed with minimal redundancy": no
+pair exceeds the 0.95 redundancy threshold, but the full correlation
+matrix shows two real, substantial sub-threshold correlations —
+`spread_change_live` vs `spread_shock_zscore_live` r=0.714 (expected:
+both derive from the same underlying spread-shock signal, one raw and
+one standardized), and `tick_interarrival_std_60s` vs
+`tick_arrival_burstiness_60s` r=0.871 (expected: burstiness is a
+function of interarrival dispersion). Additionally, 3 of the 5 features
+(the interarrival mean/std and burstiness) came back quasi-constant
+(coefficient of variation < 0.02) in this run — not evidence those
+features are redundant or well-exercised, but a limitation of
+`market/synthetic_replay.py`'s `generate_ticks()`, which draws i.i.d.
+interarrival gaps with no clustering/regime structure, the exact
+structure "burstiness" is meant to detect. The corrected conclusion:
+"threshold-clean, not correlation-free" — no near-duplicate pair by the
+0.95 cutoff, but real moderate-to-strong correlation in 2 of 10 pairs
+that a downstream feature-selection step should be aware of, and weak
+(not strong) evidence either way on the 3 quasi-constant features.
+
+### Model-routing compatibility
+
+No change to `decision/router.py`, `models/registry/`, or
+`config/models.yaml`. Task 15 demonstrated the routing hook directly:
+28 `FeatureDescriptor` JSONs were written for the deployed production
+feature set (`features/registry/baseline_v1/`), and
+`build_schema("baseline_v1", "root-28col-2026-08-18", feature_ids)`
+reproduces `models/registry/direction_catboost_20260818.json`'s real
+`feature_cols` list in its exact deployed order — proving the registry
+can drive a `FeatureSetSchema` construction for an existing model's
+schema, not just a hypothetical one. The same `build_schema()` hook in
+`features/registry/__init__.py` is what a future Phase 4 specialist
+model uses to construct its own named slice from the full 125-feature
+universe against its own target, without the fabric ever assuming one
+universal vector.
+
+### Performance
+
+`tests/test_feature_performance.py` (Task 28), a `[SYNTHETIC]`-labeled
+two-pass benchmark of `LiveFeatureEngine.on_m1_close` matching Phase 2's
+own `test_performance.py` precedent (real 2026-08-19 measurement, 20,000
+synthetic ticks / 11 real bar closes for timing, a separate 6,000-tick
+pass under `tracemalloc` for memory): p50=25039μs, p95=254141μs,
+p99=435521μs — comfortably under the 2s budget — and 586.6KB peak traced
+memory. The wide p50→p99 spread was investigated rather than accepted at
+face value: it isolates entirely to a one-time ~495ms numba JIT
+compilation cost on the very first real `on_m1_close` call (confirmed
+`@numba.njit`-decorated modules genuinely in the call graph:
+`first_passage.py`, `distribution_info.py`, `persistence.py`, `hurst.py`,
+`fracdiff.py`, `kalman.py`, `market_geometry.py`, `returns_dynamics.py`),
+not a recurring or data-size-scaling cost — every call after the first is
+a stable ~25–30ms regardless of window size. Caveat added during review:
+at n≈10-11 samples, p99 is essentially just the observed max, not a
+statistically robust tail estimate.
+
+### Out of scope (explicit)
+
+No new models, no specialist-model feature *selection* (Phase 4), no
+dynamic SL/TP, no EV gate, no virtual trade management, no EOD learning,
+no champion/challenger, no changes to `app/engine.py`'s live decision
+path or `features/features.py`'s production math, no re-running the
+existing 92-feature OOF research (the 17-survivors evidence stays as
+historical evidence describing what helped one past model/config — not a
+universal filter for what any future specialist model should use).
