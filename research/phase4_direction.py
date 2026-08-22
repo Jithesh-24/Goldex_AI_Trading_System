@@ -17,6 +17,10 @@ import pandas as pd
 
 from research.phase4_dataset import assemble_v3_dataset, select_top_features
 from research.audit_edge import oof_run, manual_log_loss
+from learning.train import EMBARGO_BARS as REAL_EMBARGO_BARS  # oof_run's PurgedWalkForwardCV always
+# uses this fixed constant (TB_CFG_DIR.max_holding * 2 == 90), NOT this task's own max_holding --
+# recorded here so training_config.embargo_bars reports what actually happened, not a fabricated
+# per-horizon value.
 from decision.calibration import PlattCalibrator
 from features.registry import build_schema
 from features.registry.schemas import save_schema
@@ -46,7 +50,9 @@ def run_direction_candidate(max_holding: int, rows: int = None) -> dict:
     t0 = pd.Series(t0_nz)
     t1 = pd.Series(t1_nz)
 
-    embargo_bars = max_holding * 2
+    embargo_bars = REAL_EMBARGO_BARS  # true value oof_run's PurgedWalkForwardCV actually used
+    # for every fold below (fixed at TB_CFG_DIR.max_holding*2, independent of this task's
+    # max_holding) -- NOT max_holding*2 for THIS horizon, which would misreport what happened.
     # Pass 1: full candidate pool, OOF importances only (this pass's own metrics are
     # NOT used for the registry entry -- only for ranking features by cross-validated,
     # never in-sample, importance).

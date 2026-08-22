@@ -29,7 +29,7 @@
   "target_definition": "symmetric triple-barrier sign, max_holding=15, pt=sl=1.0*vol_tb",
   "training_config": {
     "n_splits": 6,
-    "embargo_bars": 30,
+    "embargo_bars": 90,
     "catboost": "CATBOOST_KW (learning.train)"
   },
   "training_period": null,
