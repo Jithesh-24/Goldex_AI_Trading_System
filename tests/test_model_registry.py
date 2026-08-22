@@ -40,6 +40,26 @@ def test_exactly_two_active_champions():
     assert sorted(champions) == ["direction_catboost_20260818", "opportunity_meta_catboost_20260818"]
 
 
+def test_validated_status_accepted():
+    from contracts.model_registry import ModelRegistryEntry
+    entry = ModelRegistryEntry(
+        model_id="phase4_smoke_test", family="regime", algorithm="dummy",
+        artifact_path="registry/phase4_smoke_test.json", created_at="2026-08-22T00:00:00Z",
+        status="validated",
+    )
+    assert entry.status == "validated"
+
+
+def test_execution_decay_family_accepted():
+    from contracts.model_registry import ModelRegistryEntry
+    entry = ModelRegistryEntry(
+        model_id="phase4_smoke_test2", family="execution_decay", algorithm="dummy",
+        artifact_path="registry/phase4_smoke_test2.json", created_at="2026-08-22T00:00:00Z",
+        status="candidate",
+    )
+    assert entry.family == "execution_decay"
+
+
 if __name__ == "__main__":
     test_every_registry_entry_parses()
     test_active_artifacts_exist_on_disk()

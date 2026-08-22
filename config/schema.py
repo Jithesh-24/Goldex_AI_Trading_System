@@ -39,6 +39,7 @@ class ModelRoleConfig(BaseModel):
     mae_quantile: Optional[str] = None
     mfe_quantile: Optional[str] = None
     barrier_probability: Optional[str] = None
+    execution_decay: Optional[str] = None
 
 
 class DecisionConfig(BaseModel):

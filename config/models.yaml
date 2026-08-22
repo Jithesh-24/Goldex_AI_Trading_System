@@ -4,3 +4,4 @@ regime: null
 mae_quantile: null
 mfe_quantile: null
 barrier_probability: null
+execution_decay: null

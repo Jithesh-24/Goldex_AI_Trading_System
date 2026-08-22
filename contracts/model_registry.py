@@ -8,9 +8,9 @@ from pydantic import BaseModel, Field
 
 ModelFamily = Literal[
     "direction", "opportunity_meta", "regime",
-    "mae_quantile", "mfe_quantile", "barrier_probability",
+    "mae_quantile", "mfe_quantile", "barrier_probability", "execution_decay",
 ]
-ModelStatus = Literal["candidate", "active", "archived", "rejected"]
+ModelStatus = Literal["candidate", "validated", "active", "archived", "rejected"]
 
 
 class ModelLineage(BaseModel):
