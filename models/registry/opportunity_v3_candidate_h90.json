@@ -1,0 +1,51 @@
+{
+  "model_id": "opportunity_v3_candidate_h90",
+  "family": "opportunity_meta",
+  "algorithm": "catboost",
+  "artifact_path": "registry/opportunity_v3_candidate_h90.json",
+  "feature_schema_version": "opportunity_v3_h90__2026-08-22",
+  "feature_cols": [
+    "assumed_side",
+    "hour_sin",
+    "hour_cos",
+    "vol_acceleration_30",
+    "vol_compression_ratio",
+    "ewma_vol",
+    "fracdiff_log_price",
+    "vol_of_vol_60",
+    "yz_vol_240",
+    "gk_vol_240",
+    "bipower_var_60",
+    "displacement_from_equilibrium_60",
+    "range_position_60",
+    "vol_shock_zscore",
+    "rs_vol_240",
+    "return_percentile_rank_60",
+    "rs_vol_20",
+    "tail_probability_60",
+    "tick_volume",
+    "range_width_ratio_20_60"
+  ],
+  "target_definition": "meta-label: assumed-side TP before SL, max_holding=90, pt=1.5*vol_tb sl=1.0*vol_tb",
+  "training_config": {
+    "n_splits": 6,
+    "embargo_bars": 90,
+    "catboost": "CATBOOST_KW (learning.train)"
+  },
+  "training_period": null,
+  "validation_period": null,
+  "created_at": "2026-08-22T16:45:49.094261Z",
+  "status": "rejected",
+  "is_champion": false,
+  "metrics": {
+    "n_events": 251297,
+    "meta_win_rate": 0.398568228032965,
+    "oos_log_loss": 0.6475876711618014,
+    "baseline_meta_win_rate": 0.4887
+  },
+  "lineage": {
+    "data_snapshot": "data/gold_seed_merged_full6yr.csv",
+    "code_commit": null,
+    "config_snapshot": null
+  }
+}

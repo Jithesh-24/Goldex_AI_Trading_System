@@ -1,0 +1,27 @@
+{
+  "schema_id": "opportunity_v3_h15",
+  "schema_version": "2026-08-22",
+  "feature_ids": [
+    "assumed_side",
+    "run_length_signed",
+    "sign_ret_1",
+    "return_percentile_rank_60",
+    "ret_1",
+    "ret_conditional_on_session",
+    "vol_shock_zscore",
+    "hour_sin",
+    "ret_5",
+    "range_width_ratio_20_60",
+    "tick_volume",
+    "range_position_20",
+    "tail_probability_60",
+    "vol_acceleration_30",
+    "sign_ret_5",
+    "kalman_residual_z",
+    "excursion_from_recent_distribution_20",
+    "displacement_from_equilibrium_60",
+    "fracdiff_log_price",
+    "hurst_120"
+  ],
+  "created_at": "2026-08-22T16:38:32.514950Z"
+}
