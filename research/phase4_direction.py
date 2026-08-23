@@ -23,7 +23,7 @@ from learning.train import EMBARGO_BARS as REAL_EMBARGO_BARS  # oof_run's Purged
 # per-horizon value.
 from decision.calibration import PlattCalibrator
 from features.registry import build_schema
-from features.registry.schemas import save_schema
+from features.registry.schemas import save_schema, SCHEMAS_DIR
 from features.labeling import TripleBarrierConfig, triple_barrier_labels
 from contracts.model_registry import ModelRegistryEntry, ModelLineage
 
@@ -33,7 +33,9 @@ BASELINE_LOGLOSS_REF = "direction_catboost_20260818"  # re-measured fresh below,
 TOP_N_FEATURES = 20  # per spec section 6: each specialist gets its OWN narrowed schema, not the full pool
 
 
-def run_direction_candidate(max_holding: int, rows: int = None) -> dict:
+def run_direction_candidate(max_holding: int, rows: int = None, registry_dir: str = None, schemas_dir: str = None) -> dict:
+    if registry_dir is None:
+        registry_dir = REGISTRY_DIR
     ds = assemble_v3_dataset(max_holding=max_holding, rows=rows)
     feat_v3, close, high, low, vol_tb, t0_idx = (ds["feat_v3"], ds["close"], ds["high"],
                                                   ds["low"], ds["vol_tb"], ds["t0_idx"])
@@ -97,7 +99,7 @@ def run_direction_candidate(max_holding: int, rows: int = None) -> dict:
     status = "validated" if mean_acc > 0.5115 and oos_log_loss < 0.693 else "rejected"
 
     schema = build_schema(f"direction_v3_h{max_holding}", "2026-08-22", feature_cols)
-    save_schema(schema)
+    save_schema(schema, schemas_dir=schemas_dir if schemas_dir else SCHEMAS_DIR)
 
     entry = ModelRegistryEntry(
         model_id=f"direction_v3_candidate_h{max_holding}", family="direction", algorithm="catboost",
@@ -117,8 +119,8 @@ def run_direction_candidate(max_holding: int, rows: int = None) -> dict:
                  "baseline_mean_oof_acc": 0.5115, "baseline_ref": BASELINE_LOGLOSS_REF},
         lineage=ModelLineage(data_snapshot="data/gold_seed_merged_full6yr.csv"),
     )
-    os.makedirs(REGISTRY_DIR, exist_ok=True)
-    out_path = os.path.join(REGISTRY_DIR, f"{entry.model_id}.json")
+    os.makedirs(registry_dir, exist_ok=True)
+    out_path = os.path.join(registry_dir, f"{entry.model_id}.json")
     with open(out_path, "w") as f:
         f.write(entry.model_dump_json(indent=2))
 

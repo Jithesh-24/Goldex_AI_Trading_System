@@ -17,7 +17,7 @@ from research.audit_edge import oof_run, build_meta, manual_log_loss
 from decision.calibration import PlattCalibrator
 from features.labeling import TripleBarrierConfig, triple_barrier_labels
 from features.registry import build_schema
-from features.registry.schemas import save_schema
+from features.registry.schemas import save_schema, SCHEMAS_DIR
 from contracts.model_registry import ModelRegistryEntry, ModelLineage
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -25,7 +25,9 @@ REGISTRY_DIR = os.path.join(BASE, "models", "registry")
 TOP_N_FEATURES = 20  # per spec section 6: this role's OWN narrowed schema, not the shared pool
 
 
-def run_barrier_candidate(max_holding: int, rows: int = None) -> dict:
+def run_barrier_candidate(max_holding: int, rows: int = None, registry_dir: str = None, schemas_dir: str = None) -> dict:
+    if registry_dir is None:
+        registry_dir = REGISTRY_DIR
     ds = assemble_v3_dataset(max_holding=max_holding, rows=rows)
     feat_v3, close, high, low, vol_tb, t0_idx = (ds["feat_v3"], ds["close"], ds["high"],
                                                   ds["low"], ds["vol_tb"], ds["t0_idx"])
@@ -84,7 +86,7 @@ def run_barrier_candidate(max_holding: int, rows: int = None) -> dict:
     status = "validated" if max_calib_gap < 0.15 else "rejected"
 
     schema = build_schema(f"barrier_v3_h{max_holding}", "2026-08-22", feature_cols_meta)
-    save_schema(schema)
+    save_schema(schema, schemas_dir=schemas_dir if schemas_dir else SCHEMAS_DIR)
     entry = ModelRegistryEntry(
         model_id=f"barrier_v3_candidate_h{max_holding}", family="barrier_probability", algorithm="catboost",
         artifact_path=f"registry/barrier_v3_candidate_h{max_holding}.json",
@@ -104,8 +106,8 @@ def run_barrier_candidate(max_holding: int, rows: int = None) -> dict:
                  "max_calibration_gap": max_calib_gap, "reliability_curve": reliability_curve},
         lineage=ModelLineage(data_snapshot="data/gold_seed_merged_full6yr.csv"),
     )
-    os.makedirs(REGISTRY_DIR, exist_ok=True)
-    with open(os.path.join(REGISTRY_DIR, f"{entry.model_id}.json"), "w") as f:
+    os.makedirs(registry_dir, exist_ok=True)
+    with open(os.path.join(registry_dir, f"{entry.model_id}.json"), "w") as f:
         f.write(entry.model_dump_json(indent=2))
 
     print(f"[barrier h={max_holding}] n_events={len(y_true):,} log_loss={log_loss:.4f} "

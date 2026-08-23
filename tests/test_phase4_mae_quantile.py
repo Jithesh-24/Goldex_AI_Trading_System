@@ -1,6 +1,7 @@
 """python3 tests/test_phase4_mae_quantile.py"""
 import os
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -8,7 +9,10 @@ from research.phase4_mae_quantile import run_mae_quantile_candidate
 
 
 def test_run_mae_quantile_candidate_produces_real_coverage():
-    result = run_mae_quantile_candidate(max_holding=45, rows=20000)
+    tmp_registry = tempfile.TemporaryDirectory()
+    tmp_schemas = tempfile.TemporaryDirectory()
+    result = run_mae_quantile_candidate(max_holding=45, rows=20000,
+                                         registry_dir=tmp_registry.name, schemas_dir=tmp_schemas.name)
     # With small datasets, oof_run may not generate OOF (returns n_events=0); that's OK
     # Real runs (rows=None) will have sufficient data
     if result["n_events"] == 0:
@@ -23,6 +27,8 @@ def test_run_mae_quantile_candidate_produces_real_coverage():
             assert q in result["global_coverage"]
             assert 0.0 <= result["global_coverage"][q] <= 1.0
             assert q in result["per_regime_coverage"], "per-vol-state coverage missing -- spec section 13 requires it"
+    tmp_registry.cleanup()
+    tmp_schemas.cleanup()
 
 
 if __name__ == "__main__":

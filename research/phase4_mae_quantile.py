@@ -1,9 +1,12 @@
 """Phase 4, Role D (high priority per spec section 23): MAE quantile.
 CatBoost quantile regression on mae_R (max adverse excursion in
-R-multiples), V3 feature fabric, compared against the per-vol-state
-empirical-quantile baseline -- same methodology research/v3_quantile_models.py
-already validated on the old v2 dataset, reused verbatim here on the new
-V3-feature event set. Global AND per-regime coverage reported (spec
+R-multiples), V3 feature fabric, using the same fit_quantile/pinball_loss
+methodology research/v3_quantile_models.py already applied on the old v2
+dataset, reused verbatim here on the new V3-feature event set.
+NOTE: unlike Direction/Opportunity, this role does NOT implement a real
+spec-section-17 baseline-beats gate -- there is no comparison here against
+a per-vol-state empirical-quantile baseline; that comparison is deferred/
+not implemented. Global AND per-regime coverage reported (spec
 section 13): a model that's well-calibrated on average but wrong in one
 vol regime is not acceptable.
 
@@ -20,7 +23,7 @@ from research.v3_quantile_models import fit_quantile, pinball_loss
 from learning.cv import PurgedWalkForwardCV
 from features.labeling import TripleBarrierConfig, triple_barrier_labels
 from features.registry import build_schema
-from features.registry.schemas import save_schema
+from features.registry.schemas import save_schema, SCHEMAS_DIR
 from contracts.model_registry import ModelRegistryEntry, ModelLineage
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -29,7 +32,9 @@ QUANTILES = [0.5, 0.75, 0.9]
 TOP_N_FEATURES = 20  # per spec section 6: this role's OWN narrowed schema, not the shared pool
 
 
-def run_mae_quantile_candidate(max_holding: int, rows: int = None) -> dict:
+def run_mae_quantile_candidate(max_holding: int, rows: int = None, registry_dir: str = None, schemas_dir: str = None) -> dict:
+    if registry_dir is None:
+        registry_dir = REGISTRY_DIR
     ds = assemble_v3_dataset(max_holding=max_holding, rows=rows)
     feat_v3, close, high, low, vol_tb, t0_idx = (ds["feat_v3"], ds["close"], ds["high"],
                                                   ds["low"], ds["vol_tb"], ds["t0_idx"])
@@ -102,7 +107,7 @@ def run_mae_quantile_candidate(max_holding: int, rows: int = None) -> dict:
     status = "validated" if all(abs(global_coverage[str(q)] - q) < 0.1 for q in QUANTILES) else "rejected"
 
     schema = build_schema(f"mae_quantile_v3_h{max_holding}", "2026-08-22", feature_cols_meta)
-    save_schema(schema)
+    save_schema(schema, schemas_dir=schemas_dir if schemas_dir else SCHEMAS_DIR)
     entry = ModelRegistryEntry(
         model_id=f"mae_quantile_v3_candidate_h{max_holding}", family="mae_quantile", algorithm="catboost_quantile",
         artifact_path=f"registry/mae_quantile_v3_candidate_h{max_holding}.json",
@@ -116,8 +121,8 @@ def run_mae_quantile_candidate(max_holding: int, rows: int = None) -> dict:
                  "global_pinball": global_pinball, "per_regime_coverage": per_regime_coverage},
         lineage=ModelLineage(data_snapshot="data/gold_seed_merged_full6yr.csv"),
     )
-    os.makedirs(REGISTRY_DIR, exist_ok=True)
-    with open(os.path.join(REGISTRY_DIR, f"{entry.model_id}.json"), "w") as f:
+    os.makedirs(registry_dir, exist_ok=True)
+    with open(os.path.join(registry_dir, f"{entry.model_id}.json"), "w") as f:
         f.write(entry.model_dump_json(indent=2))
 
     print(f"[mae_quantile h={max_holding}] n_events={len(mae_R):,} "

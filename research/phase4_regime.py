@@ -19,7 +19,7 @@ from research.audit_edge import wilson_ci
 from features.labeling import TripleBarrierConfig, triple_barrier_labels
 from learning.cv import PurgedWalkForwardCV
 from features.registry import build_schema
-from features.registry.schemas import save_schema
+from features.registry.schemas import save_schema, SCHEMAS_DIR
 from contracts.model_registry import ModelRegistryEntry, ModelLineage
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -35,7 +35,9 @@ def _obs_matrix(feat_v3: pd.DataFrame) -> np.ndarray:
     return np.column_stack([log_vol, hurst, kresid])
 
 
-def run_regime_candidate(rows: int = None) -> dict:
+def run_regime_candidate(rows: int = None, registry_dir: str = None, schemas_dir: str = None) -> dict:
+    if registry_dir is None:
+        registry_dir = REGISTRY_DIR
     ds = assemble_v3_dataset(max_holding=45, rows=rows)
     feat_v3, close, high, low, vol_tb, t0_idx = (ds["feat_v3"], ds["close"], ds["high"],
                                                   ds["low"], ds["vol_tb"], ds["t0_idx"])
@@ -102,7 +104,7 @@ def run_regime_candidate(rows: int = None) -> dict:
     status = "validated" if disjoint else "rejected"
 
     schema = build_schema("regime_v3", "2026-08-22", OBS_COLS)
-    save_schema(schema)
+    save_schema(schema, schemas_dir=schemas_dir if schemas_dir else SCHEMAS_DIR)
     entry = ModelRegistryEntry(
         model_id="regime_v3_candidate", family="regime", algorithm="gaussian_hmm",
         artifact_path="registry/regime_v3_candidate.json",
@@ -118,8 +120,8 @@ def run_regime_candidate(rows: int = None) -> dict:
                  "ci_disjoint": disjoint},
         lineage=ModelLineage(data_snapshot="data/gold_seed_merged_full6yr.csv"),
     )
-    os.makedirs(REGISTRY_DIR, exist_ok=True)
-    with open(os.path.join(REGISTRY_DIR, f"{entry.model_id}.json"), "w") as f:
+    os.makedirs(registry_dir, exist_ok=True)
+    with open(os.path.join(registry_dir, f"{entry.model_id}.json"), "w") as f:
         f.write(entry.model_dump_json(indent=2))
 
     print(f"[regime] mean_run_length={mean_run_length:.2f} transmat_drift={drift:.4f} "

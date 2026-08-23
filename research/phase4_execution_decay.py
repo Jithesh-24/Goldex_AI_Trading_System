@@ -26,7 +26,9 @@ CUSUM_K = 2.5
 DELAYS_BARS = {"30s": 0, "60s": 1, "120s": 2}  # M1 resolution: 30s rounds to same-bar close
 
 
-def run_execution_decay_proxy(rows: int = None) -> dict:
+def run_execution_decay_proxy(rows: int = None, registry_dir: str = None) -> dict:
+    if registry_dir is None:
+        registry_dir = REGISTRY_DIR
     df = load_raw_m1()
     if rows:
         df = df.tail(rows).reset_index(drop=True)
@@ -65,8 +67,8 @@ def run_execution_decay_proxy(rows: int = None) -> dict:
                            "real-tick-capture infra this could eventually be fed from"},
         lineage=ModelLineage(data_snapshot="data/gold_seed_merged_full6yr.csv"),
     )
-    os.makedirs(REGISTRY_DIR, exist_ok=True)
-    with open(os.path.join(REGISTRY_DIR, f"{entry.model_id}.json"), "w") as f:
+    os.makedirs(registry_dir, exist_ok=True)
+    with open(os.path.join(registry_dir, f"{entry.model_id}.json"), "w") as f:
         f.write(entry.model_dump_json(indent=2))
 
     print(f"[execution_decay] DATA_LIMITED -- n_events={len(t0_idx):,} drift_by_delay={drift_by_delay}")
