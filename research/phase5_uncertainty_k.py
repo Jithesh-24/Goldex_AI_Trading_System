@@ -11,7 +11,7 @@ Run: /home/jith/.hermes/hermes-agent/venv/bin/python3 -m research.phase5_uncerta
 """
 from decision.ev_formula import risk_adjusted_ev
 
-CANDIDATE_KS = [0.0, 0.25, 0.5, 0.75, 1.0]
+CANDIDATE_KS = [0.0, 0.25, 0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0]
 
 
 def derive_and_validate_k(candidate_ks: list[float], events: list[dict]) -> dict:

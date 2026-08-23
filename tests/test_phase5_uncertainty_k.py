@@ -18,7 +18,7 @@ def test_derive_and_validate_k_picks_best_separator():
     ]
     result = derive_and_validate_k(candidate_ks=[0.0, 0.5, 1.0], events=events)
     assert "chosen_k" in result
-    assert result["chosen_k"] in (0.0, 0.5, 1.0)
+    assert result["chosen_k"] == 1.0  # k=1.0 achieves 100% sign-match accuracy on this fixture
     assert len(result["validation"]) == 3
 
 
