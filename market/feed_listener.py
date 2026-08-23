@@ -10,16 +10,19 @@ from datetime import datetime, timezone
 from contracts.tick import Tick
 from contracts.market_state import FeedHealthState
 from market.state_engine import StateEngine
+from market.tick_capture import TickCapture
 from market.tick_protocol import decode_frame, FRAME_TICK, FRAME_BACKFILL
 
 STALE_AFTER_SEC = 5.0
 
 
 class FeedListener:
-    def __init__(self, symbol, host="127.0.0.1", port=47115):
+    def __init__(self, symbol, host="127.0.0.1", port=47115,
+                 tick_capture_enabled=False, tick_capture_path="data/real_tick_capture.csv"):
         self.symbol = symbol
         self.host, self.port = host, port
         self.engine = StateEngine(symbol)
+        self.tick_capture = TickCapture(out_path=tick_capture_path, enabled=tick_capture_enabled)
         self._lock = threading.Lock()
         self._latest_state = None
         self._health = FeedHealthState.UNKNOWN
@@ -112,6 +115,7 @@ class FeedListener:
                 )
             except Exception:
                 return  # invalid tick payload: rejected, never crashes the listener
+            self.tick_capture.on_tick(tick.model_dump())
             state = self.engine.on_tick(tick)
             if state is None:
                 return  # duplicate/out-of-order: engine already rejected it

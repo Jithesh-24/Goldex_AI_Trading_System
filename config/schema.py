@@ -15,6 +15,7 @@ class MarketConfig(BaseModel):
     tick_state_file: str
     active_signal_file: str
     bars_file: str
+    tick_capture_enabled: bool = False
     legacy_note: str = (
         "Market-data path (bid/ask/M1) is now the managed feed "
         "(market/mt5_feed.py -> market/feed_listener.py -> MarketState), "

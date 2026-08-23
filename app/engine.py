@@ -224,6 +224,7 @@ class LiveEngine:
         # accessor for later-phase use.
         self.feed_listener = FeedListener(
             symbol="GOLD.i#", host=_cfg.market.feed_host, port=_cfg.market.feed_port,
+            tick_capture_enabled=_cfg.market.tick_capture_enabled,
         )
         self.feed_listener.start()
         log(f"market feed listener started on {_cfg.market.feed_host}:{_cfg.market.feed_port} "
