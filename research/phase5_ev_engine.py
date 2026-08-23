@@ -10,6 +10,7 @@ P(direction)>0.55 gate, no cost/no EV), and a sensitivity/fragility scan
 Run: /home/jith/.hermes/hermes-agent/venv/bin/python3 -m research.phase5_ev_engine
 """
 from datetime import datetime, timezone
+import tempfile
 
 import numpy as np
 
@@ -28,10 +29,10 @@ class _ReplayMarketState:
         self.timestamp = datetime.now(timezone.utc)
 
 
-def replay_and_validate(max_holding: int, rows: int = None) -> dict:
+def replay_and_validate(max_holding: int, rows: int = None, registry_dir: str = None) -> dict:
     data = assemble_replay_dataset(max_holding, rows=rows)
     timeout_info = estimate_timeout_payoff(max_holding, rows=rows)
-    split_info = run_barrier_split_candidate(max_holding, rows=rows)
+    split_info = run_barrier_split_candidate(max_holding, rows=rows, registry_dir=registry_dir)
     # Task 2's barrier_split classifier returns log-loss metrics, not probabilities.
     # The return contract does not expose per-event or aggregate P(sl|not_win) values.
     # Use 0.5 (least-informative prior) as the fixed stop-loss probability for this replay.
@@ -99,6 +100,10 @@ def replay_and_validate(max_holding: int, rows: int = None) -> dict:
 
 if __name__ == "__main__":
     from research.phase4_dataset import HORIZONS
-    for h in HORIZONS:
-        r = replay_and_validate(h)
-        print(f"h={h}: {r}")
+
+    # Create a temporary directory for barrier_split registry output (research runs must not touch real registry)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Run all 3 horizons sequentially with temp registry directory
+        for h in HORIZONS:
+            r = replay_and_validate(h, registry_dir=tmpdir)
+            print(f"h={h}: {r}")
