@@ -13,13 +13,11 @@ import os
 
 import numpy as np
 import pandas as pd
-from catboost import CatBoostClassifier
 
 from research.phase4_dataset import assemble_v3_dataset, select_top_features
-from research.audit_edge import build_meta, _mae_mfe_core
+from research.audit_edge import oof_run, build_meta, _mae_mfe_core
 from research.v3_quantile_models import fit_quantile, pinball_loss
 from learning.cv import PurgedWalkForwardCV
-from learning.train import CATBOOST_KW, VAL_FRACTION
 from features.labeling import TripleBarrierConfig, triple_barrier_labels
 from features.registry import build_schema
 from features.registry.schemas import save_schema
@@ -29,41 +27,6 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REGISTRY_DIR = os.path.join(BASE, "models", "registry")
 QUANTILES = [0.5, 0.75, 0.9]
 TOP_N_FEATURES = 20  # per spec section 6: this role's OWN narrowed schema, not the shared pool
-
-
-def _fit(X, y, train_pos):
-    """Fit CatBoost classifier on training positions."""
-    cut = int(len(train_pos) * (1 - VAL_FRACTION))
-    tr, va = train_pos[:cut], train_pos[cut:]
-    model = CatBoostClassifier(**CATBOOST_KW)
-    model.fit(X.iloc[tr], y.iloc[tr], eval_set=(X.iloc[va], y.iloc[va]))
-    return model
-
-
-def oof_run_adaptive(X, y_bin, t0, t1, tag, want_importance=False, min_train_bars=500):
-    """Purged walk-forward OOF with adaptive min_train_bars for small datasets."""
-    cv = PurgedWalkForwardCV(n_splits=6, embargo_bars=90, min_train_bars=min_train_bars)
-    n = len(X)
-    oof_pred = np.full(n, -1, dtype=np.int64)
-    oof_proba = np.full(n, np.nan, dtype=np.float64)
-    fold_id = np.full(n, -1, dtype=np.int64)
-    fold_metrics = []
-    importances = []
-    for fold, (train_pos, test_pos) in enumerate(cv.split(t0.to_numpy(), t1.to_numpy())):
-        model = _fit(X, y_bin, train_pos)
-        proba = model.predict_proba(X.iloc[test_pos])[:, 1]
-        pred = (proba >= 0.5).astype(np.int64)
-        oof_pred[test_pos] = pred
-        oof_proba[test_pos] = proba
-        fold_id[test_pos] = fold
-        y_true = y_bin.iloc[test_pos].to_numpy()
-        acc = float((pred == y_true).mean())
-        if want_importance:
-            importances.append(dict(zip(X.columns, [float(v) for v in model.get_feature_importance()])))
-        print(f"  [{tag}] fold {fold}: train={len(train_pos):,} test={len(test_pos):,} acc={acc:.4f}")
-    has_oof = oof_pred >= 0
-    return {"oof_pred": oof_pred, "oof_proba": oof_proba, "fold_id": fold_id,
-            "has_oof": has_oof, "fold_metrics": fold_metrics, "importances": importances}
 
 
 def run_mae_quantile_candidate(max_holding: int, rows: int = None) -> dict:
@@ -83,9 +46,14 @@ def run_mae_quantile_candidate(max_holding: int, rows: int = None) -> dict:
     t0 = pd.Series(t0_nz)
     t1 = pd.Series(t1_nz)
 
-    prim = oof_run_adaptive(X_full, y_bin, t0, t1, tag=f"mae_v3_h{max_holding}_primary", want_importance=False)
+    prim = oof_run(X_full, y_bin, t0, t1, tag=f"mae_v3_h{max_holding}_primary", want_importance=False)
     side, meta_labels = build_meta(close, high, low, vol_tb, t0_nz, prim["oof_pred"], prim["has_oof"])
     has_oof = prim["has_oof"]
+
+    # Handle case where oof_run produces no OOF (e.g., with very small datasets)
+    if not has_oof.any():
+        print(f"[WARNING] No OOF predictions for h={max_holding} - dataset too small or CV constraints too strict")
+        return {"n_events": 0, "global_coverage": {}, "per_regime_coverage": {}, "status": "rejected"}
 
     X_meta_full = X_full.loc[has_oof].reset_index(drop=True)
     X_meta_full["assumed_side"] = side

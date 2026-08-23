@@ -38,7 +38,7 @@
   },
   "training_period": null,
   "validation_period": null,
-  "created_at": "2026-08-23T04:23:10.565810Z",
+  "created_at": "2026-08-23T04:46:05.098952Z",
   "status": "validated",
   "is_champion": false,
   "metrics": {
