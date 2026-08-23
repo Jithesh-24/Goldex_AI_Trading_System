@@ -1,0 +1,80 @@
+{
+  "model_id": "mfe_quantile_v3_candidate_h15",
+  "family": "mfe_quantile",
+  "algorithm": "catboost_quantile",
+  "artifact_path": "registry/mfe_quantile_v3_candidate_h15.json",
+  "feature_schema_version": "mfe_quantile_v3_h15__2026-08-22",
+  "feature_cols": [
+    "vol_shock_zscore",
+    "range_position_60",
+    "displacement_from_equilibrium_60",
+    "fracdiff_log_price",
+    "hurst_120",
+    "hurst_480",
+    "range_position_20",
+    "tick_volume",
+    "vol_acceleration_30",
+    "ret_1",
+    "dist_from_low_20",
+    "ret_15",
+    "excursion_from_recent_distribution_20",
+    "dist_from_high_20",
+    "hour_sin",
+    "range_width_ratio_20_60",
+    "kalman_residual_z",
+    "vol_compression_ratio",
+    "bipower_var_60",
+    "kalman_level_dist",
+    "assumed_side"
+  ],
+  "target_definition": "mfe_R: max favourable excursion in R-multiples up to t1, max_holding=15",
+  "training_config": {
+    "quantiles": [
+      0.5,
+      0.75,
+      0.9
+    ],
+    "n_splits": 6,
+    "embargo_bars": 30
+  },
+  "training_period": null,
+  "validation_period": null,
+  "created_at": "2026-08-23T05:05:03.619722Z",
+  "status": "validated",
+  "is_champion": false,
+  "metrics": {
+    "n_events": 254442,
+    "global_coverage": {
+      "0.5": 0.48955976378026683,
+      "0.75": 0.7461576738552825,
+      "0.9": 0.8924618114560937
+    },
+    "global_pinball": {
+      "0.5": 0.2921152194374259,
+      "0.75": 0.21668867911461537,
+      "0.9": 0.1255468254206766
+    },
+    "per_regime_coverage": {
+      "0.5": {
+        "low": 0.49886975908837555,
+        "medium": 0.4906437974312122,
+        "high": 0.4802673673033203
+      },
+      "0.75": {
+        "low": 0.7549699634607048,
+        "medium": 0.7449217760113102,
+        "high": 0.7396708278312483
+      },
+      "0.9": {
+        "low": 0.9003220412460519,
+        "medium": 0.8931138882590661,
+        "high": 0.8848850347822536
+      }
+    }
+  },
+  "lineage": {
+    "data_snapshot": "data/gold_seed_merged_full6yr.csv",
+    "code_commit": null,
+    "config_snapshot": null
+  }
+}

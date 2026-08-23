@@ -1,0 +1,28 @@
+{
+  "schema_id": "mfe_quantile_v3_h15",
+  "schema_version": "2026-08-22",
+  "feature_ids": [
+    "vol_shock_zscore",
+    "range_position_60",
+    "displacement_from_equilibrium_60",
+    "fracdiff_log_price",
+    "hurst_120",
+    "hurst_480",
+    "range_position_20",
+    "tick_volume",
+    "vol_acceleration_30",
+    "ret_1",
+    "dist_from_low_20",
+    "ret_15",
+    "excursion_from_recent_distribution_20",
+    "dist_from_high_20",
+    "hour_sin",
+    "range_width_ratio_20_60",
+    "kalman_residual_z",
+    "vol_compression_ratio",
+    "bipower_var_60",
+    "kalman_level_dist",
+    "assumed_side"
+  ],
+  "created_at": "2026-08-23T05:05:03.618799Z"
+}

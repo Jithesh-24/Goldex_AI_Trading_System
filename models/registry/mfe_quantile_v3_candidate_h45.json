@@ -1,0 +1,79 @@
+{
+  "model_id": "mfe_quantile_v3_candidate_h45",
+  "family": "mfe_quantile",
+  "algorithm": "catboost_quantile",
+  "artifact_path": "registry/mfe_quantile_v3_candidate_h45.json",
+  "feature_schema_version": "mfe_quantile_v3_h45__2026-08-22",
+  "feature_cols": [
+    "fracdiff_log_price",
+    "hurst_480",
+    "range_position_60",
+    "excursion_from_recent_distribution_20",
+    "vol_shock_zscore",
+    "displacement_from_equilibrium_60",
+    "dist_from_low_20",
+    "run_length_signed",
+    "ewma_vol",
+    "kalman_residual_z",
+    "hour_cos",
+    "hour_sin",
+    "hurst_120",
+    "vol_compression_ratio",
+    "range_width_ratio_20_60",
+    "assumed_side",
+    "vol_acceleration_30",
+    "tick_volume",
+    "ret_1",
+    "range_position_20"
+  ],
+  "target_definition": "mfe_R: max favourable excursion in R-multiples up to t1, max_holding=45",
+  "training_config": {
+    "quantiles": [
+      0.5,
+      0.75,
+      0.9
+    ],
+    "n_splits": 6,
+    "embargo_bars": 90
+  },
+  "training_period": null,
+  "validation_period": null,
+  "created_at": "2026-08-23T05:09:41.824456Z",
+  "status": "validated",
+  "is_champion": false,
+  "metrics": {
+    "n_events": 253052,
+    "global_coverage": {
+      "0.5": 0.4872775997999519,
+      "0.75": 0.7383757413340002,
+      "0.9": 0.8961872903387136
+    },
+    "global_pinball": {
+      "0.5": 0.24800373319847133,
+      "0.75": 0.17301751483848302,
+      "0.9": 0.09647928493772732
+    },
+    "per_regime_coverage": {
+      "0.5": {
+        "low": 0.4949267717512722,
+        "medium": 0.4880020342340172,
+        "high": 0.4797586984004837
+      },
+      "0.75": {
+        "low": 0.749798312026809,
+        "medium": 0.7387882924479062,
+        "high": 0.727834881547848
+      },
+      "0.9": {
+        "low": 0.905377311654462,
+        "medium": 0.8973648639606001,
+        "high": 0.8868383444181828
+      }
+    }
+  },
+  "lineage": {
+    "data_snapshot": "data/gold_seed_merged_full6yr.csv",
+    "code_commit": null,
+    "config_snapshot": null
+  }
+}
