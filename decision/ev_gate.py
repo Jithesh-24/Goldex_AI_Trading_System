@@ -15,7 +15,11 @@ MIN_EDGE_THRESHOLD = 0.02
 
 def compute_side_ev(barrier: BarrierOutput, direction_gate_ok: bool, p_sl_given_not_win: Optional[float],
                      tp_r: Optional[float], sl_r: Optional[float], timeout_r: Optional[float],
-                     cost_r: Optional[float], uncertainty: float, k: float = None) -> Optional[float]:
+                     cost_r: Optional[float], uncertainty: float, k: float = None) -> Optional[dict]:
+    """FIX 6 (I2, final-review fix wave): returns both the real pre-adjustment
+    ev_raw and the risk-adjusted ev_adj (as a dict), instead of only ev_adj --
+    the caller (decision/ev_engine.py) needs the real ev_raw to populate
+    EVDecision.ev_raw, which used to be wrongly set identical to ev_adj."""
     if not direction_gate_ok:
         return None
     if k is None:
@@ -24,7 +28,8 @@ def compute_side_ev(barrier: BarrierOutput, direction_gate_ok: bool, p_sl_given_
     ev_raw = raw_ev(split["p_tp"], split["p_sl"], split["p_timeout"], tp_r, sl_r, timeout_r, cost_r)
     if ev_raw is None:
         return None
-    return risk_adjusted_ev(ev_raw, uncertainty, k)
+    ev_adj = risk_adjusted_ev(ev_raw, uncertainty, k)
+    return {"ev_raw": ev_raw, "ev_adj": ev_adj}
 
 
 def decide(long_ev_adj: Optional[float], short_ev_adj: Optional[float]) -> tuple[str, Optional[str], str]:

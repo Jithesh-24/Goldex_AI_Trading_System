@@ -10,9 +10,11 @@ from decision.ev_engine import evaluate
 
 
 class _FakeMarketState:
-    def __init__(self, spread, timestamp):
+    def __init__(self, spread, timestamp, realized_vol_60s=0.0006, mid=2350.0):
         self.spread = spread
-        self.timestamp = timestamp
+        self.market_timestamp = timestamp
+        self.realized_vol_60s = realized_vol_60s
+        self.mid = mid
 
 
 def _valid_inputs():
@@ -51,14 +53,36 @@ def test_evaluate_unavailable_direction_forces_no_trade():
 def test_evaluate_stale_market_forces_no_trade():
     from datetime import timedelta
     ms, direction, opportunity, barrier, mae, mfe = _valid_inputs()
-    ms.timestamp = datetime.now(timezone.utc) - timedelta(seconds=60)
+    ms.market_timestamp = datetime.now(timezone.utc) - timedelta(seconds=60)
     d = evaluate(ms, direction, opportunity, barrier, p_sl_given_not_win=0.5,
                  mae_out=mae, mfe_out=mfe, timeout_r=0.1, timeout_r_provisional_proxy=False)
     assert d.decision == "NO_TRADE"
+
+
+def test_evaluate_against_real_market_state_contract():
+    # FIX 4 (C5, final-review fix wave): the duck-typed _FakeMarketState above
+    # masked a real bug -- the production contracts.market_state.MarketState
+    # has no `.timestamp` field. Build a real one here so this class of bug
+    # (reading a field the real contract doesn't have) gets caught by CI.
+    from contracts.market_state import MarketState, FeedHealthState
+    now = datetime.now(timezone.utc)
+    ms = MarketState(
+        symbol="XAUUSD", source="synthetic_replay", sequence=1,
+        market_timestamp=now, ingestion_timestamp=now, processing_timestamp=now,
+        bid=2349.9, ask=2350.1, mid=2350.0, spread=0.2,
+        tick_count_60s=10, tick_count_300s=50, tick_rate_per_sec=0.17,
+        realized_vol_60s=0.0006,
+        feed_health=FeedHealthState.CONNECTED, last_tick_age_sec=0.1,
+    )
+    _, direction, opportunity, barrier, mae, mfe = _valid_inputs()
+    d = evaluate(ms, direction, opportunity, barrier, p_sl_given_not_win=0.5,
+                 mae_out=mae, mfe_out=mfe, timeout_r=0.1, timeout_r_provisional_proxy=False)
+    assert d.decision in ("NO_TRADE", "LONG_CANDIDATE", "SHORT_CANDIDATE")
 
 
 if __name__ == "__main__":
     test_evaluate_produces_a_decision()
     test_evaluate_unavailable_direction_forces_no_trade()
     test_evaluate_stale_market_forces_no_trade()
+    test_evaluate_against_real_market_state_contract()
     print("tests/test_ev_engine.py: OK")

@@ -17,9 +17,11 @@ from decision.ev_engine import evaluate
 
 
 class _FakeMarketState:
-    def __init__(self, spread, timestamp):
+    def __init__(self, spread, timestamp, realized_vol_60s=0.0006, mid=2350.0):
         self.spread = spread
-        self.timestamp = timestamp
+        self.market_timestamp = timestamp
+        self.realized_vol_60s = realized_vol_60s
+        self.mid = mid
 
 
 def _inputs(direction_status="VALIDATED"):
@@ -54,7 +56,7 @@ def test_data_limited_specialist_cannot_produce_valid_decision():
 
 def test_stale_market_prevents_valid_decision():
     ms, direction, opportunity, barrier, mae, mfe = _inputs()
-    ms.timestamp = datetime.now(timezone.utc) - timedelta(minutes=5)
+    ms.market_timestamp = datetime.now(timezone.utc) - timedelta(minutes=5)
     d = evaluate(ms, direction, opportunity, barrier, 0.5, mae, mfe, timeout_r=0.1, timeout_r_provisional_proxy=False)
     assert d.decision == "NO_TRADE"
 
@@ -78,7 +80,7 @@ def test_unavailable_specialist_cannot_produce_valid_decision():
 
 def test_future_timestamp_prevents_valid_decision():
     ms, direction, opportunity, barrier, mae, mfe = _inputs()
-    ms.timestamp = datetime.now(timezone.utc) + timedelta(minutes=5)
+    ms.market_timestamp = datetime.now(timezone.utc) + timedelta(minutes=5)
     d = evaluate(ms, direction, opportunity, barrier, 0.5, mae, mfe, timeout_r=0.1, timeout_r_provisional_proxy=False)
     assert d.decision == "NO_TRADE"
 

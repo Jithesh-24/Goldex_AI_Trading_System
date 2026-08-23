@@ -20,7 +20,9 @@ N_CALLS = 200
 class _FakeMarketState:
     def __init__(self):
         self.spread = 0.01
-        self.timestamp = datetime.now(timezone.utc)
+        self.market_timestamp = datetime.now(timezone.utc)
+        self.realized_vol_60s = 0.0006
+        self.mid = 2350.0
 
 
 def _inputs():
