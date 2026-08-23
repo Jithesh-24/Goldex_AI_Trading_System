@@ -555,14 +555,14 @@ no feature set is reused unnarrowed across roles.
 **Task 4 — Direction** (binary classifier, CatBoost, input: 28-col baseline → final schema varies by horizon)
 
 - h=15: n=302,134 OOS events, mean_oof_accuracy=0.5139 → **validated** (baseline 0.5115)
-- h=45: n=300,547 OOS events, accuracy=0.5115 → **validated** (matches baseline exactly, razor-thin, spec-compliant)
+- h=45: n=300,547 OOS events, mean_oof_accuracy≈0.51154 → **validated** (gate is `mean_oof_acc > 0.5115`; this candidate clears the baseline by a razor-thin margin, not an exact match, spec-compliant)
 - h=90: n=298,431 OOS events, accuracy=0.5063 → **rejected** (misses threshold)
 - Embargo: 90 bars hardcoded per `learning.train.EMBARGO_BARS`, applies uniformly across all horizons (not horizon-scaled)
 
 **Task 5 — Opportunity/Meta** (trade-filter classifier, CatBoost)
 
 - h=15: n=302,134 OOS events, win_rate=0.5097 → **validated** (baseline 0.4887, +2.1%)
-- h=45: n=300,547 OOS events, win_rate=0.4862 → **rejected** (thin miss, 0.49 threshold)
+- h=45: n=300,547 OOS events, win_rate=0.4862 → **rejected** (thin miss against the 0.4887 threshold)
 - h=90: n=298,431 OOS events, win_rate=0.3986 → **rejected**
 
 **Task 6 — Regime** (unsupervised state classifier, Gaussian HMM, 4 components)
@@ -584,7 +584,7 @@ no feature set is reused unnarrowed across roles.
 - h=45: n=253,052 events, coverage likewise → **validated**
 - h=90: n=251,297 events, coverage likewise → **validated**
 
-**Task 9 — Barrier Probability** (calibrated probability estimator, scikit-learn, distinct from Direction)
+**Task 9 — Barrier Probability** (calibrated probability estimator, CatBoost via `research.audit_edge.oof_run`, distinct from Direction)
 
 - h=15: n=213,022 OOS events, log_loss=0.6744, max_calibration_gap=0.0532 → **validated** (gap threshold 0.15)
 - h=45: n=211,949 OOS events, log_loss=0.6728, calibration_gap=0.0146 → **validated**
@@ -653,6 +653,39 @@ a production file (only Task 11, `feed_listener.py` and `app/engine.py`'s new ac
 did so behind a flag defaulting to disabled, verified line-by-line by task review.
 The live signal path is unaffected; Phase 4 is research-only until Phase 5's EOD learning
 step promotes a candidate to `active` status.
+
+### Known Methodology Limitations
+
+These are honest disclosures about gaps between what spec section 17 (baseline-beats
+gating) calls for and what several Phase 4 roles' `status` field actually measures. No
+gate logic was changed to write this section, and no full-history training was rerun.
+
+- **MAE/MFE quantile, Barrier probability, and Regime roles lack a real spec-§17
+  baseline-beats gate.** Direction and Opportunity compare against a real, previously
+  measured baseline (`mean_oof_acc > 0.5115`, `win_rate > 0.4887`). MAE/MFE quantile,
+  Barrier, and Regime do not: MAE/MFE `status` is set purely from quantile coverage
+  tolerance around the target quantile, Barrier `status` from a fixed calibration-gap
+  threshold, and Regime `status` from the CI-disjointness check described below — none
+  of these compares against a baseline model or method. (The MAE/MFE quantile module
+  docstrings previously claimed a "per-vol-state empirical-quantile baseline" comparison
+  was implemented; that claim was false and has been corrected in
+  `research/phase4_mae_quantile.py` and `research/phase4_mfe_quantile.py` to state this
+  is deferred/not implemented.)
+- **Opportunity role's `validated`/`rejected` status is driven by the meta-label's own
+  base rate, not by discriminative quality.** `research/phase4_opportunity.py`'s gate is
+  `status = "validated" if win_rate > 0.4887 else "rejected"`, where
+  `win_rate = float(y_meta.mean())` — the meta-label's own positive rate on this event
+  set. `oos_log_loss` is computed and recorded in `metrics` but is not part of the gate,
+  so a candidate can be marked `validated` without its OOS log-loss actually improving on
+  anything.
+- **Regime role's status is driven by an in-sample-by-construction check, not by the
+  genuinely-OOS per-fold diagnostics also recorded.** `research/phase4_regime.py` reports
+  real OOS diagnostics per walk-forward fold (`mean_run_length`, `transition_matrix_drift`),
+  but `status` itself is set from `ci_disjoint`: a single HMM refit on the full history
+  predicting win-rate confidence intervals on the same bars it was fit on
+  (`status = "validated" if disjoint else "rejected"`). That disjointness check is
+  in-sample by construction, not an OOS result, even though the module's genuinely-OOS
+  fold metrics sit right next to it in the same `metrics` dict.
 
 ### Honest findings summary
 

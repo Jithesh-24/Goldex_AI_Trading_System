@@ -22,7 +22,7 @@ Each role trains on the same **shared Phase 3 V3-feature foundation** (28 baseli
 - **`is_champion`** — Separate boolean flag, independent of `status`. Only `true` for the single approved production model per role (set by the EOD learning promotion process, Phase 5). Allows candidate/challenger pairs to coexist without ambiguity.
 
 Each entry locks down:
-- `model_id` — unique identifier (e.g. `direction_v3_h15_catboost_2026-08-22`)
+- `model_id` — unique identifier (e.g. `direction_v3_candidate_h15`, the real Phase 4 naming: `<role>_v3_candidate_h<horizon>` for the horizon-specific roles, `regime_v3_candidate` for Regime, `execution_decay_v3_stub` for Execution/Decay)
 - `family` — the role (from `ModelFamily` literal: one of the seven above plus `execution_decay`)
 - `algorithm` — implementation (CatBoost, scikit-learn, custom)
 - `artifact_path` — relative path to serialized model file
@@ -45,7 +45,7 @@ Why static? Model *selection* (choosing which `model_id` to use) is exclusively 
 2. **Safety** — no live decision-making about model selection; that's offline.
 3. **Simplicity** — the router is a pure lookup, testable in isolation from performance comparison logic.
 
-The `role_map` in `config/models.yaml` is the single place to edit which model goes live per role — e.g. `direction: direction_v3_h15_catboost_2026-08-22`. Swapping a model means editing YAML and restarting the app; no code changes required.
+The `role_map` in `config/models.yaml` is the single place to edit which model goes live per role — e.g. `direction: direction_catboost_20260818` (the currently active pre-Phase-4 production model; Phase 4's own `direction_v3_candidate_h*` entries are research candidates, not yet wired into this config). Swapping a model means editing YAML and restarting the app; no code changes required.
 
 ## Feature schema persistence
 
@@ -64,33 +64,36 @@ Schemas are created by `features/registry/__init__.py`'s `build_schema()` functi
 ```
 models/
 ├── registry/
-│   ├── direction_v3_h15_catboost_2026-08-22.json
-│   ├── direction_v3_h45_catboost_2026-08-22.json
-│   ├── direction_v3_h90_catboost_2026-08-22.json
-│   ├── opportunity_v3_h15_catboost_2026-08-22.json
+│   ├── direction_v3_candidate_h15.json
+│   ├── direction_v3_candidate_h45.json
+│   ├── direction_v3_candidate_h90.json
+│   ├── opportunity_v3_candidate_h15.json
 │   ├── ...
-│   └── regime_v3_hmm_2026-08-22.json
+│   ├── regime_v3_candidate.json
+│   └── execution_decay_v3_stub.json
 ├── active/
-│   ├── direction_v3_h15.pkl  (may be symlinked to a candidates/ model during evaluation)
-│   ├── opportunity_v3_h15.pkl
-│   ├── regime_v3.pkl
-│   └── ...
+│   └── ...pre-Phase-4 production artifacts (direction/opportunity CatBoost .cbm files, v1)...
 ├── candidates/
-│   ├── direction_v3_h15_cb.pkl  (challenger pairs under evaluation)
-│   ├── direction_v3_h15_lgb.pkl  (old archive, may be sparse)
-│   └── ...
+│   └── v2/...  (pre-Phase-4 v2 candidate artifacts)
 └── archive/
-    └── ...pre-Phase-4 models...
+    └── ...legacy v7 and pre-registry model snapshots...
 ```
+
+Phase 4 is research-only (spec: no production deployment this phase) — none of the seven roles write a
+loadable `.pkl`/`.cbm` artifact to `active/` or `candidates/`; each registry entry's `artifact_path`
+documents the research result itself, not a deployable model. There is no challenger-pair mechanism
+(e.g. paired `_cb.pkl`/`_lgb.pkl` files) implemented for Phase 4 candidates — `active/` and `candidates/`
+currently hold only pre-Phase-4 (v1/v2) production artifacts.
 
 Each registry entry is `contracts.model_registry.ModelRegistryEntry` (pydantic-validated).
 
 ## Full design
 
-`docs/superpowers/specs/2026-08-22-golex-v3-phase4-specialist-models-design.md` contains:
-- Architecture diagram: MARKET → MARKETSTATE → FEATURES → SPECIALISTS → CALIBRATED PROBABILITIES → PHASE 5.
-- Each role's target definition and why it's separate from the others.
-- Feature-schema construction and per-specialist importance ranking.
-- OOS evaluation contracts for each role (what metrics matter and why).
-- Integration points: how the router loads models, how `decision/signal.py` orchestrates the specialist outputs, how `app/engine.py` wires everything.
-- Leakage audit protocol and explicit confirmation that train/test [t0,t1] never overlap and PlattCalibrator remains stateless.
+`docs/superpowers/specs/2026-08-22-golex-v3-phase4-specialist-models-design.md` contains the Phase 4
+research brief: the seven roles and their target definitions, feature-schema/importance-ranking
+requirements, per-role OOS evaluation contracts, the model registry/versioning/leakage-audit
+requirements, and the target architecture flow (`MARKET -> MARKETSTATE -> QUANTITATIVE FEATURE FABRIC
+-> SPECIALIST MODELS -> CALIBRATED PROBABILITIES/DISTRIBUTIONS -> PHASE 5 DECISION ENGINE`). The spec
+explicitly scopes Phase 4 to research only: it directs extending `decision/router.py` only as an
+architectural seam, and says NOT to connect all specialist outputs to the production signal decision
+yet. It does not describe `decision/signal.py` orchestration or `app/engine.py` wiring as Phase 4 work.
