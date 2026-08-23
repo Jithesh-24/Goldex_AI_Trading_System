@@ -70,10 +70,25 @@ def test_live_and_replay_paths_call_same_evaluate_function():
     assert replay_engine.evaluate is live_engine.evaluate
 
 
+def test_unavailable_specialist_cannot_produce_valid_decision():
+    ms, direction, opportunity, barrier, mae, mfe = _inputs(direction_status="UNAVAILABLE")
+    d = evaluate(ms, direction, opportunity, barrier, 0.5, mae, mfe, timeout_r=0.1, timeout_r_provisional_proxy=False)
+    assert d.decision == "NO_TRADE"
+
+
+def test_future_timestamp_prevents_valid_decision():
+    ms, direction, opportunity, barrier, mae, mfe = _inputs()
+    ms.timestamp = datetime.now(timezone.utc) + timedelta(minutes=5)
+    d = evaluate(ms, direction, opportunity, barrier, 0.5, mae, mfe, timeout_r=0.1, timeout_r_provisional_proxy=False)
+    assert d.decision == "NO_TRADE"
+
+
 if __name__ == "__main__":
     test_deterministic_replay()
     test_data_limited_specialist_cannot_produce_valid_decision()
     test_stale_market_prevents_valid_decision()
     test_schema_mismatch_rejected()
     test_live_and_replay_paths_call_same_evaluate_function()
+    test_unavailable_specialist_cannot_produce_valid_decision()
+    test_future_timestamp_prevents_valid_decision()
     print("tests/test_phase5_leakage.py: OK")

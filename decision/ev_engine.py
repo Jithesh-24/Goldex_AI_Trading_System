@@ -27,7 +27,8 @@ def evaluate(market_state, direction_out: DirectionOutput, opportunity_out: Oppo
     sl_r, tp_r = candidate_sl_tp(mae_out, mfe_out)
     cost_r = round_trip_cost_r(market_state, sl_r, max_staleness_seconds=MARKET_STALENESS_SECONDS) if sl_r else None
 
-    stale = market_state is None or (now - market_state.timestamp).total_seconds() > MARKET_STALENESS_SECONDS
+    age = (now - market_state.timestamp).total_seconds() if market_state else None
+    stale = market_state is None or age > MARKET_STALENESS_SECONDS or (age is not None and age < 0)
     direction_available = direction_out.model_status in _OK and direction_out.probability_long is not None
     barrier_available = barrier_out.model_status in _OK
 
