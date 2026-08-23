@@ -102,15 +102,29 @@ underlying specialist's registry entry has been superseded.
 Direction and Barrier both encode directional-outcome information and
 were trained independently (not jointly), so multiplying their
 probabilities together is not mathematically justified. Chosen approach:
-**Barrier-primary, Direction-gating.**
+**Barrier-primary, Direction-investigated.**
 
 - Barrier's `P(p_tp)/P(p_sl)/P(p_timeout)` (already sums to ≈1 by
   construction, per Phase 4 Task 8's design) is the payoff-distribution
   driver: it directly represents the conditional-outcome probabilities
   needed for EV.
-- Direction's calibrated probability picks which side (long/short) to
-  evaluate Barrier's outcome distribution against — it is a side-selector,
-  not an independent multiplicative factor in the EV sum.
+- Direction's calibrated probability always picks which side (long/short)
+  to evaluate Barrier's outcome distribution against. Whether it ALSO
+  carries independent information usable in the EV sum (beyond
+  side-selection) is not assumed either way — it must be investigated
+  empirically during implementation, not decided here. Implementation
+  step: measure, per horizon, the OOS conditional relationship between
+  Direction's calibrated probability and Barrier's realized `p_tp` (e.g.
+  does `p_tp` vary systematically across Direction-probability deciles,
+  holding side fixed?). If Direction carries information Barrier does not
+  already capture (a real, measured conditional dependence), define and
+  document a principled correction term (e.g. a small multiplicative or
+  additive adjustment fit and validated OOS, not curve-fit to the final
+  eval set) before folding it into `EV_side`. If the two are found
+  redundant (Direction adds no measurable information once Barrier is
+  known), Direction is used for side-selection only, exactly as
+  originally proposed, and this finding is documented as evidence-based,
+  not assumed.
 - Opportunity's `probability_take` (interpreted as `P(take | direction)`
   conceptually, though Phase 4 did not train it as an explicit conditional
   model) is applied as a gating multiplier on the decision, not on the raw
@@ -118,9 +132,11 @@ probabilities together is not mathematically justified. Chosen approach:
   `probability_take` falls under a documented minimum, the side is
   rejected regardless of EV. Where Opportunity is `UNAVAILABLE` (h45/h90
   per §3), this gate is skipped and disclosed in `decision_reason`.
-- This is explicitly an approximation, not a rigorously re-derived joint
-  model (Phase 4's specialists were independently trained) — documented as
-  a known limitation.
+- The Direction/Barrier relationship is explicitly an area of approximation
+  pending the investigation above — Phase 4's specialists were
+  independently trained, so no rigorously re-derived joint model exists a
+  priori. Whatever relationship is found (redundant, or a documented
+  correction term) is recorded as the resolution, not left implicit.
 
 ## 7. MAE/MFE → candidate SL/TP
 
@@ -162,7 +178,17 @@ EV_side = p_tp * TP_R - p_sl * SL_R - p_timeout * timeout_R - cost_R
 - `p_tp`, `p_sl`, `p_timeout`: Barrier role's calibrated probabilities for that side/horizon.
 - `TP_R` = MFE q75 (candidate TP distance in R-multiples).
 - `SL_R` = MAE q75 (candidate SL distance in R-multiples).
-- `timeout_R` = 0.5 * (MFE q50 - MAE q50) — a documented, simple midpoint approximation of expected R at timeout (timeout is a mixed outcome not directly given by any single Phase 4 quantile; this is flagged as an approximation in docs, not a precise model).
+- `timeout_R`: provisional proxy = 0.5 * (MFE q50 - MAE q50), used ONLY
+  until the direct estimate below is built. Implementation step: using the
+  OOF event sets Phase 4's `oof_run` already produced (per horizon), filter
+  to events whose triple-barrier label is `0`/timeout, and compute the
+  actual realized R at timeout directly from those OOF outcomes (mean, and
+  its own quantiles for uncertainty). If this direct OOF-derived estimate
+  is available with adequate sample size, it REPLACES the midpoint proxy
+  as `timeout_R`; if sample size is inadequate at some horizon, the
+  midpoint proxy is kept for that horizon only, explicitly labeled
+  `provisional_proxy: true` in `EVDecision`'s lineage, not silently used as
+  if final.
 - `cost_R`: from §8.
 
 Risk adjustment (**lower-confidence EV bound**, chosen over full
@@ -177,11 +203,17 @@ EV_adj = EV_side - k * uncertainty
 `uncertainty` is a documented, bounded [0,1] score derived from: (a)
 fraction of contributing specialists at `CANDIDATE` vs `VALIDATED` status,
 (b) calibration sample size relative to a reference size, (c) whether
-Opportunity's gate was skipped (§6) at this horizon. `k` is a fixed,
-documented constant chosen from the cost floor (not tuned per-trade, not
-optimized against the eval set — set once, justified in
-`docs/ARCHITECTURE.md`, and revisited only via explicit OOS sensitivity
-analysis in §12, not silently).
+Opportunity's gate was skipped (§6) at this horizon. `k` is NOT set by
+guess or intuition — it must be justified and validated during
+implementation: derive candidate `k` values from a principled anchor (e.g.
+the point where `EV_adj` crossing zero corresponds to a calibration
+error-bar-consistent probability of loss), then validate each candidate
+`k` OOS on the walk-forward split used in §13 — measuring whether it
+actually separates realized-profitable from realized-unprofitable
+decisions in held-out data. The chosen `k` and the OOS evidence for it are
+documented together in `docs/ARCHITECTURE.md`; `k` is not tuned per-trade
+and not fit against the final evaluation window, but it also must not be
+picked a priori without this validation step.
 
 `EV_adj` and its inputs are reported with an explicit range/margin (not a
 single over-precise decimal), per the "no false precision" principle.
@@ -266,6 +298,7 @@ EVDecision:
   feature_schema_ids: dict[role, schema_id]
   ev_formula_version, cost_model_version
   regime_state
+  timeout_r_provisional_proxy: bool
   decision_reason: str
 ```
 
@@ -302,11 +335,16 @@ the fixed `k`/`min_edge_threshold` constants and their justification.
 
 ## 19. Known limitations (to be carried into the final Phase 5 report)
 
-- Direction/Barrier/Opportunity conditional relationships are
-  approximated (§6), not rigorously re-derived, since Phase 4 trained
-  them independently.
-- `timeout_R` is a documented midpoint approximation (§9), not a
-  distinct trained model.
+- Direction/Barrier's exact conditional relationship (§6) is resolved by
+  empirical investigation during implementation, not assumed — the
+  resolution found (redundant, or a documented+OOS-validated correction
+  term) is reported as evidence, whichever way it turns out.
+- `timeout_R` uses a direct OOF-derived estimate where sample size
+  supports it (§9); the midpoint proxy is a documented, explicitly-flagged
+  fallback only where OOF sample size is inadequate, not the default.
+- `k` (uncertainty penalty) is derived from a principled anchor and
+  OOS-validated on held-out data (§9), not picked a priori — its
+  validation evidence is documented alongside the chosen value.
 - Slippage is not modeled (§8) — cost is spread-only, explicitly labeled
   `known_cost_only`.
 - Regime conditioning is deferred pending evidence (§10).
