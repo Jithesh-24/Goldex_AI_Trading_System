@@ -10,6 +10,8 @@ P(direction)>0.55 gate, no cost/no EV), and a sensitivity/fragility scan
 Run: /home/jith/.hermes/hermes-agent/venv/bin/python3 -m research.phase5_ev_engine
 """
 from datetime import datetime, timezone
+import json
+import os
 import tempfile
 
 import numpy as np
@@ -22,11 +24,35 @@ from contracts.specialist_output import DirectionOutput, OpportunityOutput, Barr
 
 SIMPLE_BASELINE_THRESHOLD = 0.55
 
+_REAL_REGISTRY_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "registry")
+
+# FIX 10 (I7+I8, final-review fix wave): registry ModelStatus -> specialist-
+# output-contract model_status. A rejected model's predictions shouldn't be
+# trusted numerically, so it maps to UNAVAILABLE (not a lower-confidence
+# status that still lets its numbers flow into the EV formula).
+_REGISTRY_STATUS_MAP = {"validated": "VALIDATED", "candidate": "CANDIDATE", "rejected": "UNAVAILABLE",
+                         "active": "VALIDATED", "archived": "UNAVAILABLE"}
+
+
+def _real_model_status(model_id: str, registry_dir: str = None) -> str:
+    d = registry_dir if registry_dir else _REAL_REGISTRY_DIR
+    path = os.path.join(d, f"{model_id}.json")
+    with open(path) as f:
+        entry = json.load(f)
+    return _REGISTRY_STATUS_MAP.get(entry["status"], "UNAVAILABLE")
+
 
 class _ReplayMarketState:
     def __init__(self, spread):
         self.spread = spread
-        self.timestamp = datetime.now(timezone.utc)
+        self.market_timestamp = datetime.now(timezone.utc)
+        # Research replay spread is a fixed research-only placeholder (see
+        # research/phase5_ev_dataset.py's REPRESENTATIVE_SPREAD); pair it with
+        # a plausible fixed vol/mid so decision/ev_cost.py's real cost formula
+        # (FIX 3) can run in this OOS replay too, instead of unconditionally
+        # returning None for every replayed event.
+        self.realized_vol_60s = 0.0006
+        self.mid = 2350.0
 
 
 def replay_and_validate(max_holding: int, rows: int = None, registry_dir: str = None) -> dict:
@@ -40,6 +66,17 @@ def replay_and_validate(max_holding: int, rows: int = None, registry_dir: str = 
     # per-event replay use. A future iteration could expose these for finer-grained analysis.
     p_sl_given_not_win = 0.5
 
+    # FIX 10 (I7+I8): read each specialist's REAL committed registry status for
+    # this horizon instead of hardcoding "VALIDATED" for every specialist at
+    # every horizon. This both exercises evaluate()'s status-gating logic (it
+    # never ran before) and makes `uncertainty` genuinely non-zero when a
+    # specialist is CANDIDATE/rejected, so DEFAULT_K is no longer a no-op.
+    direction_status = _real_model_status(f"direction_v3_candidate_h{max_holding}")
+    opportunity_status = _real_model_status(f"opportunity_v3_candidate_h{max_holding}")
+    barrier_status = _real_model_status(f"barrier_v3_candidate_h{max_holding}")
+    mae_status = _real_model_status(f"mae_quantile_v3_candidate_h{max_holding}")
+    mfe_status = _real_model_status(f"mfe_quantile_v3_candidate_h{max_holding}")
+
     decisions = {"NO_TRADE": 0, "LONG_CANDIDATE": 0, "SHORT_CANDIDATE": 0}
     expected_rs, realized_rs = [], []
     fragile_count = 0
@@ -50,17 +87,17 @@ def replay_and_validate(max_holding: int, rows: int = None, registry_dir: str = 
     for i in range(n):
         ms = _ReplayMarketState(spread=float(data["spread"][i]))
         p_long = float(data["p_direction"][i])
-        direction = DirectionOutput(model_id="direction_v3_candidate_replay", horizon=max_holding,
-                                     model_status="VALIDATED", probability_long=p_long,
+        direction = DirectionOutput(model_id=f"direction_v3_candidate_h{max_holding}", horizon=max_holding,
+                                     model_status=direction_status, probability_long=p_long,
                                      probability_short=1 - p_long, calibrated=True)
-        opportunity = OpportunityOutput(model_id="opportunity_meta_v3_candidate_replay", horizon=max_holding,
-                                         model_status="VALIDATED", probability_take=float(data["p_opportunity"][i]),
+        opportunity = OpportunityOutput(model_id=f"opportunity_v3_candidate_h{max_holding}", horizon=max_holding,
+                                         model_status=opportunity_status, probability_take=float(data["p_opportunity"][i]),
                                          calibrated=True)
-        barrier = BarrierOutput(model_id="barrier_v3_candidate_replay", horizon=max_holding,
-                                 model_status="VALIDATED", p_tp=float(data["p_barrier_win"][i]), calibrated=True)
-        mae = MAEOutput(model_id="mae_quantile_v3_candidate_replay", horizon=max_holding, model_status="VALIDATED",
+        barrier = BarrierOutput(model_id=f"barrier_v3_candidate_h{max_holding}", horizon=max_holding,
+                                 model_status=barrier_status, p_tp=float(data["p_barrier_win"][i]), calibrated=True)
+        mae = MAEOutput(model_id=f"mae_quantile_v3_candidate_h{max_holding}", horizon=max_holding, model_status=mae_status,
                          q50=float(data["mae_r"][i]) * 0.7, q75=float(data["mae_r"][i]), q90=float(data["mae_r"][i]) * 1.3)
-        mfe = MFEOutput(model_id="mfe_quantile_v3_candidate_replay", horizon=max_holding, model_status="VALIDATED",
+        mfe = MFEOutput(model_id=f"mfe_quantile_v3_candidate_h{max_holding}", horizon=max_holding, model_status=mfe_status,
                          q50=float(data["mfe_r"][i]) * 0.7, q75=float(data["mfe_r"][i]), q90=float(data["mfe_r"][i]) * 1.3)
 
         d = evaluate(ms, direction, opportunity, barrier, p_sl_given_not_win, mae, mfe,

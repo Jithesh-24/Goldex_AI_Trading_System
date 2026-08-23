@@ -833,41 +833,74 @@ net-negative after the uncertainty penalty — this is intentional risk-aversion
 Fixed threshold: **MIN_EDGE_THRESHOLD=0.02R**. Not a bare probability heuristic (e.g. p_win>0.6).
 Long and short evaluated fully independently; no symmetry assumed.
 
-### Research replay and OOS validation: full-history, verified twice
+### Research replay and OOS validation: full-history, re-run post-fix-wave
 
-All 3 horizons replayed (live pure-function `evaluate()` in decision/ev_engine.py called
-against all events in held-out windows), with decisions {NO_TRADE, LONG, SHORT} and mean
-expected vs realized R. Real results (byte-identical verification: implementer first pass, h90
-independently re-verified by controller):
+**These numbers supersede an earlier run that has since been found to be invalid.** The
+prior version of this section reported numbers computed with two now-fixed bugs active
+(see "Final-review fix wave" below): (1) `mae_r`/`mfe_r` fed to the engine were each
+event's own REALIZED future MAE/MFE excursion — genuine look-ahead leakage — instead of
+an OOF-predicted value, and (2) the Direction/Opportunity/Barrier/MAE-MFE OOF streams were
+joined by raw position across independently-filtered, differently-ordered arrays, silently
+pairing unrelated events. Both are now fixed (real OOF-predicted MAE/MFE q75, and all
+streams aligned to one shared base event index with a combined availability mask). All 3
+horizons replayed again, full-history, live pure-function `evaluate()` in
+decision/ev_engine.py, with real registry-derived `model_status` per specialist per horizon
+(rejected models now correctly reported as `UNAVAILABLE`, not hardcoded `VALIDATED`).
 
 **h15: n=213022 events**
-- Traded: 88406 (41.5%)
-- Decisions: {NO_TRADE: 124616, LONG: 44637, SHORT: 43769}
-- mean_expected_R=0.6381, mean_realized_R=0.6878 (outperformance: +7.8%)
-- Baseline (simple gate p_direction>0.55): 34 trades @ 0.3246R
-- EV engine: 88406 trades @ 0.6878R (2606x volume, 2.12x return)
-- Fragile fraction: 3.82%
+- Traded: 107413 (50.4%)
+- Decisions: {NO_TRADE: 105609, LONG_CANDIDATE: 0, SHORT_CANDIDATE: 107413}
+- mean_expected_R=0.4710, mean_realized_R=0.6708 (outperformance: +42.4%)
+- Baseline (simple gate p_direction>0.55): 34 trades @ 0.3626R
+- EV engine: 107413 trades @ 0.6708R (3159x volume, 1.85x return)
+- Fragile fraction: 0.0%
 
 **h45: n=211949 events**
-- Traded: 98526 (46.5%)
-- Decisions: {NO_TRADE: 113423, LONG: 46012, SHORT: 52514}
-- mean_expected_R=0.5141, mean_realized_R=0.5576 (outperformance: +8.5%)
-- Baseline: 1058 trades @ 0.4603R
-- EV engine: 98526 trades @ 0.5576R (93x volume, 1.21x return)
-- Fragile fraction: 4.47%
+- Traded: 181216 (85.5%)
+- Decisions: {NO_TRADE: 30733, LONG_CANDIDATE: 64933, SHORT_CANDIDATE: 116283}
+- mean_expected_R=0.1441, mean_realized_R=0.4528 (outperformance: +214.2%)
+- Baseline: 323 trades @ 0.2580R
+- EV engine: 181216 trades @ 0.4528R (561x volume, 1.75x return)
+- Fragile fraction: 3.35%
 
 **h90: n=210589 events**
-- Traded: 48004 (22.8%)
-- Decisions: {NO_TRADE: 162585, LONG: 21807, SHORT: 26197}
-- mean_expected_R=0.4298, mean_realized_R=0.4338 (outperformance: +0.9%)
-- Baseline: 1931 trades @ 0.3021R
-- EV engine: 48004 trades @ 0.4338R (24.9x volume, 1.43x return)
-- Fragile fraction: 4.95%
+- Traded: 0 (0%)
+- Decisions: {NO_TRADE: 210589, LONG_CANDIDATE: 0, SHORT_CANDIDATE: 0}
+- No trades produced -- Direction's real registry status at h90 is `rejected`, mapping to
+  `UNAVAILABLE`, which forces NO_TRADE for every event per `evaluate()`'s status gate
+  (`direction_available` requires `model_status in {VALIDATED, CANDIDATE}`). This is the
+  correct, intended behavior of FIX 10 (the pre-fix replay hardcoded every specialist's
+  status to `VALIDATED` regardless of real registry status, so it never exercised this gate
+  at all -- h90 traded 48004 times in that invalid run purely because a rejected model's
+  numbers were being trusted).
+- Baseline (simple gate, which doesn't consult specialist status at all): 503 trades @ 0.1020R
+- EV engine: 0 trades
 
-Trade-volume disparity vs simple baseline (24.9x–2606x) is a real, investigated mechanic
+**Known, disclosed finding from this re-run: h15 produced zero LONG_CANDIDATE decisions.**
+Investigated directly (not glossed over): Direction's own OOF-predicted probability is
+well-balanced at h15 (mean p_long=0.4988, 49.6% of events above 0.5 on the exact combined
+event set used in the replay -- confirmed by direct inspection, not assumed). The
+all-SHORT outcome instead comes from the Opportunity gate: on this dataset,
+`probability_take` is strongly anti-correlated with `probability_long`
+(Pearson r=-0.88) -- whenever Direction favors long, Opportunity's `P(take)` for the
+assumed side comes back below the `OPPORTUNITY_MIN_TAKE_PROBABILITY=0.5` veto threshold
+essentially always (0% of long-favored events clear it), while short-favored events clear
+it essentially always (100%). This relationship was masked in the prior (pre-FIX-2) run
+because the misaligned positional join randomly paired each event's Direction probability
+with an unrelated event's Opportunity probability, which happened to wash out the real
+correlation and produce a superficially balanced LONG/SHORT split. The correctly-aligned
+data reveals this is a genuine property of how these two OOF-predicted values relate on
+this dataset at h15, not a new bug introduced by the fix. It was NOT investigated or
+corrected further as part of this fix wave (out of scope for the 10 listed fixes) and is
+flagged here as a real follow-up: either Direction's h15 "long" predictions are
+systematically less reliable than its "short" predictions, or Opportunity's assumed-side
+meta-label construction interacts with Direction's OOF in a way that deserves its own
+Task-5-style investigation (see "Direction/Barrier relationship" above for the analogous,
+already-completed investigation against Barrier).
+
+Trade-volume disparity vs simple baseline (561x-3159x) is a real, investigated mechanic
 of the EV formula: weaker Direction signals become tradeable when combined with positive
-Opportunity/Barrier/payoff terms. Confirmed independently by task review and controller
-verification.
+Opportunity/Barrier/payoff terms.
 
 ### Leakage and causality audit: 7 tests pass
 
