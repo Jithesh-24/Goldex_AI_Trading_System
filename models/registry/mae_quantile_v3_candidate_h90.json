@@ -1,0 +1,79 @@
+{
+  "model_id": "mae_quantile_v3_candidate_h90",
+  "family": "mae_quantile",
+  "algorithm": "catboost_quantile",
+  "artifact_path": "registry/mae_quantile_v3_candidate_h90.json",
+  "feature_schema_version": "mae_quantile_v3_h90__2026-08-22",
+  "feature_cols": [
+    "hour_sin",
+    "hour_cos",
+    "assumed_side",
+    "fracdiff_log_price",
+    "vol_compression_ratio",
+    "ewma_vol",
+    "ret_1",
+    "hurst_480",
+    "tick_volume",
+    "vol_acceleration_30",
+    "vol_of_vol_60",
+    "jump_component_60",
+    "excursion_from_recent_distribution_20",
+    "kalman_residual_z",
+    "range_position_20",
+    "dist_from_low_20",
+    "range_width_ratio_20_60",
+    "rs_vol_240",
+    "yz_vol_240",
+    "kalman_velocity"
+  ],
+  "target_definition": "mae_R: max adverse excursion in R-multiples up to t1, max_holding=90",
+  "training_config": {
+    "quantiles": [
+      0.5,
+      0.75,
+      0.9
+    ],
+    "n_splits": 6,
+    "embargo_bars": 180
+  },
+  "training_period": null,
+  "validation_period": null,
+  "created_at": "2026-08-23T04:32:39.134131Z",
+  "status": "validated",
+  "is_champion": false,
+  "metrics": {
+    "n_events": 251297,
+    "global_coverage": {
+      "0.5": 0.48765605041099014,
+      "0.75": 0.7346442596716828,
+      "0.9": 0.8876057153982402
+    },
+    "global_pinball": {
+      "0.5": 0.25251476709987347,
+      "0.75": 0.1848348489660628,
+      "0.9": 0.10152395640293264
+    },
+    "per_regime_coverage": {
+      "0.5": {
+        "low": 0.4872993925458698,
+        "medium": 0.4898473056311098,
+        "high": 0.48571349157818666
+      },
+      "0.75": {
+        "low": 0.7431137073345037,
+        "medium": 0.7399213637465327,
+        "high": 0.7216215465006393
+      },
+      "0.9": {
+        "low": 0.9050911181195334,
+        "medium": 0.8941103600570921,
+        "high": 0.865250986714103
+      }
+    }
+  },
+  "lineage": {
+    "data_snapshot": "data/gold_seed_merged_full6yr.csv",
+    "code_commit": null,
+    "config_snapshot": null
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "schema_id": "mae_quantile_v3_h45",
+  "schema_version": "2026-08-22",
+  "feature_ids": [
+    "hurst_480",
+    "tick_volume",
+    "vol_acceleration_30",
+    "kalman_velocity",
+    "vol_of_vol_60",
+    "hurst_120",
+    "vol_shock_zscore",
+    "range_width_ratio_20_60",
+    "bipower_var_60",
+    "jump_component_60",
+    "yz_vol_20",
+    "ret_60",
+    "range_position_60",
+    "gk_vol_240",
+    "rs_vol_20",
+    "kalman_residual_z",
+    "gk_vol_20",
+    "vol_compression_ratio",
+    "hour_sin",
+    "ret_conditional_on_session",
+    "assumed_side"
+  ],
+  "created_at": "2026-08-23T04:33:33.284883Z"
+}

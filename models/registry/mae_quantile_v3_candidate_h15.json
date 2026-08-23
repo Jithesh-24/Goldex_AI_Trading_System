@@ -1,0 +1,79 @@
+{
+  "model_id": "mae_quantile_v3_candidate_h15",
+  "family": "mae_quantile",
+  "algorithm": "catboost_quantile",
+  "artifact_path": "registry/mae_quantile_v3_candidate_h15.json",
+  "feature_schema_version": "mae_quantile_v3_h15__2026-08-22",
+  "feature_cols": [
+    "excursion_from_recent_distribution_20",
+    "assumed_side",
+    "run_length_signed",
+    "fracdiff_log_price",
+    "ret_1",
+    "hour_sin",
+    "tick_volume",
+    "vol_shock_zscore",
+    "hurst_120",
+    "vol_of_vol_60",
+    "hurst_480",
+    "vol_compression_ratio",
+    "kalman_residual_z",
+    "vol_acceleration_30",
+    "range_width_ratio_20_60",
+    "range_position_60",
+    "dist_from_high_20",
+    "displacement_from_equilibrium_60",
+    "ret_conditional_on_session",
+    "hour_cos"
+  ],
+  "target_definition": "mae_R: max adverse excursion in R-multiples up to t1, max_holding=15",
+  "training_config": {
+    "quantiles": [
+      0.5,
+      0.75,
+      0.9
+    ],
+    "n_splits": 6,
+    "embargo_bars": 30
+  },
+  "training_period": null,
+  "validation_period": null,
+  "created_at": "2026-08-23T04:23:10.565810Z",
+  "status": "validated",
+  "is_champion": false,
+  "metrics": {
+    "n_events": 254442,
+    "global_coverage": {
+      "0.5": 0.49208532452047204,
+      "0.75": 0.726460177822009,
+      "0.9": 0.891133310174536
+    },
+    "global_pinball": {
+      "0.5": 0.3131276408059592,
+      "0.75": 0.24446842995344262,
+      "0.9": 0.14605218448013083
+    },
+    "per_regime_coverage": {
+      "0.5": {
+        "low": 0.48835697033504677,
+        "medium": 0.4902570121503928,
+        "high": 0.4972296717807697
+      },
+      "0.75": {
+        "low": 0.7268068371833777,
+        "medium": 0.732878082612001,
+        "high": 0.7196046666757423
+      },
+      "0.9": {
+        "low": 0.894810181457856,
+        "medium": 0.8965816183629647,
+        "high": 0.8823393277699879
+      }
+    }
+  },
+  "lineage": {
+    "data_snapshot": "data/gold_seed_merged_full6yr.csv",
+    "code_commit": null,
+    "config_snapshot": null
+  }
+}
