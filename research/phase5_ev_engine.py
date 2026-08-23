@@ -32,10 +32,12 @@ def replay_and_validate(max_holding: int, rows: int = None) -> dict:
     data = assemble_replay_dataset(max_holding, rows=rows)
     timeout_info = estimate_timeout_payoff(max_holding, rows=rows)
     split_info = run_barrier_split_candidate(max_holding, rows=rows)
-    p_sl_given_not_win = 0.5 if split_info.get("n_events", 0) == 0 else split_info.get("p_sl_given_not_win_log_loss") and 0.5
-    # Fallback constant used only when the split classifier has too few OOF
-    # samples in this dry-run-sized replay; the real full-history model
-    # (Task 2) is what decision/ev_gate.py uses live.
+    # Task 2's barrier_split classifier returns log-loss metrics, not probabilities.
+    # The return contract does not expose per-event or aggregate P(sl|not_win) values.
+    # Use 0.5 (least-informative prior) as the fixed stop-loss probability for this replay.
+    # This is a known limitation: Task 2's OOF probabilities are not currently available for
+    # per-event replay use. A future iteration could expose these for finer-grained analysis.
+    p_sl_given_not_win = 0.5
 
     decisions = {"NO_TRADE": 0, "LONG_CANDIDATE": 0, "SHORT_CANDIDATE": 0}
     expected_rs, realized_rs = [], []
