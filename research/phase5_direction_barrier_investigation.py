@@ -24,13 +24,18 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 
 
 def investigate_direction_barrier_relationship(max_holding: int, rows: int = None) -> dict:
-    y_dir, p_dir = _oof_for_direction(max_holding, rows=rows)
-    y_bar, p_bar = _oof_for_barrier(max_holding, rows=rows)
-    n = min(len(p_dir), len(p_bar))
+    # Aligned to a shared t0_nz base index (per research/phase5_calibration.py's
+    # FIX-2 convention) rather than the old independent-length `[:n]` slicing,
+    # which paired unrelated events across the two OOF streams.
+    t0_dir, _, p_dir_full, m_dir = _oof_for_direction(max_holding, rows=rows)
+    t0_bar, y_bar_full, p_bar_full, m_bar = _oof_for_barrier(max_holding, rows=rows)
+    assert t0_dir.shape == t0_bar.shape and (t0_dir == t0_bar).all(), "OOF base index mismatch"
+    combined = m_dir & m_bar
+    n = int(combined.sum())
     if n == 0:
         return {"n_events": 0, "decile_table": [], "correction_needed": False,
                 "correction_note": "Insufficient data for investigation", "overall_win_rate": 0.0}
-    p_dir, y_bar = p_dir[:n], y_bar[:n]
+    p_dir, y_bar = p_dir_full[combined], y_bar_full[combined]
 
     deciles = np.digitize(p_dir, np.percentile(p_dir, np.arange(10, 100, 10)))
     decile_table = []

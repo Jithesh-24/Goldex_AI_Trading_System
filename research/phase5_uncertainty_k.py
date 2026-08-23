@@ -38,10 +38,16 @@ if __name__ == "__main__":
     # implementer's report for the exact real n and chosen_k per horizon.
     import numpy as np
     from research.phase4_dataset import assemble_v3_dataset, HORIZONS
-    from research.phase5_calibration import _oof_for_direction, _oof_for_barrier
+    from research.phase5_calibration import _oof_for_barrier
     from research.audit_edge import _mae_mfe_core
     from features.labeling import TripleBarrierConfig, triple_barrier_labels
 
+    # FIX 2 (C3, final-review fix wave): this __main__ block had the same
+    # independent-length `[:n]` positional-slicing bug as phase5_ev_dataset.py --
+    # _oof_for_barrier's OOF-availability mask is a different subset of events
+    # than the full nz event set, so slicing both to a common length `n` paired
+    # unrelated events. Fixed by aligning everything to the SAME base t0_nz
+    # index and applying _oof_for_barrier's own has_oof mask consistently.
     for h in HORIZONS:
         ds = assemble_v3_dataset(max_holding=h)
         close, high, low, vol_tb, t0_idx = ds["close"], ds["high"], ds["low"], ds["vol_tb"], ds["t0_idx"]
@@ -50,14 +56,16 @@ if __name__ == "__main__":
         y = labels["label"].to_numpy()
         nz = y != 0
         t0_nz, t1_nz = t0_idx[nz], labels["t1"].to_numpy()[nz]
-        y_bar, p_bar = _oof_for_barrier(h)
-        n = min(len(p_bar), nz.sum())
-        side_nz = y[nz][:n].astype(float)
-        vol_nz = vol_tb[t0_nz][:n]
-        mae_r, mfe_r = _mae_mfe_core(close, high, low, t0_nz[:n], t1_nz[:n], side_nz, vol_nz)
-        realized_r = np.where(y_bar[:n] == 1, mfe_r, -mae_r)
+        t0_bar, y_bar, p_bar, m_bar = _oof_for_barrier(h)
+        assert np.array_equal(t0_nz, t0_bar), "barrier OOF base index mismatch"
+        side_sel = y[nz][m_bar].astype(float)
+        vol_sel = vol_tb[t0_nz][m_bar]
+        mae_r, mfe_r = _mae_mfe_core(close, high, low, t0_nz[m_bar], t1_nz[m_bar], side_sel, vol_sel)
+        y_bar_sel, p_bar_sel = y_bar[m_bar], p_bar[m_bar]
+        realized_r = np.where(y_bar_sel == 1, mfe_r, -mae_r)
+        n = int(m_bar.sum())
         uncertainty = np.full(n, 0.3)  # placeholder uniform uncertainty for this k-derivation pass; per-event uncertainty scoring is decision/ev_engine.py's job (Task 12), not this research script's
-        events = [{"ev_raw": float(p_bar[i] * 1.0 - (1 - p_bar[i]) * 0.5), "uncertainty": float(uncertainty[i]),
+        events = [{"ev_raw": float(p_bar_sel[i] * 1.0 - (1 - p_bar_sel[i]) * 0.5), "uncertainty": float(uncertainty[i]),
                    "realized_r": float(realized_r[i])} for i in range(n)]
         result = derive_and_validate_k(CANDIDATE_KS, events)
         print(f"h={h}: n={n} chosen_k={result['chosen_k']} validation={result['validation']}")
