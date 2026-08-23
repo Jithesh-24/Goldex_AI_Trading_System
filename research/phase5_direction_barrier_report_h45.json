@@ -1,0 +1,58 @@
+{
+  "n_events": 211949,
+  "decile_table": [
+    {
+      "decile": 0,
+      "n": 21195,
+      "win_rate": 0.49492804906817645
+    },
+    {
+      "decile": 1,
+      "n": 21195,
+      "win_rate": 0.489171974522293
+    },
+    {
+      "decile": 2,
+      "n": 21195,
+      "win_rate": 0.48435951875442323
+    },
+    {
+      "decile": 3,
+      "n": 21195,
+      "win_rate": 0.4906345836282142
+    },
+    {
+      "decile": 4,
+      "n": 21194,
+      "win_rate": 0.4930640747381334
+    },
+    {
+      "decile": 5,
+      "n": 21195,
+      "win_rate": 0.4877093654163718
+    },
+    {
+      "decile": 6,
+      "n": 21195,
+      "win_rate": 0.48454824251002593
+    },
+    {
+      "decile": 7,
+      "n": 21195,
+      "win_rate": 0.4879924510497759
+    },
+    {
+      "decile": 8,
+      "n": 21195,
+      "win_rate": 0.49676810568530316
+    },
+    {
+      "decile": 9,
+      "n": 21195,
+      "win_rate": 0.49766454352441614
+    }
+  ],
+  "correction_needed": false,
+  "correction_note": "Decile win-rate spread=0.0133 vs overall=0.4907. No material structure found -- Direction and Barrier are effectively redundant once side is fixed; Direction used for side-selection only, per the original approach.",
+  "overall_win_rate": 0.49068407966067307
+}
