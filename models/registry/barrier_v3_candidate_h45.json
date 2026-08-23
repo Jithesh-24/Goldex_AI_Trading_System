@@ -1,0 +1,82 @@
+{
+  "model_id": "barrier_v3_candidate_h45",
+  "family": "barrier_probability",
+  "algorithm": "catboost",
+  "artifact_path": "registry/barrier_v3_candidate_h45.json",
+  "feature_schema_version": "barrier_v3_h45__2026-08-22",
+  "feature_cols": [
+    "assumed_side",
+    "hour_sin",
+    "vol_compression_ratio",
+    "vol_acceleration_30",
+    "fracdiff_log_price",
+    "hour_cos",
+    "displacement_from_equilibrium_60",
+    "range_position_60",
+    "yz_vol_240",
+    "rs_vol_240",
+    "gk_vol_240",
+    "vol_shock_zscore",
+    "kalman_residual_z",
+    "ewma_vol",
+    "dist_from_high_20",
+    "range_position_20",
+    "bipower_var_60",
+    "tail_probability_60",
+    "excursion_from_recent_distribution_20",
+    "vol_of_vol_60"
+  ],
+  "target_definition": "P(assumed-side TP before SL within max_holding=45); same triple-barrier meta-label as opportunity_meta, but registered as a standalone calibrated-probability specialist (spec section 24) evaluated on log loss/Brier/reliability curve/horizon stability rather than win-rate-lift -- see Task 9 of the Phase 4 plan for why this is not a duplicate of the opportunity_meta role.",
+  "training_config": {
+    "n_splits": 6,
+    "embargo_bars": 90
+  },
+  "training_period": null,
+  "validation_period": null,
+  "created_at": "2026-08-23T05:27:04.991211Z",
+  "status": "validated",
+  "is_champion": false,
+  "metrics": {
+    "n_events": 211949,
+    "log_loss": 0.6727621569147356,
+    "brier": 0.2398949680720627,
+    "max_calibration_gap": 0.01459143679552144,
+    "reliability_curve": [
+      {
+        "decile": 2,
+        "n": 36,
+        "mean_predicted": 0.2969724816835304,
+        "actual_win_rate": 0.3055555555555556
+      },
+      {
+        "decile": 3,
+        "n": 77997,
+        "mean_predicted": 0.3756963673535298,
+        "actual_win_rate": 0.37456568842391375
+      },
+      {
+        "decile": 4,
+        "n": 17372,
+        "mean_predicted": 0.41258280904302996,
+        "actual_win_rate": 0.4103730140455906
+      },
+      {
+        "decile": 5,
+        "n": 101569,
+        "mean_predicted": 0.5745960232965611,
+        "actual_win_rate": 0.5779913162480678
+      },
+      {
+        "decile": 6,
+        "n": 14972,
+        "mean_predicted": 0.6115056767100285,
+        "actual_win_rate": 0.5969142399145071
+      }
+    ]
+  },
+  "lineage": {
+    "data_snapshot": "data/gold_seed_merged_full6yr.csv",
+    "code_commit": null,
+    "config_snapshot": null
+  }
+}
