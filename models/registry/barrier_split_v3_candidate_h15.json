@@ -1,0 +1,52 @@
+{
+  "model_id": "barrier_split_v3_candidate_h15",
+  "family": "barrier_probability",
+  "algorithm": "catboost",
+  "artifact_path": "none-oof-only",
+  "feature_schema_version": null,
+  "feature_cols": [
+    "hour_sin",
+    "hour_cos",
+    "vol_compression_ratio",
+    "vol_acceleration_30",
+    "vol_of_vol_60",
+    "gk_vol_240",
+    "ewma_vol",
+    "gk_vol_20",
+    "fracdiff_log_price",
+    "yz_vol_240",
+    "rs_vol_20",
+    "yz_vol_20",
+    "rs_vol_240",
+    "tail_probability_60",
+    "tick_volume",
+    "range_width_ratio_20_60",
+    "dist_from_low_20",
+    "range_position_60",
+    "jump_component_60",
+    "ret_1",
+    "assumed_side"
+  ],
+  "target_definition": "P(sl_hit | not-win) restricted to Barrier role's not-win subset; combined with barrier_v3_candidate's p_win to yield p_tp/p_sl/p_timeout.",
+  "training_config": {
+    "max_holding": 15,
+    "top_n_features": 20
+  },
+  "training_period": "full available history",
+  "validation_period": "OOF walk-forward folds",
+  "created_at": "2026-08-23T12:59:48.032282Z",
+  "status": "validated",
+  "is_champion": false,
+  "metrics": {
+    "n_events": 124757,
+    "p_sl_given_not_win_log_loss": 0.03000996176676379,
+    "baseline_log_loss": 0.6931471805599453,
+    "platt_a": 0.10140374354089118,
+    "platt_b": 1.047038262405995
+  },
+  "lineage": {
+    "data_snapshot": "data/gold_seed_merged_full6yr.csv",
+    "code_commit": null,
+    "config_snapshot": null
+  }
+}
