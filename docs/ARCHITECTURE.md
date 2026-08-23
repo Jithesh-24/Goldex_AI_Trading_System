@@ -792,8 +792,16 @@ EV_side = p_tp*TP_R - p_sl*SL_R - p_timeout*timeout_R - cost_R
 
 Where:
 - **p_tp** = Barrier's calibrated win probability (from Platt scaling)
-- **p_sl** = p_split * (1 - p_tp), where p_split comes from the SL/timeout classifier
-- **p_timeout** = (1 - p_split) * (1 - p_tp), where p_split is the same classifier output
+- **p_sl** = p_split * (1 - p_tp)
+- **p_timeout** = (1 - p_split) * (1 - p_tp)
+
+  `p_split` here is `p_sl_given_not_win`, and it is currently a **fixed constant
+  (0.5, the least-informative prior)**, not the Task 2 split classifier's real
+  learned output — see Known Methodology Limitations (g) below for why (the
+  classifier's return contract only exposes aggregate log_loss, no per-event
+  probability). As a direct consequence, **p_sl and p_timeout are currently
+  always equal** — `(1-p_tp)/2` each — and carry no information beyond
+  Barrier's own p_tp.
 - **TP_R** = MFE quantile 0.75 (conservative target, R-multiples)
 - **SL_R** = MAE quantile 0.75 (conservative stop, R-multiples)
 - **timeout_R** = OOF-derived mean timeout payoff (R-multiples)
@@ -808,7 +816,17 @@ by held-out sign-match accuracy (EV_adj sign vs realized_r sign). Real per-horiz
 - h90: chosen_k=0.8, sign_match_accuracy=0.6125
 
 DEFAULT_K=0.8 set as the most conservative (highest validated k) across horizons.
-EV is adjusted: `EV_adj = EV_side * (1 - k)` before gating.
+EV is adjusted **subtractively, scaled by an uncertainty score** (`decision/ev_formula.py`'s
+`risk_adjusted_ev`), not multiplicatively:
+
+```
+EV_adj = EV_raw - k * uncertainty
+```
+
+Worked example: `ev_raw=0.15`, `uncertainty=0.4` (e.g. Opportunity is CANDIDATE-status,
+contributing +0.2, plus one other +0.2 status penalty), `k=0.8` (DEFAULT_K) →
+`EV_adj = 0.15 - 0.8*0.4 = 0.15 - 0.32 = -0.17`. A raw-positive-EV side can end up
+net-negative after the uncertainty penalty — this is intentional risk-aversion, not a bug.
 
 ### NO_TRADE gate: MIN_EDGE_THRESHOLD
 
