@@ -164,15 +164,14 @@ EV formula (§9) needs the SL-vs-timeout split. Resolution (**derive
 `p_win`-only, to preserve §9's SL/timeout distinction rather than
 discard it):
 
-- `features/labeling.py`'s `triple_barrier_labels()` is extended with a
-  small, purely additive change: when `side` is given, it also returns a
-  `touch_type` column (`"tp"`/`"sl"`/`"timeout"`) alongside the existing
-  binary `label` column. This is information the function already computes
-  internally (it must know which barrier was touched, or that none was,
-  to assign `label`) — exposing it does not change `label`'s existing
-  values or any existing caller's behavior (Phase 4's 7 role scripts keep
-  reading `label` exactly as before; `touch_type` is a new, optional-to-use
-  column).
+- No core-function change needed: `triple_barrier_labels()` already
+  returns a `touch` column (raw -1/0/1: which barrier was actually hit,
+  before collapsing to the binary `label`) — `research/phase4_barrier.py`
+  computes this via `build_meta()`'s internal call but currently discards
+  it after extracting the binary `label`. Phase 5 reads `meta_labels["touch"]`
+  directly: `favorable = where(side>=0, 1, -1)`; `sl_hit = (touch ==
+  -favorable)`; `timeout_hit = (touch == 0)` — the same 3-way partition
+  `label` was collapsed from, at zero extra computation cost.
 - Phase 5 trains one additional lightweight classifier — `P(sl | not-win)`
   — restricted to the `not-win` (label=0) subset, using the same
   purged+embargoed OOF methodology as every other Phase 4/5 model. This
