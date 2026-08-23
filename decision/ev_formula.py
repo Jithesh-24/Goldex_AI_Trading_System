@@ -9,6 +9,7 @@ from typing import Optional
 from contracts.specialist_output import BarrierOutput
 
 EV_FORMULA_VERSION = "v1"
+DEFAULT_K = 0.75  # Derived and OOS-validated via research.phase5_uncertainty_k: k=0.75 chosen across all 3 horizons (h=15/45/90) with sign_match_accuracies 0.5965/0.5977/0.6116 respectively
 _OK_STATUSES = {"VALIDATED", "CANDIDATE"}
 
 
