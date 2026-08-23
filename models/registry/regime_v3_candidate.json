@@ -1,0 +1,51 @@
+{
+  "model_id": "regime_v3_candidate",
+  "family": "regime",
+  "algorithm": "gaussian_hmm",
+  "artifact_path": "registry/regime_v3_candidate.json",
+  "feature_schema_version": "regime_v3__2026-08-22",
+  "feature_cols": [
+    "ewma_vol",
+    "hurst_120",
+    "kalman_residual_z"
+  ],
+  "target_definition": "unsupervised GaussianHMM(n_components=4) over standardized [log(ewma_vol), hurst_120, kalman_residual_z], refit per walk-forward fold",
+  "training_config": {
+    "n_states": 4,
+    "n_splits": 6,
+    "embargo_bars": 90
+  },
+  "training_period": null,
+  "validation_period": null,
+  "created_at": "2026-08-22T18:18:22.828888Z",
+  "status": "validated",
+  "is_champion": false,
+  "metrics": {
+    "mean_run_length": 45.8635353352082,
+    "transition_matrix_drift": 0.004441889413351009,
+    "per_state_win_rate_ci": {
+      "0": [
+        0.6182718047572153,
+        0.6259457699304235
+      ],
+      "1": [
+        0.49081127071307235,
+        0.49716942788021545
+      ],
+      "2": [
+        0.49514228027785734,
+        0.5020029167742177
+      ],
+      "3": [
+        0.38865526449483195,
+        0.3963064050945282
+      ]
+    },
+    "ci_disjoint": true
+  },
+  "lineage": {
+    "data_snapshot": "data/gold_seed_merged_full6yr.csv",
+    "code_commit": null,
+    "config_snapshot": null
+  }
+}
