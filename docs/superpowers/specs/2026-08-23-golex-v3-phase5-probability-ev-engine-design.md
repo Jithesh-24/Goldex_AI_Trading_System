@@ -143,13 +143,47 @@ probabilities together is not mathematically justified. Chosen approach:
 Chosen approach: **quantile-as-barrier + Barrier-role probability.**
 Candidate SL distance = MAE q75 (conservative, not q50); candidate TP
 distance = MFE q75. The probability of reaching each candidate level is
-read directly from the Barrier role's own `p_tp`/`p_sl`/`p_timeout` at the
-matching horizon — a second probability model is NOT derived from the
-quantile curve itself (interpolating a CDF from 3 quantile points is
-statistically weak and would silently introduce a second, uncross-checked
-probability estimate for the same event). q90 is exposed in the contract
-for optional conservative-tail sensitivity analysis (§10) but is not the
-default candidate level.
+read directly from the Barrier role's `p_tp`/`p_sl`/`p_timeout` at the
+matching horizon (see §7a for how the SL/timeout split is actually
+obtained) — a second probability model is NOT derived from the quantile
+curve itself (interpolating a CDF from 3 quantile points is statistically
+weak and would silently introduce a second, uncross-checked probability
+estimate for the same event). q90 is exposed in the contract for optional
+conservative-tail sensitivity analysis (§12) but is not the default
+candidate level.
+
+### 7a. Barrier role only produces binary P(win) — real fix required
+
+Investigation during planning found Phase 4's actual Barrier role
+(`research/phase4_barrier.py`) trains on `triple_barrier_labels(...,
+side=...)`'s binary label (1 = TP-before-SL win, 0 = SL-hit-or-timeout
+collapsed together) — this is the same target definition as the
+Opportunity role, not a 3-way P(PT)/P(SL)/P(timeout) split. The
+EV formula (§9) needs the SL-vs-timeout split. Resolution (**derive
+2-way split from raw labels**, chosen over collapsing the formula to
+`p_win`-only, to preserve §9's SL/timeout distinction rather than
+discard it):
+
+- `features/labeling.py`'s `triple_barrier_labels()` is extended with a
+  small, purely additive change: when `side` is given, it also returns a
+  `touch_type` column (`"tp"`/`"sl"`/`"timeout"`) alongside the existing
+  binary `label` column. This is information the function already computes
+  internally (it must know which barrier was touched, or that none was,
+  to assign `label`) — exposing it does not change `label`'s existing
+  values or any existing caller's behavior (Phase 4's 7 role scripts keep
+  reading `label` exactly as before; `touch_type` is a new, optional-to-use
+  column).
+- Phase 5 trains one additional lightweight classifier — `P(sl | not-win)`
+  — restricted to the `not-win` (label=0) subset, using the same
+  purged+embargoed OOF methodology as every other Phase 4/5 model. This
+  yields `p_sl = p_not_win * P(sl | not-win)` and `p_timeout = p_not_win *
+  (1 - P(sl | not-win))`, so `p_tp + p_sl + p_timeout` sums to 1 by
+  construction (`p_tp` = Barrier role's existing calibrated `p_win`).
+- This new classifier and its registry entry follow the same
+  `ModelRegistryEntry` pattern as every Phase 4 role (family:
+  `barrier_probability`, a distinct `model_id` suffix, `candidate`/
+  `validated`/`rejected` status based on its own OOS log loss vs a
+  50/50-prior baseline).
 
 `candidate_sl`/`candidate_tp` are research-only fields — they do NOT
 replace `config/models.yaml`'s production SL/TP or any live trading
