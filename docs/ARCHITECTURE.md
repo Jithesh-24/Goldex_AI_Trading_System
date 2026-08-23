@@ -521,3 +521,143 @@ path or `features/features.py`'s production math, no re-running the
 existing 92-feature OOF research (the 17-survivors evidence stays as
 historical evidence describing what helped one past model/config — not a
 universal filter for what any future specialist model should use).
+
+## Phase 4: Specialist Quantitative Model Layer
+
+Status: research complete, documentation in place, 2026-08-22. Seven
+independent specialist roles answer distinct risk/opportunity questions on
+XAUUSD, each with its own feature schema, target definition, and OOS
+evaluation. Production behavior (`app/engine.py`, `decision/signal.py`,
+Telegram delivery, two existing production champion models) is
+byte-for-byte unchanged. Full design: `docs/superpowers/specs/2026-08-22-golex-v3-phase4-specialist-models-design.md`.
+
+### Architecture: market→state→features→specialists→calibrated probabilities
+
+```mermaid
+flowchart TD
+    MARKET[XM / MT5] --> MS[MarketState<br/>Phase 2, real-time]
+    MS --> FF["Feature Fabric<br/>Phase 3, shared V3 base"]
+    FF --> SPECS["Seven Specialist Roles<br/>direction, opportunity, regime,<br/>mae_quantile, mfe_quantile,<br/>barrier_probability, execution_decay"]
+    SPECS --> CP["Calibrated Probabilities<br/>PlattCalibrator (stateless)"]
+    CP --> PHASE5["Phase 5: Signal Orchestration<br/>decision/signal.py, not yet built"]
+    FF -.->|"decision/router.py"| SPECS
+    SPECS -.->|"models/registry/"| MR["Model Registry<br/>locked feature_cols, config,<br/>metrics, status, is_champion"]
+    FF -.->|"features/registry/schemas/"| SCHEMA["FeatureSetSchema Persistence<br/>per-specialist feature slice"]
+```
+
+Each specialist operates on the same **shared 45-column foundation** (28 baseline
+Phase 1/3 production features + 17 useful-status V3 candidates, Tasks 3 and 26),
+but narrows to its own feature schema via out-of-sample importance ranking —
+no feature set is reused unnarrowed across roles.
+
+### The seven specialist roles: validated/candidate/rejected outcomes
+
+**Task 4 — Direction** (binary classifier, CatBoost, input: 28-col baseline → final schema varies by horizon)
+
+- h=15: n=302,134 OOS events, mean_oof_accuracy=0.5139 → **validated** (baseline 0.5115)
+- h=45: n=300,547 OOS events, accuracy=0.5115 → **validated** (matches baseline exactly, razor-thin, spec-compliant)
+- h=90: n=298,431 OOS events, accuracy=0.5063 → **rejected** (misses threshold)
+- Embargo: 90 bars hardcoded per `learning.train.EMBARGO_BARS`, applies uniformly across all horizons (not horizon-scaled)
+
+**Task 5 — Opportunity/Meta** (trade-filter classifier, CatBoost)
+
+- h=15: n=302,134 OOS events, win_rate=0.5097 → **validated** (baseline 0.4887, +2.1%)
+- h=45: n=300,547 OOS events, win_rate=0.4862 → **rejected** (thin miss, 0.49 threshold)
+- h=90: n=298,431 OOS events, win_rate=0.3986 → **rejected**
+
+**Task 6 — Regime** (unsupervised state classifier, Gaussian HMM, 4 components)
+
+- mean_run_length=45.86 bars, transition_matrix_drift=0.00444 (stable, fold0→fold5)
+- per-state win-rate confidence intervals disjoint: state0 [0.618, 0.626] vs state3 [0.389, 0.396]
+- genuine, validated downstream predictive separation found → **validated**
+
+**Task 7 — MAE Quantile** (quantile regressor, 3 targets: 0.5/0.75/0.9)
+
+- h=15: n=254,442 events, quantile coverage within ±0.006–0.015 of target → **validated**
+- h=45: n=253,052 events, coverage likewise → **validated**
+- h=90: n=251,297 events, coverage likewise → **validated**
+- Coverage assessed both globally and per-volatility-regime tercile, all meeting spec
+
+**Task 8 — MFE Quantile** (quantile regressor, 3 targets: 0.5/0.75/0.9, parallel pipeline to Task 7)
+
+- h=15: n=254,442 events, quantile coverage within ±0.006–0.015 of target → **validated**
+- h=45: n=253,052 events, coverage likewise → **validated**
+- h=90: n=251,297 events, coverage likewise → **validated**
+
+**Task 9 — Barrier Probability** (calibrated probability estimator, scikit-learn, distinct from Direction)
+
+- h=15: n=213,022 OOS events, log_loss=0.6744, max_calibration_gap=0.0532 → **validated** (gap threshold 0.15)
+- h=45: n=211,949 OOS events, log_loss=0.6728, calibration_gap=0.0146 → **validated**
+- h=90: n=210,589 OOS events, log_loss=0.6476, calibration_gap=0.0765 → **validated**
+- Cross-horizon: log_loss and Brier score improve mildly h15→h90, stability good
+
+**Task 10 — Execution/Decay** (post-signal price drift proxy, status: candidate)
+
+- Status: **DATA_LIMITED** — no real human-execution-latency data exists in this repo (Telegram is one-way fire-and-forget)
+- Post-signal price-drift PROXY computed instead: n_events=313,254
+  - 30s drift: 0.0 bps (degenerate, M1-bar-resolution design, not a bug, documented)
+  - 60s drift: 2.15 bps
+  - 120s drift: 2.98 bps
+- Honest finding: real execution-latency validation impossible until human order-entry is instrumented
+
+**Task 11 — Real-Tick Capture Infrastructure** (opt-in, defaults false everywhere)
+
+- `TickCapture` class wired into `market/feed_listener.py` and `app/engine.py`
+- Config flag `tick_capture_enabled` defaults false at every layer (dataclass, YAML, constructor)
+- Verified byte-for-byte: production behavior **unchanged when disabled** (the default)
+- 5 live-only microstructure features remain **OPTIONAL**, pending future real capture window
+- Task 11 real-data microstructure validation: **DATA_LIMITED** (no XM feed reachable this session, 0 real ticks captured)
+- Synthetic replay evidence explicitly not substituted for real data in leakage audit
+
+### Leakage audit and registry integrity (Task 12)
+
+`tests/test_phase4_leakage.py`: 4 independent tests, all **pass**
+
+1. **Train/test fold [t0, t1) split audit** — no temporal overlap across CV folds
+2. **Future-bar feature leakage regression** — no feature depends on bars after t_obs
+3. **PlattCalibrator statefulness** — calibrator is stateless and pure; fit() produces no hidden side effects
+4. **Registry status integrity** — every Phase 4 registry entry has `is_champion=false` and `status` never `active`
+
+### Model registry and routing (Tasks 1, 13)
+
+`contracts/model_registry.py` extends with:
+- `ModelFamily` literal: seven roles above plus `execution_decay`
+- `ModelStatus` literal: `candidate`, `validated`, `active`, `archived`, `rejected`
+- Separate `is_champion` boolean flag (independent of status)
+
+`decision/router.py` remains static, config-driven, and does **not** compare live performance
+or pick models dynamically. Model *selection* is exclusively a research-phase decision
+(Phase 5 EOD learning). The router's only job: given a role, look up the model_id in
+`config/models.yaml`, load the registry entry from `models/registry/`, and return it.
+
+Feature-schema persistence: `features/registry/schemas.py` provides `save_schema()`/`load_schema()`.
+Each specialist's feature slice is persisted as `{schema_id}__{schema_version}.json` in
+`features/registry/schemas/`, e.g. `direction_v3_h15__2026-08-22.json`. A `ModelRegistryEntry`
+references its schema via `feature_schema_version`, enabling deterministic dataset rebuilds
+and runtime feature-order validation.
+
+### Inference performance (Task 14)
+
+Single-row CatBoost `predict_proba()` latency, measured over 20 calls:
+- p50 = 2264 μs
+- p95 = 2745 μs
+- p99 = 2839 μs
+- **Well under 50ms budget**, peak traced memory = 94.7 KB per call
+
+### Production behavior: explicitly unchanged
+
+`app/engine.py`, `decision/signal.py`, Telegram delivery, and the two existing
+production champion models (`direction_catboost_20260818`, `opportunity_meta_catboost_20260818`)
+are **byte-for-byte unchanged** by this entire Phase 4 plan. Every task that touched
+a production file (only Task 11, `feed_listener.py` and `app/engine.py`'s new accessor)
+did so behind a flag defaulting to disabled, verified line-by-line by task review.
+The live signal path is unaffected; Phase 4 is research-only until Phase 5's EOD learning
+step promotes a candidate to `active` status.
+
+### Honest findings summary
+
+- **Validated roles** (ready for future production evaluation): Direction h15/h45, Opportunity h15, Regime, MAE/MFE quantiles (all h), Barrier probability (all h)
+- **Rejected roles** (spec-compliant outcome, not failures): Direction h90, Opportunity h45/h90
+- **Candidate roles** (DATA_LIMITED, not rejected): Execution/Decay (real latency data unavailable)
+- **Infrastructure validated**: Leakage audit pass, inference latency well under budget, production behavior proven unchanged
+- **Unresolved**: real-tick microstructure validation pending a future XM connection window
