@@ -46,28 +46,28 @@ def fit_and_save_calibrator(role: str, max_holding: int, y_true, p_raw, calibrat
 # meta-labeling losses are independent).
 def _oof_for_direction(max_holding, rows=None):
     import numpy as np
-    import pandas as pd
     from research.phase4_dataset import assemble_v3_dataset
-    from research.audit_edge import oof_run
+    from research.direction_side import compute_direction_oof
     from features.labeling import TripleBarrierConfig, triple_barrier_labels
+
+    # Get the shared Direction OOF
+    dir_oof = compute_direction_oof(max_holding=max_holding, rows=rows)
+
+    # Independently recompute the TRUE direction label to avoid changing compute_direction_oof's public contract
     ds = assemble_v3_dataset(max_holding=max_holding, rows=rows)
-    feat_v3, close, high, low, vol_tb, t0_idx = (ds["feat_v3"], ds["close"], ds["high"],
-                                                  ds["low"], ds["vol_tb"], ds["t0_idx"])
+    close, high, low, vol_tb, t0_idx = (ds["close"], ds["high"],
+                                        ds["low"], ds["vol_tb"], ds["t0_idx"])
     cfg = TripleBarrierConfig(pt_mult=1.0, sl_mult=1.0, max_holding=max_holding, min_vol=1e-6)
     labels = triple_barrier_labels(close, high, low, t0_idx, vol_tb, cfg, side=None)
     y = labels["label"].to_numpy()
     nz = y != 0
-    t0_nz, t1_nz = t0_idx[nz], labels["t1"].to_numpy()[nz]
-    cols = ds["baseline_cols"] + ds["useful_cols"]
-    X = feat_v3.loc[t0_nz, cols].reset_index(drop=True)
-    y_bin = pd.Series((y[nz] == 1).astype(int))
-    t0, t1 = pd.Series(t0_nz), pd.Series(t1_nz)
-    result = oof_run(X, y_bin, t0, t1, tag=f"calib_direction_h{max_holding}", want_importance=False)
-    has_oof = result["has_oof"]
-    y_full = y_bin.to_numpy().astype(float)  # label is always known; usability is gated by has_oof
-    p_full = np.full(len(t0_nz), np.nan)
-    p_full[has_oof] = result["oof_proba"][has_oof]
-    return t0_nz, y_full, p_full, has_oof
+    t0_nz_computed = t0_idx[nz]
+
+    # Assert that both functions' independently-computed t0_nz arrays match
+    assert np.array_equal(t0_nz_computed, dir_oof["t0_nz"]), "direction_side event index mismatch"
+
+    y_full = (y[nz] == 1).astype(float)
+    return dir_oof["t0_nz"], y_full, dir_oof["p_direction_cal"], dir_oof["has_oof"]
 
 
 def _oof_for_opportunity(max_holding, rows=None):
@@ -75,7 +75,9 @@ def _oof_for_opportunity(max_holding, rows=None):
     import pandas as pd
     from research.phase4_dataset import assemble_v3_dataset
     from research.audit_edge import oof_run, build_meta
+    from research.direction_side import compute_direction_oof
     from features.labeling import TripleBarrierConfig, triple_barrier_labels
+
     ds = assemble_v3_dataset(max_holding=max_holding, rows=rows)
     feat_v3, close, high, low, vol_tb, t0_idx = (ds["feat_v3"], ds["close"], ds["high"],
                                                   ds["low"], ds["vol_tb"], ds["t0_idx"])
@@ -89,16 +91,20 @@ def _oof_for_opportunity(max_holding, rows=None):
     X_full = feat_v3.loc[t0_nz, cols].reset_index(drop=True)
     y_bin = pd.Series((y[nz] == 1).astype(int))
     t0, t1 = pd.Series(t0_nz), pd.Series(t1_nz)
-    prim = oof_run(X_full, y_bin, t0, t1, tag=f"calib_opportunity_h{max_holding}_prim", want_importance=False)
-    has_oof1 = prim["has_oof"]
+
+    # Use shared Direction OOF side instead of fitting our own primary classifier
+    dir_oof = compute_direction_oof(max_holding=max_holding, rows=rows)
+    assert np.array_equal(dir_oof["t0_nz"], t0_nz), "direction_side event index mismatch"
+    has_oof1 = dir_oof["has_oof"]
     y_full = np.full(n, np.nan)
     p_full = np.full(n, np.nan)
     mask_full = np.zeros(n, dtype=bool)
     if not has_oof1.any():
         return t0_nz, y_full, p_full, mask_full
-    side, meta_labels = build_meta(close, high, low, vol_tb, t0_nz, prim["oof_pred"], has_oof1)
+    side, meta_labels = build_meta(close, high, low, vol_tb, t0_nz, dir_oof["side"], has_oof1)
     X_meta = X_full.loc[has_oof1].reset_index(drop=True)
     X_meta["assumed_side"] = side
+    X_meta["p_direction"] = dir_oof["p_direction_cal"][has_oof1]
     y_meta = meta_labels["label"].to_numpy()
     t0_meta = pd.Series(meta_labels.index.to_numpy())
     t1_meta = pd.Series(meta_labels["t1"].to_numpy())
@@ -137,6 +143,7 @@ def _oof_predicted_mae_mfe(max_holding, rows=None):
     import pandas as pd
     from research.phase4_dataset import assemble_v3_dataset
     from research.audit_edge import oof_run, build_meta, _mae_mfe_core
+    from research.direction_side import compute_direction_oof
     from research.v3_quantile_models import fit_quantile
     from learning.cv import PurgedWalkForwardCV
     from features.labeling import TripleBarrierConfig, triple_barrier_labels
@@ -160,14 +167,17 @@ def _oof_predicted_mae_mfe(max_holding, rows=None):
     mfe_full = np.full(n, np.nan)
     mask_full = np.zeros(n, dtype=bool)
 
-    prim = oof_run(X_full, y_bin, t0, t1, tag=f"mae_mfe_oof_h{max_holding}_primary", want_importance=False)
-    has_oof1 = prim["has_oof"]
+    # Use shared Direction OOF side instead of fitting our own primary classifier
+    dir_oof = compute_direction_oof(max_holding=max_holding, rows=rows)
+    assert np.array_equal(dir_oof["t0_nz"], t0_nz), "direction_side event index mismatch"
+    has_oof1 = dir_oof["has_oof"]
     if not has_oof1.any():
         return t0_nz, mae_full, mfe_full, mask_full
 
-    side, meta_labels = build_meta(close, high, low, vol_tb, t0_nz, prim["oof_pred"], has_oof1)
+    side, meta_labels = build_meta(close, high, low, vol_tb, t0_nz, dir_oof["side"], has_oof1)
     X_meta = X_full.loc[has_oof1].reset_index(drop=True)
     X_meta["assumed_side"] = side
+    X_meta["p_direction"] = dir_oof["p_direction_cal"][has_oof1]
     t0_meta = meta_labels.index.to_numpy()
     t1_meta = meta_labels["t1"].to_numpy()
     vol_at_meta = vol_tb[t0_nz][has_oof1]
