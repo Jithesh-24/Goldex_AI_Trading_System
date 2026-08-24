@@ -29,6 +29,7 @@ Run: /home/jith/.hermes/hermes-agent/venv/bin/python3 -m research.phase5_ev_data
 import numpy as np
 
 from research.phase4_dataset import assemble_v3_dataset, HORIZON_VOL_SCALE
+from research.direction_side import compute_direction_oof
 from research.phase5_calibration import (
     _oof_for_direction, _oof_for_opportunity, _oof_for_barrier, _oof_predicted_mae_mfe,
 )
@@ -62,6 +63,8 @@ def assemble_replay_dataset(max_holding: int, rows: int = None) -> dict:
     t0_nz, t1_nz, touch_nz = t0_idx[nz], labels["t1"].to_numpy()[nz], touch[nz]
 
     t0_dir, y_dir, p_dir, m_dir = _oof_for_direction(max_holding, rows=rows)
+    dir_oof = compute_direction_oof(max_holding=max_holding, rows=rows)
+    assert np.array_equal(dir_oof["t0_nz"], t0_dir), "direction_side event index mismatch in replay dataset"
     t0_opp, y_opp, p_opp, m_opp = _oof_for_opportunity(max_holding, rows=rows)
     t0_bar, y_bar, p_bar, m_bar = _oof_for_barrier(max_holding, rows=rows)
     t0_mm, mae_pred, mfe_pred, m_mm = _oof_predicted_mae_mfe(max_holding, rows=rows)
@@ -99,7 +102,9 @@ def assemble_replay_dataset(max_holding: int, rows: int = None) -> dict:
             "touch": touch_sel,
             "realized_r_long": realized_r_long, "realized_r_short": realized_r_short,
             "mid": mid, "vol_60s_proxy": vol_60s_proxy,
-            "spread": np.full(n, REPRESENTATIVE_SPREAD)}
+            "spread": np.full(n, REPRESENTATIVE_SPREAD),
+            "direction_model_id": dir_oof["model_id"],
+            "side": dir_oof["side"][combined]}
 
 
 if __name__ == "__main__":

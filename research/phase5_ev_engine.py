@@ -63,11 +63,11 @@ def replay_and_validate(max_holding: int, rows: int = None, registry_dir: str = 
     split_info = run_barrier_split_candidate(max_holding, rows=rows, registry_dir=registry_dir)
     p_sl_given_not_win = 0.5
 
-    direction_status = _real_model_status(f"direction_v3_candidate_h{max_holding}")
-    opportunity_status = _real_model_status(f"opportunity_v3_candidate_h{max_holding}")
-    barrier_status = _real_model_status(f"barrier_v3_candidate_h{max_holding}")
-    mae_status = _real_model_status(f"mae_quantile_v3_candidate_h{max_holding}")
-    mfe_status = _real_model_status(f"mfe_quantile_v3_candidate_h{max_holding}")
+    direction_status = _real_model_status(f"direction_v3_candidate_h{max_holding}", registry_dir=registry_dir)
+    opportunity_status = _real_model_status(f"opportunity_v3b_candidate_h{max_holding}", registry_dir=registry_dir)
+    barrier_status = _real_model_status(f"barrier_v3b_candidate_h{max_holding}", registry_dir=registry_dir)
+    mae_status = _real_model_status(f"mae_quantile_v3b_candidate_h{max_holding}", registry_dir=registry_dir)
+    mfe_status = _real_model_status(f"mfe_quantile_v3b_candidate_h{max_holding}", registry_dir=registry_dir)
 
     decisions = {"NO_TRADE": 0, "LONG_CANDIDATE": 0, "SHORT_CANDIDATE": 0}
     expected_rs, realized_rs = [], []
@@ -84,15 +84,19 @@ def replay_and_validate(max_holding: int, rows: int = None, registry_dir: str = 
         direction = DirectionOutput(model_id=f"direction_v3_candidate_h{max_holding}", horizon=max_holding,
                                      model_status=direction_status, probability_long=p_long,
                                      probability_short=1 - p_long, calibrated=True)
-        opportunity = OpportunityOutput(model_id=f"opportunity_v3_candidate_h{max_holding}", horizon=max_holding,
+        opportunity = OpportunityOutput(model_id=f"opportunity_v3b_candidate_h{max_holding}", horizon=max_holding,
                                          model_status=opportunity_status, probability_take=float(data["p_opportunity"][i]),
-                                         calibrated=True)
-        barrier = BarrierOutput(model_id=f"barrier_v3_candidate_h{max_holding}", horizon=max_holding,
-                                 model_status=barrier_status, p_tp=float(data["p_barrier_win"][i]), calibrated=True)
-        mae = MAEOutput(model_id=f"mae_quantile_v3_candidate_h{max_holding}", horizon=max_holding, model_status=mae_status,
-                         q50=float(data["mae_r"][i]) * 0.7, q75=float(data["mae_r"][i]), q90=float(data["mae_r"][i]) * 1.3)
-        mfe = MFEOutput(model_id=f"mfe_quantile_v3_candidate_h{max_holding}", horizon=max_holding, model_status=mfe_status,
-                         q50=float(data["mfe_r"][i]) * 0.7, q75=float(data["mfe_r"][i]), q90=float(data["mfe_r"][i]) * 1.3)
+                                         calibrated=True, assumed_side=float(data["side"][i]),
+                                         direction_model_id=data["direction_model_id"])
+        barrier = BarrierOutput(model_id=f"barrier_v3b_candidate_h{max_holding}", horizon=max_holding,
+                                 model_status=barrier_status, p_tp=float(data["p_barrier_win"][i]), calibrated=True,
+                                 assumed_side=float(data["side"][i]), direction_model_id=data["direction_model_id"])
+        mae = MAEOutput(model_id=f"mae_quantile_v3b_candidate_h{max_holding}", horizon=max_holding, model_status=mae_status,
+                         q50=float(data["mae_r"][i]) * 0.7, q75=float(data["mae_r"][i]), q90=float(data["mae_r"][i]) * 1.3,
+                         assumed_side=float(data["side"][i]), direction_model_id=data["direction_model_id"])
+        mfe = MFEOutput(model_id=f"mfe_quantile_v3b_candidate_h{max_holding}", horizon=max_holding, model_status=mfe_status,
+                         q50=float(data["mfe_r"][i]) * 0.7, q75=float(data["mfe_r"][i]), q90=float(data["mfe_r"][i]) * 1.3,
+                         assumed_side=float(data["side"][i]), direction_model_id=data["direction_model_id"])
 
         d = evaluate(ms, direction, opportunity, barrier, p_sl_given_not_win, mae, mfe,
                       timeout_r=timeout_info["timeout_R_mean"] or 0.0,
