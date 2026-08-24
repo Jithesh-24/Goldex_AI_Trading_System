@@ -14,6 +14,8 @@ import pandas as pd
 
 from research.phase4_dataset import assemble_v3_dataset, select_top_features
 from research.audit_edge import oof_run, build_meta, manual_log_loss
+from research.direction_side import compute_direction_oof
+from learning.train import EMBARGO_BARS as REAL_EMBARGO_BARS
 from decision.calibration import PlattCalibrator
 from features.labeling import TripleBarrierConfig, triple_barrier_labels
 from features.registry import build_schema
@@ -114,6 +116,129 @@ def run_barrier_candidate(max_holding: int, rows: int = None, registry_dir: str 
           f"brier={brier:.4f} max_calib_gap={max_calib_gap:.4f} -> status={status}")
     return {"n_events": int(len(y_true)), "log_loss": log_loss, "brier": brier,
             "reliability_curve": reliability_curve, "status": status}
+
+
+def run_barrier_candidate_v3b(max_holding: int, rows: int = None, registry_dir: str = None, schemas_dir: str = None) -> dict:
+    """Phase 5A retrain: conditions on Direction's OOF side (research.direction_side)
+    instead of this specialist's own primary-stage side-guess. See
+    docs/superpowers/specs/2026-08-24-golex-v3-phase5a-specialist-conditioning-design.md."""
+    if registry_dir is None:
+        registry_dir = REGISTRY_DIR
+    ds = assemble_v3_dataset(max_holding=max_holding, rows=rows)
+    feat_v3, close, high, low, vol_tb, t0_idx = (ds["feat_v3"], ds["close"], ds["high"],
+                                                  ds["low"], ds["vol_tb"], ds["t0_idx"])
+    cfg = TripleBarrierConfig(pt_mult=1.0, sl_mult=1.0, max_holding=max_holding, min_vol=1e-6)
+    dir_labels = triple_barrier_labels(close, high, low, t0_idx, vol_tb, cfg, side=None)
+    y = dir_labels["label"].to_numpy()
+    nz = y != 0
+    t0_nz = t0_idx[nz]
+
+    # Get direction's OOF side instead of generating our own
+    dir_oof = compute_direction_oof(max_holding=max_holding, rows=rows)
+    assert np.array_equal(dir_oof["t0_nz"], t0_nz), "direction_side event index mismatch"
+    has_oof = dir_oof["has_oof"]
+    side_full = dir_oof["side"]
+
+    candidate_cols = ds["baseline_cols"] + ds["useful_cols"]
+    X_full = feat_v3.loc[t0_nz, candidate_cols].reset_index(drop=True)
+
+    side, meta_labels = build_meta(close, high, low, vol_tb, t0_nz, side_full, has_oof)
+
+    X_meta_full = X_full.loc[has_oof].reset_index(drop=True)
+    X_meta_full["assumed_side"] = side
+    X_meta_full["p_direction"] = dir_oof["p_direction_cal"][has_oof]
+    y_meta = pd.Series(meta_labels["label"].to_numpy())
+    t0_meta = pd.Series(meta_labels.index.to_numpy())
+    t1_meta = pd.Series(meta_labels["t1"].to_numpy())
+
+    # Pass 1: full pool + assumed_side, OOF importances only.
+    barrier_pass1 = oof_run(X_meta_full, y_meta, t0_meta, t1_meta,
+                            tag=f"barrier_v3b_h{max_holding}_pass1", want_importance=True)
+    feature_cols_meta = select_top_features(barrier_pass1["importances"], top_n=TOP_N_FEATURES)
+    if "assumed_side" not in feature_cols_meta:
+        feature_cols_meta.append("assumed_side")
+    used_p_direction = "p_direction" in feature_cols_meta
+    if not used_p_direction:
+        feature_cols_meta.append("p_direction")  # keep it in for the A vs A+probability comparison below
+
+    # Pass 2: this role's OWN narrowed feature schema with all candidates
+    X_meta = X_meta_full[feature_cols_meta]
+    meta_result = oof_run(X_meta, y_meta, t0_meta, t1_meta, tag=f"barrier_v3b_h{max_holding}")
+    has_oof2 = meta_result["has_oof"]
+    y_true = y_meta.to_numpy()[has_oof2]
+    p_raw = meta_result["oof_proba"][has_oof2]
+    cal = PlattCalibrator.fit(p_raw, y_true)
+    p_cal = cal.apply(p_raw)
+    log_loss_with_p = manual_log_loss(y_true, p_cal)
+
+    # A vs A+probability comparison: refit without p_direction, compare OOF log-loss
+    cols_no_p = [c for c in feature_cols_meta if c != "p_direction"]
+    X_meta_a = X_meta_full[cols_no_p]
+    meta_result_a = oof_run(X_meta_a, y_meta, t0_meta, t1_meta, tag=f"barrier_v3b_h{max_holding}_a_only", want_importance=False)
+    has_oof_a = meta_result_a["has_oof"]
+    y_true_a = y_meta.to_numpy()[has_oof_a]
+    p_raw_a = meta_result_a["oof_proba"][has_oof_a]
+    cal_a = PlattCalibrator.fit(p_raw_a, y_true_a)
+    log_loss_a_only = manual_log_loss(y_true_a, cal_a.apply(p_raw_a))
+
+    keep_p_direction = log_loss_with_p < log_loss_a_only - 1e-4
+    if keep_p_direction:
+        final_cols, final_has_oof, final_p_cal, final_y_true = (
+            feature_cols_meta, has_oof2, p_cal, y_true)
+        log_loss = log_loss_with_p
+    else:
+        final_cols, final_has_oof, final_p_cal, final_y_true = (
+            cols_no_p, has_oof_a, cal_a.apply(p_raw_a), y_true_a)
+        log_loss = log_loss_a_only
+
+    brier = float(np.mean((final_p_cal - final_y_true) ** 2))
+
+    deciles = np.digitize(final_p_cal, np.linspace(0, 1, 11)[1:-1])
+    reliability_curve = []
+    for d in sorted(set(deciles)):
+        m = deciles == d
+        if m.sum() < 20:
+            continue
+        reliability_curve.append({"decile": int(d), "n": int(m.sum()),
+                                  "mean_predicted": float(final_p_cal[m].mean()),
+                                  "actual_win_rate": float(final_y_true[m].mean())})
+
+    max_calib_gap = max((abs(b["mean_predicted"] - b["actual_win_rate"]) for b in reliability_curve), default=1.0)
+    status = "validated" if max_calib_gap < 0.15 else "rejected"
+
+    schema = build_schema(f"barrier_v3b_h{max_holding}", "2026-08-24", final_cols)
+    save_schema(schema, schemas_dir=schemas_dir if schemas_dir else SCHEMAS_DIR)
+    entry = ModelRegistryEntry(
+        model_id=f"barrier_v3b_candidate_h{max_holding}", family="barrier_probability", algorithm="catboost",
+        artifact_path=f"registry/barrier_v3b_candidate_h{max_holding}.json",
+        feature_schema_version=f"{schema.schema_id}__{schema.schema_version}",
+        feature_cols=final_cols,
+        target_definition=(
+            f"P(assumed-side TP before SL within max_holding={max_holding}); direction_side/assumed_side "
+            f"sourced from {dir_oof['model_id']}'s own OOF prediction; timeout counted as non-TP in the "
+            f"denominator, matching decision/ev_formula.py's p_tp/p_sl/p_timeout split; registered as a "
+            f"standalone calibrated-probability specialist (spec section 24) evaluated on log loss/Brier/"
+            f"reliability curve/horizon stability."
+        ),
+        training_config={"n_splits": 6, "embargo_bars": REAL_EMBARGO_BARS,
+                         "direction_side_model_id": dir_oof["model_id"],
+                         "p_direction_log_loss": log_loss_with_p,
+                         "assumed_side_only_log_loss": log_loss_a_only,
+                         "kept_p_direction": keep_p_direction},
+        created_at=pd.Timestamp.utcnow().isoformat(),
+        status=status,
+        metrics={"n_events": int(len(final_y_true)), "log_loss": log_loss, "brier": brier,
+                 "max_calibration_gap": max_calib_gap, "reliability_curve": reliability_curve},
+        lineage=ModelLineage(data_snapshot="data/gold_seed_merged_full6yr.csv"),
+    )
+    os.makedirs(registry_dir, exist_ok=True)
+    with open(os.path.join(registry_dir, f"{entry.model_id}.json"), "w") as f:
+        f.write(entry.model_dump_json(indent=2))
+
+    print(f"[barrier_v3b h={max_holding}] n_events={len(final_y_true):,} log_loss={log_loss:.4f} "
+          f"brier={brier:.4f} max_calib_gap={max_calib_gap:.4f} kept_p_direction={keep_p_direction} -> status={status}")
+    return {"n_events": int(len(final_y_true)), "log_loss": log_loss, "brier": brier,
+            "reliability_curve": reliability_curve, "status": status, "used_p_direction": keep_p_direction}
 
 
 if __name__ == "__main__":
