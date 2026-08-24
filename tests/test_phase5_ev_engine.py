@@ -8,7 +8,7 @@ from research.phase5_ev_engine import replay_and_validate
 
 
 def test_replay_and_validate_on_dry_run_dataset():
-    result = replay_and_validate(max_holding=15, rows=20000)
+    result = replay_and_validate(max_holding=15, rows=600000)
     assert "n_events" in result
     assert set(result["decisions"].keys()) == {"NO_TRADE", "LONG_CANDIDATE", "SHORT_CANDIDATE"}
     assert "baseline_comparison" in result

@@ -14,6 +14,7 @@ class _FakeMarketState:
         self.market_timestamp = datetime.now(timezone.utc)
         self.spread = 0.02
         self.mid = 2000.0
+        self.realized_vol_60s = 0.0006
 
 
 def _base_outputs(direction_model_id="direction_v3_candidate_h15", opportunity_direction_model_id="direction_v3_candidate_h15"):
