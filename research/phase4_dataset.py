@@ -18,6 +18,7 @@ from contracts.feature_schema import FeatureStatus
 
 CUSUM_K = 2.5  # matches features.replay_engine.CUSUM_K / learning.train.CUSUM_K
 HORIZONS = (15, 45, 90)  # very-short / production-match / medium-short, per plan's Global Constraints
+HORIZON_VOL_SCALE = 0.45  # matches learning.train.HORIZON_VOL_SCALE -- same real-evidence-backed constant
 
 
 def select_top_features(importances: list, top_n: int = 20) -> list:
@@ -69,7 +70,6 @@ def assemble_v3_dataset(max_holding: int, rows: int = None) -> dict:
     threshold = np.clip(CUSUM_K * vol_filled * close, 1e-6, None)
     event_mask = cusum_filter(close, threshold)
 
-    HORIZON_VOL_SCALE = 0.45  # matches learning.train.HORIZON_VOL_SCALE -- same real-evidence-backed constant
     vol_tb = vol_filled * np.sqrt(max_holding) * HORIZON_VOL_SCALE
 
     all_cols = baseline_cols + useful_cols

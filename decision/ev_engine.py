@@ -16,6 +16,12 @@ COST_MODEL_VERSION = "v1"
 OPPORTUNITY_MIN_TAKE_PROBABILITY = 0.5
 MARKET_STALENESS_SECONDS = 5.0
 _OK = {"VALIDATED", "CANDIDATE"}
+# Real feature-schema IDs registered by each Phase 4/5 specialist script
+# (e.g. research/phase4_direction.py) via features.registry.build_schema +
+# save_schema. All 15 (5 specialists x 3 horizons) exist on disk under
+# features/registry/schemas/ as "<schema_id>__<schema_version>.json" --
+# verify with: ls features/registry/schemas/*_v3_h*.json
+FEATURE_SCHEMA_VERSION = "2026-08-22"
 
 
 def evaluate(market_state, direction_out: DirectionOutput, opportunity_out: OpportunityOutput,
@@ -58,9 +64,19 @@ def evaluate(market_state, direction_out: DirectionOutput, opportunity_out: Oppo
     else:
         long_gate_ok = direction_out.probability_long > direction_out.probability_short
         short_gate_ok = not long_gate_ok
+        # FIX (targeted correction pass, 2026-08-24): Opportunity's veto used to
+        # be skipped entirely whenever its status was untrusted (UNAVAILABLE/
+        # DATA_LIMITED/INVALID/STALE), meaning an untrusted Opportunity specialist
+        # INCREASED tradeable volume instead of blocking it. Opportunity has no
+        # separate availability gate in this design (unlike Direction/Barrier
+        # above) -- it is always expected to participate once we reach this
+        # branch, so any non-trusted status (or a trusted status with a missing
+        # probability_take) must fail CLOSED: force NO_TRADE on both sides.
         if opportunity_out.model_status in _OK and opportunity_out.probability_take is not None:
             if opportunity_out.probability_take < OPPORTUNITY_MIN_TAKE_PROBABILITY:
                 long_gate_ok = short_gate_ok = False
+        else:
+            long_gate_ok = short_gate_ok = False
         uncertainty = 0.0
         if direction_out.model_status == "CANDIDATE":
             uncertainty += 0.2
@@ -103,6 +119,18 @@ def evaluate(market_state, direction_out: DirectionOutput, opportunity_out: Oppo
     # IDs), so each specialist's own model_id doubles as a placeholder here.
     calibration_ids = {"direction": direction_out.model_id, "opportunity": opportunity_out.model_id,
                         "barrier": barrier_out.model_id, "mae": mae_out.model_id, "mfe": mfe_out.model_id}
+    # FIX (targeted correction pass, 2026-08-24): feature_schema_ids used to be
+    # aliased to calibration_ids (literal dict reuse) -- it must carry actual
+    # feature schema IDs, distinct from the specialist model_ids above. Schema
+    # ID format is "<specialist>_v3_h<horizon>" (mae/mfe use "_quantile_v3_h"),
+    # per features/registry/schemas/*.json filenames.
+    feature_schema_ids = {
+        "direction": f"direction_v3_h{direction_out.horizon}__{FEATURE_SCHEMA_VERSION}",
+        "opportunity": f"opportunity_v3_h{opportunity_out.horizon}__{FEATURE_SCHEMA_VERSION}",
+        "barrier": f"barrier_v3_h{barrier_out.horizon}__{FEATURE_SCHEMA_VERSION}",
+        "mae": f"mae_quantile_v3_h{mae_out.horizon}__{FEATURE_SCHEMA_VERSION}",
+        "mfe": f"mfe_quantile_v3_h{mfe_out.horizon}__{FEATURE_SCHEMA_VERSION}",
+    }
 
     return EVDecision(
         timestamp=now, direction=direction, decision=decision,
@@ -110,7 +138,7 @@ def evaluate(market_state, direction_out: DirectionOutput, opportunity_out: Oppo
         decision_margin=decision_margin, candidate_sl=sl_r, candidate_tp=tp_r, cost_r=cost_r, known_cost_only=True,
         specialist_model_ids={"direction": direction_out.model_id, "opportunity": opportunity_out.model_id,
                                "barrier": barrier_out.model_id, "mae": mae_out.model_id, "mfe": mfe_out.model_id},
-        calibration_ids=calibration_ids, feature_schema_ids=calibration_ids,
+        calibration_ids=calibration_ids, feature_schema_ids=feature_schema_ids,
         ev_formula_version=EV_FORMULA_VERSION, cost_model_version=COST_MODEL_VERSION,
         regime_state=regime_state, timeout_r_provisional_proxy=timeout_r_provisional_proxy,
         decision_reason=final_reason,

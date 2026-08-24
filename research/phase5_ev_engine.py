@@ -7,6 +7,17 @@ distribution, expected-vs-realized R, a baseline comparison (simple
 P(direction)>0.55 gate, no cost/no EV), and a sensitivity/fragility scan
 (spec section 20/12). NO Telegram, no live I/O.
 
+FIX (targeted correction pass, 2026-08-24): realized R for each traded
+event is now looked up via research.phase5_ev_dataset.realized_r_for_direction
+using the ENGINE'S OWN decided direction, not a single direction-agnostic
+stream. The baseline gate always trades long (p_long > threshold), so it
+always uses the "long" realized-R stream.
+
+FIX (targeted correction pass, 2026-08-24): `_ReplayMarketState.mid` and
+`.realized_vol_60s` are now real per-event historical values (close price
+at entry; un-scaled EWMA vol) from research/phase5_ev_dataset.py, not the
+two hardcoded constants (2350.0 / 0.0006) used previously.
+
 Run: /home/jith/.hermes/hermes-agent/venv/bin/python3 -m research.phase5_ev_engine
 """
 from datetime import datetime, timezone
@@ -16,7 +27,7 @@ import tempfile
 
 import numpy as np
 
-from research.phase5_ev_dataset import assemble_replay_dataset
+from research.phase5_ev_dataset import assemble_replay_dataset, realized_r_for_direction
 from research.phase5_timeout_payoff import estimate_timeout_payoff
 from research.phase5_barrier_split import run_barrier_split_candidate
 from decision.ev_engine import evaluate
@@ -26,10 +37,6 @@ SIMPLE_BASELINE_THRESHOLD = 0.55
 
 _REAL_REGISTRY_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "registry")
 
-# FIX 10 (I7+I8, final-review fix wave): registry ModelStatus -> specialist-
-# output-contract model_status. A rejected model's predictions shouldn't be
-# trusted numerically, so it maps to UNAVAILABLE (not a lower-confidence
-# status that still lets its numbers flow into the EV formula).
 _REGISTRY_STATUS_MAP = {"validated": "VALIDATED", "candidate": "CANDIDATE", "rejected": "UNAVAILABLE",
                          "active": "VALIDATED", "archived": "UNAVAILABLE"}
 
@@ -43,34 +50,19 @@ def _real_model_status(model_id: str, registry_dir: str = None) -> str:
 
 
 class _ReplayMarketState:
-    def __init__(self, spread):
+    def __init__(self, spread, mid, vol_60s):
         self.spread = spread
         self.market_timestamp = datetime.now(timezone.utc)
-        # Research replay spread is a fixed research-only placeholder (see
-        # research/phase5_ev_dataset.py's REPRESENTATIVE_SPREAD); pair it with
-        # a plausible fixed vol/mid so decision/ev_cost.py's real cost formula
-        # (FIX 3) can run in this OOS replay too, instead of unconditionally
-        # returning None for every replayed event.
-        self.realized_vol_60s = 0.0006
-        self.mid = 2350.0
+        self.realized_vol_60s = vol_60s
+        self.mid = mid
 
 
 def replay_and_validate(max_holding: int, rows: int = None, registry_dir: str = None) -> dict:
     data = assemble_replay_dataset(max_holding, rows=rows)
     timeout_info = estimate_timeout_payoff(max_holding, rows=rows)
     split_info = run_barrier_split_candidate(max_holding, rows=rows, registry_dir=registry_dir)
-    # Task 2's barrier_split classifier returns log-loss metrics, not probabilities.
-    # The return contract does not expose per-event or aggregate P(sl|not_win) values.
-    # Use 0.5 (least-informative prior) as the fixed stop-loss probability for this replay.
-    # This is a known limitation: Task 2's OOF probabilities are not currently available for
-    # per-event replay use. A future iteration could expose these for finer-grained analysis.
     p_sl_given_not_win = 0.5
 
-    # FIX 10 (I7+I8): read each specialist's REAL committed registry status for
-    # this horizon instead of hardcoding "VALIDATED" for every specialist at
-    # every horizon. This both exercises evaluate()'s status-gating logic (it
-    # never ran before) and makes `uncertainty` genuinely non-zero when a
-    # specialist is CANDIDATE/rejected, so DEFAULT_K is no longer a no-op.
     direction_status = _real_model_status(f"direction_v3_candidate_h{max_holding}")
     opportunity_status = _real_model_status(f"opportunity_v3_candidate_h{max_holding}")
     barrier_status = _real_model_status(f"barrier_v3_candidate_h{max_holding}")
@@ -85,7 +77,9 @@ def replay_and_validate(max_holding: int, rows: int = None, registry_dir: str = 
 
     n = data["n"]
     for i in range(n):
-        ms = _ReplayMarketState(spread=float(data["spread"][i]))
+        mid_i = float(data["mid"][i])
+        vol_i = float(data["vol_60s_proxy"][i])
+        ms = _ReplayMarketState(spread=float(data["spread"][i]), mid=mid_i, vol_60s=vol_i)
         p_long = float(data["p_direction"][i])
         direction = DirectionOutput(model_id=f"direction_v3_candidate_h{max_holding}", horizon=max_holding,
                                      model_status=direction_status, probability_long=p_long,
@@ -106,16 +100,17 @@ def replay_and_validate(max_holding: int, rows: int = None, registry_dir: str = 
         decisions[d.decision] += 1
         if d.decision != "NO_TRADE":
             expected_rs.append(d.ev_adj)
-            realized_rs.append(float(data["realized_r"][i]))
-            perturbed = evaluate(_ReplayMarketState(spread=float(data["spread"][i]) * 1.5), direction, opportunity,
-                                  barrier, p_sl_given_not_win, mae, mfe, timeout_r=timeout_info["timeout_R_mean"] or 0.0,
+            realized_rs.append(realized_r_for_direction(d.direction, i, data))
+            perturbed = evaluate(_ReplayMarketState(spread=float(data["spread"][i]) * 1.5, mid=mid_i, vol_60s=vol_i),
+                                  direction, opportunity, barrier, p_sl_given_not_win, mae, mfe,
+                                  timeout_r=timeout_info["timeout_R_mean"] or 0.0,
                                   timeout_r_provisional_proxy=timeout_info["provisional_proxy"])
             if (perturbed.ev_adj > 0) != (d.ev_adj > 0):
                 fragile_count += 1
 
         if p_long > SIMPLE_BASELINE_THRESHOLD:
             baseline_trades += 1
-            baseline_realized.append(float(data["realized_r"][i]))
+            baseline_realized.append(realized_r_for_direction("long", i, data))
 
     n_traded = len(expected_rs)
     return {
@@ -138,9 +133,7 @@ def replay_and_validate(max_holding: int, rows: int = None, registry_dir: str = 
 if __name__ == "__main__":
     from research.phase4_dataset import HORIZONS
 
-    # Create a temporary directory for barrier_split registry output (research runs must not touch real registry)
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Run all 3 horizons sequentially with temp registry directory
         for h in HORIZONS:
             r = replay_and_validate(h, registry_dir=tmpdir)
             print(f"h={h}: {r}")
