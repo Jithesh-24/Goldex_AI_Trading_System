@@ -48,6 +48,11 @@ def evaluate(market_state, direction_out: DirectionOutput, opportunity_out: Oppo
                             and direction_out.probability_long is not None
                             and direction_out.probability_short is not None)
     barrier_available = barrier_out.model_status in _OK
+    _lineage_specialists = [opportunity_out, barrier_out, mae_out, mfe_out]
+    lineage_mismatch = any(
+        s.model_status in _OK and s.direction_model_id is not None and s.direction_model_id != direction_out.model_id
+        for s in _lineage_specialists
+    )
 
     if stale:
         reason = "MarketState stale"
@@ -57,6 +62,9 @@ def evaluate(market_state, direction_out: DirectionOutput, opportunity_out: Oppo
         long_ev = short_ev = None
     elif not barrier_available:
         reason = "Barrier specialist unavailable"
+        long_ev = short_ev = None
+    elif lineage_mismatch:
+        reason = "Direction side lineage mismatch: a downstream specialist's assumed side was not sourced from this decision's Direction model"
         long_ev = short_ev = None
     elif cost_r is None:
         reason = "cost unavailable (spread missing/stale or no candidate SL)"

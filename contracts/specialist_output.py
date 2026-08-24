@@ -25,6 +25,8 @@ class OpportunityOutput(BaseModel):
     model_status: ModelStatus
     probability_take: Optional[float] = None
     calibrated: bool = False
+    assumed_side: Optional[float] = None
+    direction_model_id: Optional[str] = None
 
 
 class RegimeOutput(BaseModel):
@@ -41,6 +43,8 @@ class MAEOutput(BaseModel):
     q50: Optional[float] = None
     q75: Optional[float] = None
     q90: Optional[float] = None
+    assumed_side: Optional[float] = None
+    direction_model_id: Optional[str] = None
 
 
 class MFEOutput(BaseModel):
@@ -50,6 +54,8 @@ class MFEOutput(BaseModel):
     q50: Optional[float] = None
     q75: Optional[float] = None
     q90: Optional[float] = None
+    assumed_side: Optional[float] = None
+    direction_model_id: Optional[str] = None
 
 
 class BarrierOutput(BaseModel):
@@ -60,6 +66,8 @@ class BarrierOutput(BaseModel):
     p_sl: Optional[float] = None
     p_timeout: Optional[float] = None
     calibrated: bool = False
+    assumed_side: Optional[float] = None
+    direction_model_id: Optional[str] = None
 
 
 class ExecutionOutput(BaseModel):
