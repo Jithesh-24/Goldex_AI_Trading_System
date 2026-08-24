@@ -15,7 +15,8 @@ import time
 import numpy as np
 import pandas as pd
 
-from research.phase4_dataset import assemble_v3_dataset, select_top_features
+from research.phase4_dataset import assemble_v3_dataset
+from research.direction_side import compute_direction_oof
 from research.audit_edge import oof_run, manual_log_loss
 from learning.train import EMBARGO_BARS as REAL_EMBARGO_BARS  # oof_run's PurgedWalkForwardCV always
 # uses this fixed constant (TB_CFG_DIR.max_holding * 2 == 90), NOT this task's own max_holding --
@@ -36,47 +37,29 @@ TOP_N_FEATURES = 20  # per spec section 6: each specialist gets its OWN narrowed
 def run_direction_candidate(max_holding: int, rows: int = None, registry_dir: str = None, schemas_dir: str = None) -> dict:
     if registry_dir is None:
         registry_dir = REGISTRY_DIR
+    oof = compute_direction_oof(max_holding=max_holding, rows=rows)
+    t0_nz, feature_cols, has_oof = oof["t0_nz"], oof["feature_cols"], oof["has_oof"]
+
     ds = assemble_v3_dataset(max_holding=max_holding, rows=rows)
-    feat_v3, close, high, low, vol_tb, t0_idx = (ds["feat_v3"], ds["close"], ds["high"],
-                                                  ds["low"], ds["vol_tb"], ds["t0_idx"])
+    close, t0_idx, vol_tb = ds["close"], ds["t0_idx"], ds["vol_tb"]
     cfg = TripleBarrierConfig(pt_mult=1.0, sl_mult=1.0, max_holding=max_holding, min_vol=1e-6)
-    labels = triple_barrier_labels(close, high, low, t0_idx, vol_tb, cfg, side=None)
+    labels = triple_barrier_labels(close, ds["high"], ds["low"], t0_idx, vol_tb, cfg, side=None)
     y = labels["label"].to_numpy()
     nz = y != 0
-    t0_nz = t0_idx[nz]
-    t1_nz = labels["t1"].to_numpy()[nz]
+    assert np.array_equal(t0_idx[nz], t0_nz), "direction_side event index mismatch"
+    y_bin = (y[nz] == 1).astype(np.int64)
 
-    candidate_cols = ds["baseline_cols"] + ds["useful_cols"]
-    X_full = feat_v3.loc[t0_nz, candidate_cols].reset_index(drop=True)
-    y_bin = pd.Series((y[nz] == 1).astype(np.int64))
-    t0 = pd.Series(t0_nz)
-    t1 = pd.Series(t1_nz)
+    y_true = y_bin[has_oof]
+    p_raw = oof["p_direction_raw"][has_oof]
+    p_cal = oof["p_direction_cal"][has_oof]
+    mean_acc = float(np.mean([f["acc"] for f in oof["fold_metrics"]]))
+
+    oos_log_loss = manual_log_loss(y_true, p_cal)
+    oos_brier = float(np.mean((p_cal - y_true) ** 2))
 
     embargo_bars = REAL_EMBARGO_BARS  # true value oof_run's PurgedWalkForwardCV actually used
     # for every fold below (fixed at TB_CFG_DIR.max_holding*2, independent of this task's
     # max_holding) -- NOT max_holding*2 for THIS horizon, which would misreport what happened.
-    # Pass 1: full candidate pool, OOF importances only (this pass's own metrics are
-    # NOT used for the registry entry -- only for ranking features by cross-validated,
-    # never in-sample, importance).
-    pass1 = oof_run(X_full, y_bin, t0, t1, tag=f"direction_v3_h{max_holding}_pass1", want_importance=True)
-    feature_cols = select_top_features(pass1["importances"], top_n=TOP_N_FEATURES)
-
-    # Pass 2: this role's OWN narrowed feature schema -- these are the metrics that
-    # actually go into the registry entry and the validated/rejected decision.
-    X = X_full[feature_cols]
-    result = oof_run(X, y_bin, t0, t1, tag=f"direction_v3_h{max_holding}", want_importance=False)
-    oof_proba, has_oof = result["oof_proba"], result["has_oof"]
-
-    y_true = y_bin.to_numpy()[has_oof]
-    p_raw = oof_proba[has_oof]
-    cal = PlattCalibrator.fit(p_raw, y_true)  # fit on the OOF set itself is standard for a
-    # research comparison report (all folds' held-out predictions, never in-sample) -- production
-    # deployment would instead use fit_rolling's train/val-only window, not applicable pre-deployment.
-    p_cal = cal.apply(p_raw)
-
-    oos_log_loss = manual_log_loss(y_true, p_cal)
-    oos_brier = float(np.mean((p_cal - y_true) ** 2))
-    mean_acc = float(np.mean([f["acc"] for f in result["fold_metrics"]]))
 
     from sklearn.metrics import roc_auc_score, average_precision_score, precision_recall_curve
     roc_auc = float(roc_auc_score(y_true, p_cal))
@@ -112,7 +95,7 @@ def run_direction_candidate(max_holding: int, rows: int = None, registry_dir: st
         training_config={"n_splits": 6, "embargo_bars": embargo_bars, "catboost": "CATBOOST_KW (learning.train)"},
         created_at=pd.Timestamp.utcnow().isoformat(),
         status=status,
-        metrics={"n_events": int(len(X)), "mean_oof_acc": mean_acc, "oos_log_loss": oos_log_loss,
+        metrics={"n_events": int(len(t0_nz)), "mean_oof_acc": mean_acc, "oos_log_loss": oos_log_loss,
                  "oos_brier": oos_brier, "roc_auc": roc_auc, "pr_auc": pr_auc,
                  "op_region_precision_p55": op_precision, "op_region_recall_p55": op_recall,
                  "mean_economic_r_p55_cutoff": mean_economic_r,
@@ -124,10 +107,10 @@ def run_direction_candidate(max_holding: int, rows: int = None, registry_dir: st
     with open(out_path, "w") as f:
         f.write(entry.model_dump_json(indent=2))
 
-    print(f"[direction h={max_holding}] n_events={len(X):,} mean_oof_acc={mean_acc:.4f} "
+    print(f"[direction h={max_holding}] n_events={len(t0_nz):,} mean_oof_acc={mean_acc:.4f} "
           f"(baseline 0.5115) log_loss={oos_log_loss:.4f} brier={oos_brier:.4f} roc_auc={roc_auc:.4f} "
           f"pr_auc={pr_auc:.4f} mean_economic_r={mean_economic_r:.4f} -> status={status}")
-    return {"n_events": len(X), "mean_oof_acc": mean_acc, "oos_log_loss": oos_log_loss,
+    return {"n_events": len(t0_nz), "mean_oof_acc": mean_acc, "oos_log_loss": oos_log_loss,
             "oos_brier": oos_brier, "status": status}
 
 
