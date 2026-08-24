@@ -128,11 +128,17 @@ def oof_run(X, y_bin, t0, t1, tag, want_importance=True):
             "has_oof": has_oof, "fold_metrics": fold_metrics, "importances": importances}
 
 
-def build_meta(close, high, low, vol, t0_nz, oof_pred, has_oof):
-    side = np.where(oof_pred[has_oof] == 1, 1.0, -1.0)
+def build_meta(close, high, low, vol, t0_nz, side, has_oof):
+    """Builds the meta-labeling target for a caller-supplied side.
+    `side` must already be a signed +-1.0 array aligned to t0_nz's full
+    index space (e.g. research.direction_side.compute_direction_oof's
+    `side` output) -- this function does NOT derive a side from a raw
+    classifier prediction anymore (Phase 5A: every downstream specialist
+    conditions on Direction's side, never its own)."""
+    side_sub = side[has_oof]
     t0_sub = t0_nz[has_oof]
-    meta_labels = triple_barrier_labels(close, high, low, t0_sub, vol, TB_CFG_TRADE, side=side)
-    return side, meta_labels
+    meta_labels = triple_barrier_labels(close, high, low, t0_sub, vol, TB_CFG_TRADE, side=side_sub)
+    return side_sub, meta_labels
 
 
 @numba.njit(cache=True)
@@ -269,7 +275,8 @@ def main():
     prim = oof_run(X_full, y_bin, t0, t1, tag="baseline-primary")
     results["primary_baseline"] = {"fold_metrics": prim["fold_metrics"]}
 
-    side, meta_labels = build_meta(close, high, low, vol_tb, t0_nz, prim["oof_pred"], prim["has_oof"])
+    side_in = np.where(prim["oof_pred"] == 1, 1.0, -1.0)
+    side, meta_labels = build_meta(close, high, low, vol_tb, t0_nz, side_in, prim["has_oof"])
     has_oof = prim["has_oof"]
     X_meta = X_full.loc[has_oof].reset_index(drop=True)
     X_meta["assumed_side"] = side
@@ -503,7 +510,8 @@ def main():
     cols_no_tv = [c for c in feature_cols if c != "tick_volume"]
     X_no_tv = feat.loc[t0_nz, cols_no_tv].reset_index(drop=True)
     prim_ntv = oof_run(X_no_tv, y_bin, t0, t1, tag="no-tickvol-primary", want_importance=False)
-    side_ntv, meta_labels_ntv = build_meta(close, high, low, vol_tb, t0_nz, prim_ntv["oof_pred"], prim_ntv["has_oof"])
+    side_in_ntv = np.where(prim_ntv["oof_pred"] == 1, 1.0, -1.0)
+    side_ntv, meta_labels_ntv = build_meta(close, high, low, vol_tb, t0_nz, side_in_ntv, prim_ntv["has_oof"])
     has_oof_ntv = prim_ntv["has_oof"]
     X_meta_ntv = X_no_tv.loc[has_oof_ntv].reset_index(drop=True)
     X_meta_ntv["assumed_side"] = side_ntv
@@ -532,7 +540,8 @@ def main():
     cols_no_sp = [c for c in feature_cols if c != "spread"]
     X_no_sp = feat.loc[t0_nz, cols_no_sp].reset_index(drop=True)
     prim_nsp = oof_run(X_no_sp, y_bin, t0, t1, tag="no-spread-primary", want_importance=False)
-    side_nsp, meta_labels_nsp = build_meta(close, high, low, vol_tb, t0_nz, prim_nsp["oof_pred"], prim_nsp["has_oof"])
+    side_in_nsp = np.where(prim_nsp["oof_pred"] == 1, 1.0, -1.0)
+    side_nsp, meta_labels_nsp = build_meta(close, high, low, vol_tb, t0_nz, side_in_nsp, prim_nsp["has_oof"])
     has_oof_nsp = prim_nsp["has_oof"]
     X_meta_nsp = X_no_sp.loc[has_oof_nsp].reset_index(drop=True)
     X_meta_nsp["assumed_side"] = side_nsp
