@@ -1,0 +1,26 @@
+{
+  "schema_id": "mae_quantile_v3b_h45",
+  "schema_version": "2026-08-24",
+  "feature_ids": [
+    "hour_sin",
+    "fracdiff_log_price",
+    "assumed_side",
+    "excursion_from_recent_distribution_20",
+    "vol_shock_zscore",
+    "displacement_from_equilibrium_60",
+    "hurst_120",
+    "range_position_20",
+    "tick_volume",
+    "vol_compression_ratio",
+    "dist_from_high_20",
+    "hour_cos",
+    "hurst_480",
+    "range_position_60",
+    "vol_acceleration_30",
+    "kalman_residual_z",
+    "ret_1",
+    "vol_of_vol_60",
+    "jump_component_60"
+  ],
+  "created_at": "2026-08-24T13:57:50.589893Z"
+}

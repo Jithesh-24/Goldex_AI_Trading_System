@@ -1,0 +1,91 @@
+{
+  "model_id": "barrier_v3b_candidate_h90",
+  "family": "barrier_probability",
+  "algorithm": "catboost",
+  "artifact_path": "registry/barrier_v3b_candidate_h90.json",
+  "feature_schema_version": "barrier_v3b_h90__2026-08-24",
+  "feature_cols": [
+    "assumed_side",
+    "hour_sin",
+    "hour_cos",
+    "vol_compression_ratio",
+    "vol_acceleration_30",
+    "ewma_vol",
+    "fracdiff_log_price",
+    "vol_of_vol_60",
+    "yz_vol_240",
+    "bipower_var_60",
+    "rs_vol_240",
+    "displacement_from_equilibrium_60",
+    "vol_shock_zscore",
+    "range_position_60",
+    "tick_volume",
+    "return_percentile_rank_60",
+    "range_width_ratio_20_60",
+    "rs_vol_20",
+    "gk_vol_240"
+  ],
+  "target_definition": "P(assumed-side TP before SL within max_holding=90); direction_side/assumed_side sourced from direction_v3_candidate_h90's own OOF prediction; timeout counted as non-TP in the denominator, matching decision/ev_formula.py's p_tp/p_sl/p_timeout split; registered as a standalone calibrated-probability specialist (spec section 24) evaluated on log loss/Brier/reliability curve/horizon stability.",
+  "training_config": {
+    "n_splits": 6,
+    "embargo_bars": 90,
+    "direction_side_model_id": "direction_v3_candidate_h90",
+    "p_direction_log_loss": 0.6504643744052451,
+    "assumed_side_only_log_loss": 0.6503618662625174,
+    "kept_p_direction": false
+  },
+  "training_period": null,
+  "validation_period": null,
+  "created_at": "2026-08-24T14:15:26.631059Z",
+  "status": "validated",
+  "is_champion": false,
+  "metrics": {
+    "n_events": 210589,
+    "log_loss": 0.6503618662625174,
+    "brier": 0.2294587352344479,
+    "max_calibration_gap": 0.06801258389869957,
+    "reliability_curve": [
+      {
+        "decile": 1,
+        "n": 2859,
+        "mean_predicted": 0.18244028718240066,
+        "actual_win_rate": 0.1955229101084295
+      },
+      {
+        "decile": 2,
+        "n": 42978,
+        "mean_predicted": 0.2576106603794886,
+        "actual_win_rate": 0.251105216622458
+      },
+      {
+        "decile": 3,
+        "n": 47175,
+        "mean_predicted": 0.3413547938511895,
+        "actual_win_rate": 0.34463169051404346
+      },
+      {
+        "decile": 4,
+        "n": 67065,
+        "mean_predicted": 0.4584738313268324,
+        "actual_win_rate": 0.4645194960113323
+      },
+      {
+        "decile": 5,
+        "n": 48758,
+        "mean_predicted": 0.5326494750673477,
+        "actual_win_rate": 0.528569670618155
+      },
+      {
+        "decile": 6,
+        "n": 1753,
+        "mean_predicted": 0.6202088189243699,
+        "actual_win_rate": 0.5521962350256703
+      }
+    ]
+  },
+  "lineage": {
+    "data_snapshot": "data/gold_seed_merged_full6yr.csv",
+    "code_commit": null,
+    "config_snapshot": null
+  }
+}

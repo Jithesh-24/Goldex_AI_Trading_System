@@ -1,0 +1,83 @@
+{
+  "model_id": "mae_quantile_v3b_candidate_h90",
+  "family": "mae_quantile",
+  "algorithm": "catboost_quantile",
+  "artifact_path": "registry/mae_quantile_v3b_candidate_h90.json",
+  "feature_schema_version": "mae_quantile_v3b_h90__2026-08-24",
+  "feature_cols": [
+    "hour_sin",
+    "hour_cos",
+    "p_direction",
+    "fracdiff_log_price",
+    "assumed_side",
+    "vol_compression_ratio",
+    "vol_acceleration_30",
+    "vol_of_vol_60",
+    "hurst_480",
+    "ret_1",
+    "ewma_vol",
+    "range_width_ratio_20_60",
+    "kalman_residual_z",
+    "excursion_from_recent_distribution_20",
+    "tick_volume",
+    "jump_component_60",
+    "dist_from_low_20",
+    "kalman_velocity",
+    "hurst_120",
+    "bipower_var_60"
+  ],
+  "target_definition": "mae_R: max adverse excursion in R-multiples up to t1, direction_side/assumed_side sourced from direction_v3_candidate_h90's own OOF prediction, max_holding=90",
+  "training_config": {
+    "quantiles": [
+      0.5,
+      0.75,
+      0.9
+    ],
+    "n_splits": 6,
+    "embargo_bars": 180,
+    "direction_side_model_id": "direction_v3_candidate_h90",
+    "pinball_loss_q0.75_with_p": 0.18643791959545564,
+    "pinball_loss_q0.75_assumed_side_only": 0.18686186982974748,
+    "kept_p_direction": true
+  },
+  "training_period": null,
+  "validation_period": null,
+  "created_at": "2026-08-24T14:21:54.334490Z",
+  "status": "validated",
+  "is_champion": false,
+  "metrics": {
+    "n_events": 251297,
+    "global_coverage": {
+      "0.5": 0.4864119208505667,
+      "0.75": 0.7326973393672034,
+      "0.9": 0.8883132547284046
+    },
+    "global_pinball": {
+      "0.5": 0.25453861981318526,
+      "0.75": 0.18643791959545564,
+      "0.9": 0.10164080862980114
+    },
+    "per_regime_coverage": {
+      "0.5": {
+        "low": 0.49040657479764477,
+        "medium": 0.48537688848194327,
+        "high": 0.4839068319528601
+      },
+      "0.75": {
+        "low": 0.7491727127254649,
+        "medium": 0.7416179678453128,
+        "high": 0.7087525710156206
+      },
+      "0.9": {
+        "low": 0.9032268087684683,
+        "medium": 0.895604987477446,
+        "high": 0.8674467730279616
+      }
+    }
+  },
+  "lineage": {
+    "data_snapshot": "data/gold_seed_merged_full6yr.csv",
+    "code_commit": null,
+    "config_snapshot": null
+  }
+}

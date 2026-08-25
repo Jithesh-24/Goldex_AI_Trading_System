@@ -1,0 +1,26 @@
+{
+  "schema_id": "mfe_quantile_v3b_h90",
+  "schema_version": "2026-08-24",
+  "feature_ids": [
+    "hour_sin",
+    "hour_cos",
+    "vol_acceleration_30",
+    "vol_compression_ratio",
+    "assumed_side",
+    "fracdiff_log_price",
+    "ewma_vol",
+    "displacement_from_equilibrium_60",
+    "range_width_ratio_20_60",
+    "tick_volume",
+    "vol_of_vol_60",
+    "range_position_60",
+    "run_length_signed",
+    "vol_shock_zscore",
+    "excursion_from_recent_distribution_20",
+    "hurst_480",
+    "bipower_var_60",
+    "ret_1",
+    "kalman_residual_z"
+  ],
+  "created_at": "2026-08-24T14:28:26.047645Z"
+}

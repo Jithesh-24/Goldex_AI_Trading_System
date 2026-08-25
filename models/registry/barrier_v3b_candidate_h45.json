@@ -1,0 +1,86 @@
+{
+  "model_id": "barrier_v3b_candidate_h45",
+  "family": "barrier_probability",
+  "algorithm": "catboost",
+  "artifact_path": "registry/barrier_v3b_candidate_h45.json",
+  "feature_schema_version": "barrier_v3b_h45__2026-08-24",
+  "feature_cols": [
+    "assumed_side",
+    "p_direction",
+    "hour_sin",
+    "vol_compression_ratio",
+    "vol_acceleration_30",
+    "fracdiff_log_price",
+    "vol_shock_zscore",
+    "hour_cos",
+    "yz_vol_240",
+    "range_position_60",
+    "displacement_from_equilibrium_60",
+    "excursion_from_recent_distribution_20",
+    "gk_vol_240",
+    "bipower_var_60",
+    "ewma_vol",
+    "vol_of_vol_60",
+    "dist_from_low_20",
+    "kalman_residual_z",
+    "rs_vol_240",
+    "range_position_20"
+  ],
+  "target_definition": "P(assumed-side TP before SL within max_holding=45); direction_side/assumed_side sourced from direction_v3_candidate_h45's own OOF prediction; timeout counted as non-TP in the denominator, matching decision/ev_formula.py's p_tp/p_sl/p_timeout split; registered as a standalone calibrated-probability specialist (spec section 24) evaluated on log loss/Brier/reliability curve/horizon stability.",
+  "training_config": {
+    "n_splits": 6,
+    "embargo_bars": 90,
+    "direction_side_model_id": "direction_v3_candidate_h45",
+    "p_direction_log_loss": 0.6725593366263426,
+    "assumed_side_only_log_loss": 0.6726935583492286,
+    "kept_p_direction": true
+  },
+  "training_period": null,
+  "validation_period": null,
+  "created_at": "2026-08-24T13:51:30.041036Z",
+  "status": "validated",
+  "is_champion": false,
+  "metrics": {
+    "n_events": 211949,
+    "log_loss": 0.6725593366263426,
+    "brier": 0.23979616295184478,
+    "max_calibration_gap": 0.05175704540519599,
+    "reliability_curve": [
+      {
+        "decile": 2,
+        "n": 64,
+        "mean_predicted": 0.291992954594804,
+        "actual_win_rate": 0.34375
+      },
+      {
+        "decile": 3,
+        "n": 76416,
+        "mean_predicted": 0.3742138862595654,
+        "actual_win_rate": 0.37298471524288107
+      },
+      {
+        "decile": 4,
+        "n": 19059,
+        "mean_predicted": 0.4137562539050717,
+        "actual_win_rate": 0.4118789023558424
+      },
+      {
+        "decile": 5,
+        "n": 102189,
+        "mean_predicted": 0.5748382507127299,
+        "actual_win_rate": 0.5778214876356556
+      },
+      {
+        "decile": 6,
+        "n": 14215,
+        "mean_predicted": 0.6123966548353458,
+        "actual_win_rate": 0.599788955328878
+      }
+    ]
+  },
+  "lineage": {
+    "data_snapshot": "data/gold_seed_merged_full6yr.csv",
+    "code_commit": null,
+    "config_snapshot": null
+  }
+}

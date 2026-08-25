@@ -1,0 +1,27 @@
+{
+  "schema_id": "barrier_v3b_h45",
+  "schema_version": "2026-08-24",
+  "feature_ids": [
+    "assumed_side",
+    "p_direction",
+    "hour_sin",
+    "vol_compression_ratio",
+    "vol_acceleration_30",
+    "fracdiff_log_price",
+    "vol_shock_zscore",
+    "hour_cos",
+    "yz_vol_240",
+    "range_position_60",
+    "displacement_from_equilibrium_60",
+    "excursion_from_recent_distribution_20",
+    "gk_vol_240",
+    "bipower_var_60",
+    "ewma_vol",
+    "vol_of_vol_60",
+    "dist_from_low_20",
+    "kalman_residual_z",
+    "rs_vol_240",
+    "range_position_20"
+  ],
+  "created_at": "2026-08-24T13:51:30.018274Z"
+}

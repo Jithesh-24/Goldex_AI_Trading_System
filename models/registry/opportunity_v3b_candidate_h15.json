@@ -1,0 +1,53 @@
+{
+  "model_id": "opportunity_v3b_candidate_h15",
+  "family": "opportunity_meta",
+  "algorithm": "catboost",
+  "artifact_path": "registry/opportunity_v3b_candidate_h15.json",
+  "feature_schema_version": "opportunity_v3b_h15__2026-08-24",
+  "feature_cols": [
+    "assumed_side",
+    "sign_ret_1",
+    "run_length_signed",
+    "return_percentile_rank_60",
+    "ret_1",
+    "hour_sin",
+    "vol_shock_zscore",
+    "fracdiff_log_price",
+    "tick_volume",
+    "displacement_from_equilibrium_60",
+    "hurst_480",
+    "hurst_120",
+    "excursion_from_recent_distribution_20",
+    "range_width_ratio_20_60",
+    "tail_probability_60",
+    "ret_5",
+    "vol_of_vol_60",
+    "kalman_residual_z",
+    "hour_cos"
+  ],
+  "target_definition": "P(TP before SL | features, direction_side); direction_side/assumed_side sourced from direction_v3_candidate_h15's own OOF prediction, max_holding=15, pt=1.5*vol_tb sl=1.0*vol_tb",
+  "training_config": {
+    "n_splits": 6,
+    "embargo_bars": 90,
+    "direction_side_model_id": "direction_v3_candidate_h15",
+    "p_direction_log_loss": 0.6743000962008988,
+    "assumed_side_only_log_loss": 0.6743450029555311,
+    "kept_p_direction": false
+  },
+  "training_period": null,
+  "validation_period": null,
+  "created_at": "2026-08-24T13:24:26.185984Z",
+  "status": "validated",
+  "is_champion": false,
+  "metrics": {
+    "n_events": 213022,
+    "meta_win_rate": 0.5103599248551732,
+    "oos_log_loss": 0.6743450029555311,
+    "baseline_meta_win_rate": 0.4887
+  },
+  "lineage": {
+    "data_snapshot": "data/gold_seed_merged_full6yr.csv",
+    "code_commit": null,
+    "config_snapshot": null
+  }
+}
