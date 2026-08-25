@@ -47,7 +47,8 @@ def run_barrier_split_candidate(max_holding: int, rows: int = None, registry_dir
     t1 = pd.Series(t1_nz)
 
     prim = oof_run(X_full, y_bin, t0, t1, tag=f"barrier_split_v3_h{max_holding}_primary", want_importance=False)
-    side, meta_labels = build_meta(close, high, low, vol_tb, t0_nz, prim["oof_pred"], prim["has_oof"])
+    side_in = np.where(prim["oof_pred"] == 1, 1.0, -1.0)
+    side, meta_labels = build_meta(close, high, low, vol_tb, t0_nz, side_in, prim["has_oof"])
     has_oof = prim["has_oof"]
     if not has_oof.any():
         return {"n_events": 0, "status": "rejected"}

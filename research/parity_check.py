@@ -115,7 +115,8 @@ def main():
     # ---- honest OOF for direct side-by-side comparison ----
     print("\n== recomputing honest OOF (same methodology as Phase 1A) for comparison ==")
     prim = oof_run(X_full, y_bin, t0, t1, tag="parity-primary", want_importance=False)
-    side, meta_labels = build_meta(close, high, low, vol_tb, t0_nz, prim["oof_pred"], prim["has_oof"])
+    side_in = np.where(prim["oof_pred"] == 1, 1.0, -1.0)
+    side, meta_labels = build_meta(close, high, low, vol_tb, t0_nz, side_in, prim["has_oof"])
     has_oof = prim["has_oof"]
     X_meta = X_full.loc[has_oof].reset_index(drop=True)
     X_meta["assumed_side"] = side

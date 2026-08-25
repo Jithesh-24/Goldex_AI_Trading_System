@@ -44,7 +44,8 @@ def main():
     prim = oof_run(X, y_bin, t0, t1, tag="v3-primary-full", want_importance=True)
     print(f"primary mean acc: {np.mean([f['acc'] for f in prim['fold_metrics']]):.4f}")
 
-    side, meta_labels = build_meta(close, high, low, vol_tb, t0_nz, prim["oof_pred"], prim["has_oof"])
+    side_in = np.where(prim["oof_pred"] == 1, 1.0, -1.0)
+    side, meta_labels = build_meta(close, high, low, vol_tb, t0_nz, side_in, prim["has_oof"])
     has_oof = prim["has_oof"]
     X_meta = X.loc[has_oof].reset_index(drop=True)
     X_meta["assumed_side"] = side

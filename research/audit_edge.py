@@ -135,7 +135,14 @@ def build_meta(close, high, low, vol, t0_nz, side, has_oof):
     `side` output) -- this function does NOT derive a side from a raw
     classifier prediction anymore (Phase 5A: every downstream specialist
     conditions on Direction's side, never its own)."""
-    side_sub = side[has_oof]
+    side_at_oof = side[has_oof]
+    assert np.all(np.isin(side_at_oof, (-1.0, 1.0))), (
+        "build_meta's `side` argument must already be a signed +-1.0 array "
+        "(e.g. research.direction_side.compute_direction_oof's `side` output, "
+        "or np.where(oof_pred == 1, 1.0, -1.0)) -- NOT a raw 0/1 classifier "
+        "prediction. Passing raw oof_pred silently mislabels every short event."
+    )
+    side_sub = side_at_oof
     t0_sub = t0_nz[has_oof]
     meta_labels = triple_barrier_labels(close, high, low, t0_sub, vol, TB_CFG_TRADE, side=side_sub)
     return side_sub, meta_labels
