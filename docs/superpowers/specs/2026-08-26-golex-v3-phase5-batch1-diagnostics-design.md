@@ -133,6 +133,39 @@ technically has `assumed_side` as a feature but never learned to use it
 differently for longs vs. shorts) — without requiring new feature-importance
 extraction machinery beyond what training already computed.
 
+## 2a. Sample size and uncertainty reporting (mandatory for D1, D3, D5)
+
+Every statistic reported by D1, D3, and D5 must be accompanied by:
+
+- **Sample size `n`**, and which population it was computed over — the three
+  populations must be visually/structurally distinguishable in the report,
+  never collapsed into one unlabeled number:
+  - **OOS population**: every event with a valid OOF prediction (`has_oof`),
+    regardless of side or whether it was ever traded.
+  - **Traded population**: the subset that actually produced a trade in the
+    Phase 5A full-history replay (h=15 only — h=45/h=90 have no traded
+    population, per §2's D5 N/A rule, restated here since it also governs
+    D1/D3 wherever a traded-subset breakdown is requested).
+  - **Side-conditioned population**: the OOS population split by
+    `side == +1` vs `side == -1`.
+- **A confidence interval, wherever practical**, specifically for: point-biserial
+  correlation (Fisher z-transform CI), calibration slope (from the Newton's-method
+  logistic fit's own coefficient standard errors, or a bootstrap CI if those
+  aren't readily available from the existing fit routine), and D4's
+  contradiction rates (Wilson or bootstrap CI on the proportion — the same
+  `wilson_ci` helper already used elsewhere in `research/audit_edge.py` is
+  the natural reuse here).
+
+Rationale (explicit, since it changes how results must be read): at 200k+
+observations, a tiny, practically meaningless effect can still be
+statistically "significant" in the sense of a narrow confidence interval
+excluding zero. The point of requiring `n` and CIs together is to let the
+report distinguish *effect size* from *sample size* — a correlation of 0.03
+with a tight CI is real but small; a correlation of 0.03 with a wide CI
+spanning zero is not even reliably real. Every number in the final report
+must carry enough context to tell those two situations apart without the
+reader having to ask.
+
 ## 3. Stop-early rule (corrected)
 
 A diagnostic result may be flagged in the running report as **decisive** —
