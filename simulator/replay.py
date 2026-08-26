@@ -148,7 +148,11 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
             position_view=position_view.__dict__, action=None, account_state=_account_dict(account),
             realized_pnl=net_pnl, cost_amount=cost_amount,
             outcome=PositionOutcome.END_OF_REPLAY_FORCED_CLOSE, cost_r=cost_r,
-            gap_type="NORMAL",  # No prior gap context when force-closing at end of data
+            # This record is for bar n-1, the same bar the loop just classified.
+            # Reuse that classification rather than hardcoding "NORMAL", which
+            # would mislabel a position opened on a WEEKEND_CLOSURE bar and make
+            # the DECIDE and POSITION_CLOSED records for the same bar disagree.
+            gap_type=gap_type,
         )
         write_tag_guard(environment_tag, close_record)
         recorder.record(close_record)
