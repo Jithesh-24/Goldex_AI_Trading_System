@@ -517,6 +517,154 @@
               "observed_rate": null
             }
           ]
+        },
+        "calibration_vs_meta_label": {
+          "n": 210972,
+          "brier": 0.24068088998220546,
+          "ece": 0.004916002602749338,
+          "calibration": {
+            "intercept": 0.0070546487739272905,
+            "slope": 1.0085521786133897,
+            "intercept_se": 0.004475859647042392,
+            "slope_se": 0.011583298061537925,
+            "n": 210972
+          },
+          "reliability_bins": [
+            {
+              "bin": 0,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 1,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 2,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 3,
+              "n": 5094,
+              "mean_predicted": 0.39464518393857606,
+              "observed_rate": 0.43129171574401254
+            },
+            {
+              "bin": 4,
+              "n": 99317,
+              "mean_predicted": 0.41936968983906975,
+              "observed_rate": 0.4174813979479847
+            },
+            {
+              "bin": 5,
+              "n": 30791,
+              "mean_predicted": 0.5950419847502914,
+              "observed_rate": 0.6119970121139294
+            },
+            {
+              "bin": 6,
+              "n": 75770,
+              "mean_predicted": 0.6108071761223396,
+              "observed_rate": 0.608948132506269
+            },
+            {
+              "bin": 7,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 8,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 9,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            }
+          ]
+        },
+        "directional_touch_agreement": {
+          "n": 210972,
+          "brier": 0.2583872483321275,
+          "ece": 0.09264231952347181,
+          "calibration": {
+            "intercept": 0.07337238978830182,
+            "slope": 0.013536416717010074,
+            "intercept_se": 0.004401025634603755,
+            "slope_se": 0.011363625607768513,
+            "n": 210972
+          },
+          "reliability_bins": [
+            {
+              "bin": 0,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 1,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 2,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 3,
+              "n": 5094,
+              "mean_predicted": 0.39464518393857606,
+              "observed_rate": 0.5337652139772281
+            },
+            {
+              "bin": 4,
+              "n": 99317,
+              "mean_predicted": 0.41936968983906975,
+              "observed_rate": 0.5163164412940383
+            },
+            {
+              "bin": 5,
+              "n": 30791,
+              "mean_predicted": 0.5950419847502914,
+              "observed_rate": 0.5240817121886265
+            },
+            {
+              "bin": 6,
+              "n": 75770,
+              "mean_predicted": 0.6108071761223396,
+              "observed_rate": 0.5181206282169725
+            },
+            {
+              "bin": 7,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 8,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 9,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            }
+          ]
         }
       },
       "d6": {
@@ -1009,7 +1157,155 @@
             ]
           }
         },
-        "traded_subset": "N/A (zero trades at this horizon)"
+        "traded_subset": "N/A (zero trades at this horizon)",
+        "calibration_vs_meta_label": {
+          "n": 209128,
+          "brier": 0.2400794840715109,
+          "ece": 0.00374757872101188,
+          "calibration": {
+            "intercept": 0.004003124705318193,
+            "slope": 0.9705413334214297,
+            "intercept_se": 0.0044629953597283565,
+            "slope_se": 0.010748451474187938,
+            "n": 209128
+          },
+          "reliability_bins": [
+            {
+              "bin": 0,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 1,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 2,
+              "n": 8,
+              "mean_predicted": 0.298015458803097,
+              "observed_rate": 0.125
+            },
+            {
+              "bin": 3,
+              "n": 72194,
+              "mean_predicted": 0.37116891347635383,
+              "observed_rate": 0.37329972019835445
+            },
+            {
+              "bin": 4,
+              "n": 12700,
+              "mean_predicted": 0.4111942156482858,
+              "observed_rate": 0.42023622047244097
+            },
+            {
+              "bin": 5,
+              "n": 106757,
+              "mean_predicted": 0.5769677614013541,
+              "observed_rate": 0.579072098316738
+            },
+            {
+              "bin": 6,
+              "n": 17469,
+              "mean_predicted": 0.6085077509454934,
+              "observed_rate": 0.5919629057187017
+            },
+            {
+              "bin": 7,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 8,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 9,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            }
+          ]
+        },
+        "directional_touch_agreement": {
+          "n": 209128,
+          "brier": 0.2610587339940841,
+          "ece": 0.09893295017059234,
+          "calibration": {
+            "intercept": 0.05189212095162599,
+            "slope": -0.023392819547686763,
+            "intercept_se": 0.004375909720742281,
+            "slope_se": 0.010463836790703429,
+            "n": 209128
+          },
+          "reliability_bins": [
+            {
+              "bin": 0,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 1,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 2,
+              "n": 8,
+              "mean_predicted": 0.298015458803097,
+              "observed_rate": 0.375
+            },
+            {
+              "bin": 3,
+              "n": 72194,
+              "mean_predicted": 0.37116891347635383,
+              "observed_rate": 0.5143640745768346
+            },
+            {
+              "bin": 4,
+              "n": 12700,
+              "mean_predicted": 0.4111942156482858,
+              "observed_rate": 0.5314173228346457
+            },
+            {
+              "bin": 5,
+              "n": 106757,
+              "mean_predicted": 0.5769677614013541,
+              "observed_rate": 0.5101211161797353
+            },
+            {
+              "bin": 6,
+              "n": 17469,
+              "mean_predicted": 0.6085077509454934,
+              "observed_rate": 0.5118781842120328
+            },
+            {
+              "bin": 7,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 8,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 9,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            }
+          ]
+        }
       },
       "d6": {
         "horizon": 45,
@@ -1501,7 +1797,155 @@
             ]
           }
         },
-        "traded_subset": "N/A (zero trades at this horizon)"
+        "traded_subset": "N/A (zero trades at this horizon)",
+        "calibration_vs_meta_label": {
+          "n": 207109,
+          "brier": 0.22948210171049155,
+          "ece": 0.012188551923056342,
+          "calibration": {
+            "intercept": -0.01748977431109801,
+            "slope": 0.9035706381089631,
+            "intercept_se": 0.005740000740259915,
+            "slope_se": 0.009157569375182991,
+            "n": 207109
+          },
+          "reliability_bins": [
+            {
+              "bin": 0,
+              "n": 1,
+              "mean_predicted": 0.09841948264836163,
+              "observed_rate": 0.0
+            },
+            {
+              "bin": 1,
+              "n": 6955,
+              "mean_predicted": 0.18196511992637654,
+              "observed_rate": 0.19683680805176132
+            },
+            {
+              "bin": 2,
+              "n": 47560,
+              "mean_predicted": 0.2559325438684702,
+              "observed_rate": 0.26562237174095876
+            },
+            {
+              "bin": 3,
+              "n": 40071,
+              "mean_predicted": 0.33802656255851654,
+              "observed_rate": 0.3568416061490854
+            },
+            {
+              "bin": 4,
+              "n": 57486,
+              "mean_predicted": 0.45902458362275644,
+              "observed_rate": 0.4656090178478238
+            },
+            {
+              "bin": 5,
+              "n": 52587,
+              "mean_predicted": 0.5365961436028814,
+              "observed_rate": 0.5237606252495864
+            },
+            {
+              "bin": 6,
+              "n": 2446,
+              "mean_predicted": 0.6207819743436033,
+              "observed_rate": 0.5588716271463614
+            },
+            {
+              "bin": 7,
+              "n": 3,
+              "mean_predicted": 0.705021917644944,
+              "observed_rate": 0.3333333333333333
+            },
+            {
+              "bin": 8,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 9,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            }
+          ]
+        },
+        "directional_touch_agreement": {
+          "n": 207109,
+          "brier": 0.2760938781413342,
+          "ece": 0.12839789096674833,
+          "calibration": {
+            "intercept": 0.02924353086375969,
+            "slope": -0.015432614663491112,
+            "intercept_se": 0.005690210820694996,
+            "slope_se": 0.00840572708169672,
+            "n": 207109
+          },
+          "reliability_bins": [
+            {
+              "bin": 0,
+              "n": 1,
+              "mean_predicted": 0.09841948264836163,
+              "observed_rate": 0.0
+            },
+            {
+              "bin": 1,
+              "n": 6955,
+              "mean_predicted": 0.18196511992637654,
+              "observed_rate": 0.5068296189791517
+            },
+            {
+              "bin": 2,
+              "n": 47560,
+              "mean_predicted": 0.2559325438684702,
+              "observed_rate": 0.5092094196804037
+            },
+            {
+              "bin": 3,
+              "n": 40071,
+              "mean_predicted": 0.33802656255851654,
+              "observed_rate": 0.5143869631404258
+            },
+            {
+              "bin": 4,
+              "n": 57486,
+              "mean_predicted": 0.45902458362275644,
+              "observed_rate": 0.5125247886441916
+            },
+            {
+              "bin": 5,
+              "n": 52587,
+              "mean_predicted": 0.5365961436028814,
+              "observed_rate": 0.5010744100252914
+            },
+            {
+              "bin": 6,
+              "n": 2446,
+              "mean_predicted": 0.6207819743436033,
+              "observed_rate": 0.5081766148814391
+            },
+            {
+              "bin": 7,
+              "n": 3,
+              "mean_predicted": 0.705021917644944,
+              "observed_rate": 0.3333333333333333
+            },
+            {
+              "bin": 8,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            },
+            {
+              "bin": 9,
+              "n": 0,
+              "mean_predicted": null,
+              "observed_rate": null
+            }
+          ]
+        }
       },
       "d6": {
         "horizon": 90,
@@ -1569,8 +2013,8 @@
       },
       {
         "explanation": "calibration",
-        "evidence": "D5 global calibration slope=0.013536416717010074 (ideal=1.0), traded_subset=computed",
-        "decisive": true
+        "evidence": "D5 calibration_vs_meta_label slope=1.0085521786133897 (ideal=1.0), traded_subset=computed",
+        "decisive": false
       },
       {
         "explanation": "disagreement",
@@ -1596,8 +2040,8 @@
       },
       {
         "explanation": "calibration",
-        "evidence": "D5 global calibration slope=-0.023392819547686763 (ideal=1.0), traded_subset=N/A (zero trades at this horizon)",
-        "decisive": true
+        "evidence": "D5 calibration_vs_meta_label slope=0.9705413334214297 (ideal=1.0), traded_subset=N/A (zero trades at this horizon)",
+        "decisive": false
       },
       {
         "explanation": "disagreement",
@@ -1623,8 +2067,8 @@
       },
       {
         "explanation": "calibration",
-        "evidence": "D5 global calibration slope=-0.015432614663491112 (ideal=1.0), traded_subset=N/A (zero trades at this horizon)",
-        "decisive": true
+        "evidence": "D5 calibration_vs_meta_label slope=0.9035706381089631 (ideal=1.0), traded_subset=N/A (zero trades at this horizon)",
+        "decisive": false
       },
       {
         "explanation": "disagreement",
