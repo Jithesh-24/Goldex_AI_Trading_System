@@ -14,7 +14,8 @@ def test_run_d8_shape_and_monotonic_stage_shrinkage():
     assert names == ["stage_0_full_oos", "stage_1_after_opportunity_veto", "stage_2_after_ev_gate_final_traded"]
     ns = [s["n"] for s in result["stages"]]
     assert ns[0] >= ns[1] >= ns[2]  # each gate can only shrink the population, never grow it
-    assert result["degradation_begins_at"] in names
+    # degradation_begins_at is either None (no degradation detected) or a stage name from stages[1:] (stage 1 or 2)
+    assert result["degradation_begins_at"] is None or result["degradation_begins_at"] in names[1:]
     assert "honesty_note" in result and len(result["honesty_note"]) > 0
 
 

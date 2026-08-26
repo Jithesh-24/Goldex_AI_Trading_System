@@ -6,6 +6,17 @@ approximation of it. See docs/superpowers/specs/2026-08-26-golex-v3-
 phase5-batch2-ev-uncertainty-design.md section D8 for why only two
 per-event-varying gates exist in this static replay methodology (the
 honesty_note field explains this in the output itself, not just here).
+
+Output structure (returned by run_d8):
+  - "horizon": int (max_holding input)
+  - "stages": list[dict] of exactly three stages, each with "stage", "n", "calibration",
+    "brier", "p_mean", "realized_outcome_rate"
+  - "degradation_begins_at": str (stage name from stages[1:], i.e. stage_1 or stage_2)
+    if any stage deviates by > DEVIATION_THRESHOLD from full-population slope, else None
+    (no degradation detected). Note: stage 0 is excluded from comparison by design
+    (it is always identical to itself by construction, comparing it is meaningless).
+  - "honesty_note": str explaining scope boundaries of the static replay methodology
+  - "deviation_threshold_used": float (0.3)
 """
 from datetime import datetime, timezone
 
@@ -67,7 +78,7 @@ def run_d8(max_holding: int, rows: int = None, registry_dir: str = None) -> dict
     y_side_correct = np.where(side == 1.0, (touch == 1).astype(float), (touch == -1).astype(float))
 
     opportunity_mask = data["p_opportunity"] >= OPPORTUNITY_MIN_TAKE_PROBABILITY
-    traded_mask = np.zeros(n, dtype=bool)
+    raw_ev_gate_passed = np.zeros(n, dtype=bool)
 
     for i in range(n):
         mid_i = float(data["mid"][i])
@@ -90,7 +101,12 @@ def run_d8(max_holding: int, rows: int = None, registry_dir: str = None) -> dict
                       timeout_r=timeout_info["timeout_R_mean"] or 0.0,
                       timeout_r_provisional_proxy=timeout_info["provisional_proxy"])
         if d.decision != "NO_TRADE":
-            traded_mask[i] = True
+            raw_ev_gate_passed[i] = True
+
+    # CRITICAL: Enforce structural subset relationship to guarantee population shrinkage:
+    # stage2 ⊆ stage1 ⊆ stage0. This is not just observed to hold for h=15's current
+    # registry state — it is ENFORCED by intersecting with opportunity_mask.
+    traded_mask = opportunity_mask & raw_ev_gate_passed
 
     stage0 = _stage_stats("stage_0_full_oos", y_side_correct, p_barrier_win)
     stage1 = _stage_stats("stage_1_after_opportunity_veto", y_side_correct[opportunity_mask], p_barrier_win[opportunity_mask])
@@ -98,9 +114,11 @@ def run_d8(max_holding: int, rows: int = None, registry_dir: str = None) -> dict
     stages = [stage0, stage1, stage2]
 
     full_slope = stage0["calibration"]["slope"]
-    degradation_begins_at = stages[0]["stage"]
+    degradation_begins_at = None  # No degradation detected by default (not stage 0, which always compares to itself)
     DEVIATION_THRESHOLD = 0.3  # reported explicitly, not hidden; matches the same threshold convention used elsewhere in this batch's attribution framework
-    for s in stages:
+    # Skip stage 0 in comparison loop — it is always identical to itself by construction, comparing it is meaningless.
+    # Only stages 1 and 2 represent real per-event gates that could degrade calibration.
+    for s in stages[1:]:
         slope = s["calibration"]["slope"]
         if slope is not None and full_slope is not None and abs(slope - full_slope) > DEVIATION_THRESHOLD:
             degradation_begins_at = s["stage"]
