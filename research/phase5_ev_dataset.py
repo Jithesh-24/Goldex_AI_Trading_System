@@ -96,15 +96,24 @@ def assemble_replay_dataset(max_holding: int, rows: int = None) -> dict:
     mid = close[t0_sel]
     vol_60s_proxy = vol_sel / (np.sqrt(max_holding) * HORIZON_VOL_SCALE)
 
+    # Direction-side-conditioned realized MAE/MFE: select the appropriate
+    # MAE/MFE magnitude based on Direction's proposed side (not the
+    # historically-realized winning side). Use the existing `side` variable
+    # from the direction OOF model.
+    side = dir_oof["side"][combined]
+    mae_dir = np.where(side == 1.0, mae_long, mae_short)
+    mfe_dir = np.where(side == 1.0, mfe_long, mfe_short)
+
     return {"n": n, "p_direction": p_dir[combined], "p_opportunity": p_opp[combined],
             "p_barrier_win": p_bar[combined],
             "mae_r": mae_pred[combined], "mfe_r": mfe_pred[combined],
             "touch": touch_sel,
             "realized_r_long": realized_r_long, "realized_r_short": realized_r_short,
+            "mae_dir": mae_dir, "mfe_dir": mfe_dir,
             "mid": mid, "vol_60s_proxy": vol_60s_proxy,
             "spread": np.full(n, REPRESENTATIVE_SPREAD),
             "direction_model_id": dir_oof["model_id"],
-            "side": dir_oof["side"][combined]}
+            "side": side}
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from research.audit_edge import _mae_mfe_core
-from research.phase5_ev_dataset import realized_r_for_direction
+from research.phase5_ev_dataset import realized_r_for_direction, assemble_replay_dataset
 
 
 def test_realized_r_rising_path_long_wins():
@@ -73,8 +73,18 @@ def test_realized_r_for_direction_rejects_bad_direction():
         pass
 
 
+def test_assemble_replay_dataset_exposes_direction_conditioned_mae_mfe():
+    data = assemble_replay_dataset(max_holding=15, rows=600000)
+    assert "mae_dir" in data and "mfe_dir" in data
+    assert len(data["mae_dir"]) == data["n"]
+    assert len(data["mfe_dir"]) == data["n"]
+    assert (data["mae_dir"] >= 0).all()  # MAE is a magnitude (adverse excursion size), never negative
+    assert (data["mfe_dir"] >= 0).all()  # MFE is a magnitude (favorable excursion size), never negative
+
+
 if __name__ == "__main__":
     test_realized_r_rising_path_long_wins()
     test_realized_r_falling_path_short_wins()
     test_realized_r_for_direction_rejects_bad_direction()
+    test_assemble_replay_dataset_exposes_direction_conditioned_mae_mfe()
     print("tests/test_phase5_ev_dataset_realized_r.py: OK")
