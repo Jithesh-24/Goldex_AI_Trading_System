@@ -13,6 +13,8 @@ def test_run_d5_shape_h15_has_traded_subset():
     assert result["global"]["n"] > 20
     assert "long" in result["by_side"] and "short" in result["by_side"]
     assert isinstance(result["traded_subset"], (dict, str))
+    assert "calibration_vs_meta_label" in result
+    assert result["calibration_vs_meta_label"]["n"] == result["global"]["n"]
 
 
 def test_run_d5_reliability_bins_sum_to_global_n():

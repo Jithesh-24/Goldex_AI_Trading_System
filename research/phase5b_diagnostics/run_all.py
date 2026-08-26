@@ -48,11 +48,11 @@ def apply_attribution_framework(horizon_results: dict) -> list:
         "decisive": downstream_weaker,
     })
 
-    slope = d5["global"]["calibration"]["slope"]
+    slope = d5["calibration_vs_meta_label"]["calibration"]["slope"]
     calibration_off = slope is not None and abs(slope - 1.0) > 0.3
     explanations.append({
         "explanation": "calibration",
-        "evidence": f"D5 global calibration slope={slope} (ideal=1.0), traded_subset={d5['traded_subset'] if isinstance(d5['traded_subset'], str) else 'computed'}",
+        "evidence": f"D5 calibration_vs_meta_label slope={slope} (ideal=1.0), traded_subset={d5['traded_subset'] if isinstance(d5['traded_subset'], str) else 'computed'}",
         "decisive": calibration_off,
     })
 
@@ -96,9 +96,25 @@ def _render_markdown(result: dict) -> str:
                       f"win_rate={h_result['d3']['opportunity']['win_rate']}")
         lines.append(f"- D4 contradiction rates: {h_result['d4']['contradiction_barrier_vs_reward_risk']}, "
                       f"{h_result['d4']['contradiction_opportunity_vs_barrier']}")
-        lines.append(f"- D5 global calibration: {h_result['d5']['global']['calibration']}, "
-                      f"traded_subset={'N/A' if isinstance(h_result['d5']['traded_subset'], str) else 'computed'}")
+        lines.append("  - NOTE: `barrier` currently aliases `opportunity` in the underlying model "
+                      "(`_oof_for_barrier` is a literal passthrough of `_oof_for_opportunity` in "
+                      "research/phase5_calibration.py), so any opportunity-vs-barrier comparison here "
+                      "is 0/identical by construction and carries no information.")
+        ts = h_result['d5']['traded_subset']
+        if isinstance(ts, str):
+            traded_str = ts
+        else:
+            cal = ts["calibration"]
+            traded_str = f"n={ts['n']}, brier={ts['brier']}, calibration.slope={cal['slope']}, calibration.intercept={cal['intercept']}"
+        lines.append(f"- D5 calibration_vs_meta_label (the actual calibration measurement -- p_barrier_win "
+                      f"vs. its real training target): {h_result['d5']['calibration_vs_meta_label']['calibration']}")
+        lines.append(f"- D5 directional_touch_agreement (global, symmetric-touch-based -- NOT calibration, "
+                      f"a separate diagnostic): {h_result['d5']['global']['calibration']}")
+        lines.append(f"- D5 traded_subset: {traded_str}")
         lines.append(f"- D6: {h_result['d6']}")
+        lines.append("  - NOTE: `barrier` currently aliases `opportunity` in the underlying model, so any "
+                      "opportunity-vs-barrier per-role comparison above is 0/identical by construction and "
+                      "carries no information.")
         lines.append("")
         lines.append("### Attribution")
         for e in result["attribution"][h]:

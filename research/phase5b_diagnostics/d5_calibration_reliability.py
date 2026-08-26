@@ -9,6 +9,35 @@ captures per-event probability/outcome/decision arrays that function
 doesn't expose, rather than modifying that (production-adjacent, Phase
 5A-reviewed) file. See docs/superpowers/specs/2026-08-26-golex-v3-
 phase5-batch1-diagnostics-design.md section D5.
+
+IMPORTANT -- two distinct statistics, do not conflate them (2026-08-26
+fix, whole-branch review Critical finding):
+
+- `calibration_vs_meta_label` is the actual CALIBRATION measurement:
+  `p_barrier_win` scored against the label it was actually trained to
+  predict. `p_barrier_win` and `p_opportunity` are literally the same
+  OOF array (`_oof_for_barrier` in research/phase5_calibration.py is a
+  one-line passthrough of `_oof_for_opportunity`), trained against
+  build_meta's ASYMMETRIC meta-label (TB_CFG_TRADE, pt_mult=1.5,
+  sl_mult=1.0, side-conditioned "TP before SL"). That label is NOT
+  exposed by `assemble_replay_dataset`, so this module independently
+  reconstructs the exact same `combined = m_dir & m_opp & m_bar & m_mm`
+  mask assemble_replay_dataset builds internally (by calling the same
+  four `_oof_for_*`/`_oof_predicted_mae_mfe` functions it calls) purely
+  to recover `y_opp[combined]`, the true label aligned to the same event
+  index space as `data["p_barrier_win"]`.
+- `global`/`by_side`/`traded_subset` (unchanged, kept for backward
+  compatibility and because they answer a real, different, legitimate
+  question) score `p_barrier_win` against a SYMMETRIC triple-barrier
+  touch-derived "did Barrier's proposed side's touch match" label. This
+  is NOT a calibration measurement of `p_barrier_win` against its own
+  training target -- it is a directional-touch-agreement diagnostic.
+  Scoring p_barrier_win against this label previously produced
+  near-zero/negative "calibration" slopes that contradicted D3's
+  correctly-labeled ~1.0 slopes on the same underlying probabilities;
+  that contradiction is why this split exists. See
+  `directional_touch_agreement` in the returned dict, which aliases the
+  same computation under a name that doesn't claim to be calibration.
 """
 from datetime import datetime, timezone
 
@@ -60,6 +89,21 @@ def run_d5(max_holding: int, rows: int = None, registry_dir: str = None) -> dict
     timeout_info = estimate_timeout_payoff(max_holding, rows=rows)
     n = data["n"]
     side = data["side"]
+
+    from research.phase5_calibration import (
+        _oof_for_direction, _oof_for_opportunity, _oof_for_barrier, _oof_predicted_mae_mfe,
+    )
+
+    t0_dir, y_dir, p_dir, m_dir = _oof_for_direction(max_holding, rows=rows)
+    t0_opp, y_opp, p_opp, m_opp = _oof_for_opportunity(max_holding, rows=rows)
+    t0_bar, y_bar, p_bar, m_bar = _oof_for_barrier(max_holding, rows=rows)
+    t0_mm, mae_pred, mfe_pred, m_mm = _oof_predicted_mae_mfe(max_holding, rows=rows)
+    assert np.array_equal(t0_dir, t0_opp), "direction/opportunity OOF base index mismatch in D5 mask reconstruction"
+    assert np.array_equal(t0_dir, t0_bar), "direction/barrier OOF base index mismatch in D5 mask reconstruction"
+    assert np.array_equal(t0_dir, t0_mm), "direction/mae-mfe OOF base index mismatch in D5 mask reconstruction"
+    combined = m_dir & m_opp & m_bar & m_mm
+    assert int(combined.sum()) == n, "reconstructed combined mask must match assemble_replay_dataset's own n"
+    y_barrier_true = y_opp[combined]  # p_barrier_win's actual training target, correctly labeled
 
     from research.phase5_ev_engine import _real_model_status
     direction_status = _real_model_status(f"direction_v3_candidate_h{max_holding}", registry_dir)
@@ -120,7 +164,9 @@ def run_d5(max_holding: int, rows: int = None, registry_dir: str = None) -> dict
     else:
         traded_subset = _reliability_and_scores(y_outcome[traded_mask], p_used[traded_mask])
 
-    return {"horizon": max_holding, "global": global_stats, "by_side": by_side, "traded_subset": traded_subset}
+    return {"horizon": max_holding, "global": global_stats, "by_side": by_side, "traded_subset": traded_subset,
+            "calibration_vs_meta_label": _reliability_and_scores(y_barrier_true, data["p_barrier_win"]),
+            "directional_touch_agreement": global_stats}
 
 
 if __name__ == "__main__":

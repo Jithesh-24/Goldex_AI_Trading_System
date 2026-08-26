@@ -18,7 +18,9 @@ def test_apply_attribution_framework_always_returns_all_five_explanations():
                "barrier": {"point_biserial": {"r": 0.15, "n": 50000, "ci_lo": 0.14, "ci_hi": 0.16}}},
         "d4": {"contradiction_barrier_vs_reward_risk": {"rate": 0.3, "ci_lo": 0.29, "ci_hi": 0.31},
                "contradiction_opportunity_vs_barrier": {"rate": 0.1, "ci_lo": 0.09, "ci_hi": 0.11}},
-        "d5": {"global": {"calibration": {"slope": 0.6, "intercept": 0.2}}, "traded_subset": "N/A (zero trades at this horizon)"},
+        "d5": {"global": {"calibration": {"slope": 0.6, "intercept": 0.2}},
+               "calibration_vs_meta_label": {"calibration": {"slope": 0.6, "intercept": 0.2}},
+               "traded_subset": "N/A (zero trades at this horizon)"},
         "d6": {},
     }
     explanations = apply_attribution_framework(horizon_results)
