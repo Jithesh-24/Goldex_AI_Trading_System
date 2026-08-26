@@ -22,6 +22,7 @@ class ExperienceRecord:
     realized_pnl: Optional[float]
     cost_amount: Optional[float]
     outcome: Optional[PositionOutcome]
+    gap_type: str  # "NORMAL" | "WEEKEND_CLOSURE" | "DATA_GAP" -- gap classification for this bar
     # Raw R-space cost ingredient from decision.ev_cost.round_trip_cost_r.
     # Recorded, never applied -- reward shaping is Phase 2+.
     cost_r: Optional[float] = None

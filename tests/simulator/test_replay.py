@@ -125,10 +125,70 @@ def test_run_replay_liquidates_an_unstopped_position_on_a_catastrophic_move():
     assert closed[0].outcome == PositionOutcome.LIQUIDATION
 
 
+def test_run_replay_data_gap_blocks_new_entries():
+    """Data gap (mid-week 3+ hour gap) must block policy-requested LONG/SHORT.
+    The decision_fn asks to go LONG at the bar immediately following the gap,
+    but the action is forced to NO_TRADE, and gap_type is tagged DATA_GAP."""
+    from datetime import datetime, timedelta, timezone
+
+    # Build two normal bars, then a 3-hour gap (10800 seconds, way over 90-second tolerance),
+    # then one more bar. The gap occurs between index 1 and 2.
+    times = [
+        datetime(2020, 1, 6, 10, 0, 0, tzinfo=timezone.utc),  # Monday 10:00
+        datetime(2020, 1, 6, 10, 1, 0, tzinfo=timezone.utc),  # Monday 10:01
+        datetime(2020, 1, 6, 13, 1, 0, tzinfo=timezone.utc),  # Monday 13:01 (3 hours later, mid-week)
+        datetime(2020, 1, 6, 13, 2, 0, tzinfo=timezone.utc),  # Monday 13:02
+    ]
+    prices = [1500.0, 1500.1, 1500.2, 1500.3]
+    df = pd.DataFrame({
+        "time": times,
+        "open": prices,
+        "high": [p + 0.2 for p in prices],
+        "low": [p - 0.2 for p in prices],
+        "close": [p + 0.05 for p in prices],
+        "tick_volume": [10] * 4,
+        "spread": [20.0] * 4,
+    })
+
+    def decide_always_long(market_state, account):
+        # Always request LONG
+        return ("LONG", None, None)
+
+    def manage_exit_immediately(market_state, position_view, account):
+        # Exit on the very next bar, so we can test DECIDE records for each bar
+        return "EXIT"
+
+    config = SimulatedExecutionConfig()
+    recorder = run_replay(df, decide_always_long, manage_exit_immediately, config, EnvironmentTag.SIMULATED_TRAINING)
+    records = recorder.all_records()
+    decide_records = [r for r in records if r.event_type == "DECIDE"]
+
+    # We should have 3 DECIDE records:
+    # - Bar 0: DECIDE, LONG opens, then MANAGE EXIT closes it
+    # - Bar 1: MANAGE EXIT (no DECIDE since position was open)
+    # - Bar 2: DECIDE, DATA_GAP blocks LONG -> NO_TRADE
+    # - Bar 3: DECIDE, LONG allowed
+    assert len(decide_records) == 3
+
+    # Bar 0: LONG allowed (i == 0, gap_type == NORMAL)
+    assert decide_records[0].gap_type == "NORMAL"
+    assert decide_records[0].action == "LONG"
+
+    # Bar 2 (13:01): LONG blocked because of DATA_GAP (3-hour gap from bar 1)
+    # This is decide_records[1] because bar 1 has no DECIDE (position was still open)
+    assert decide_records[1].gap_type == "DATA_GAP"
+    assert decide_records[1].action == "NO_TRADE"  # forced NO_TRADE despite decision_fn returning LONG
+
+    # Bar 3 (13:02): LONG allowed again (small 1-minute gap after data gap)
+    assert decide_records[2].gap_type == "NORMAL"
+    assert decide_records[2].action == "LONG"
+
+
 if __name__ == "__main__":
     test_run_replay_all_no_trade_never_opens_position()
     test_run_replay_force_closes_a_position_opened_on_the_very_last_bar()
     test_run_replay_liquidates_an_unstopped_position_on_a_catastrophic_move()
     test_run_replay_opens_and_force_closes_at_end_of_data()
     test_run_replay_reopens_immediately_after_exit_no_cooldown()
+    test_run_replay_data_gap_blocks_new_entries()
     print("tests/simulator/test_replay.py: OK")

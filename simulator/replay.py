@@ -7,6 +7,7 @@ eligible for a fresh decide_fn call. decide_fn/manage_fn are policy
 callables -- this module contains no trading logic of its own."""
 from typing import Callable, Optional
 
+from simulator.closure import classify_gap
 from simulator.contracts import AccountState, EnvironmentTag, PositionOutcome, Side, SimulatedExecutionConfig
 from simulator.engine import (
     open_position, close_position, check_liquidation, to_position_view, mark_to_market,
@@ -37,18 +38,28 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
     account = AccountState.initial(config, first_ts)
     position = None
     bars_held = 0
+    prev_timestamp = None
 
     for i in range(n):
         market_state = build_snapshot(df, i)
         row = df.iloc[i]
+        current_timestamp = market_state.market_timestamp
+
+        # Classify the gap between the previous bar and this bar
+        gap_type = "NORMAL"
+        if i > 0:
+            gap_type = classify_gap(prev_timestamp, current_timestamp)
 
         if position is None:
             action, sl_price, tp_price = decide_fn(market_state, account)
+            # Refuse to open new positions if there's a DATA_GAP
+            if action in ("LONG", "SHORT") and gap_type == "DATA_GAP":
+                action = "NO_TRADE"
             record = ExperienceRecord(
                 environment_tag=environment_tag, timestamp=market_state.market_timestamp, event_type="DECIDE",
                 market_state_snapshot={"mid": market_state.mid, "spread": market_state.spread},
                 position_view=None, action=action, account_state=_account_dict(account),
-                realized_pnl=None, cost_amount=None, outcome=None,
+                realized_pnl=None, cost_amount=None, outcome=None, gap_type=gap_type,
             )
             write_tag_guard(environment_tag, record)
             recorder.record(record)
@@ -56,6 +67,7 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
                 side = Side.LONG if action == "LONG" else Side.SHORT
                 position, account = open_position(market_state, account, side, sl_price, tp_price, config)
                 bars_held = 0
+            prev_timestamp = current_timestamp
             continue
 
         bars_held += 1
@@ -90,6 +102,7 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
                     market_state_snapshot={"mid": market_state.mid, "spread": market_state.spread},
                     position_view=position_view.__dict__, action=manage_decision,
                     account_state=_account_dict(account), realized_pnl=None, cost_amount=None, outcome=None,
+                    gap_type=gap_type,
                 )
                 write_tag_guard(environment_tag, record)
                 recorder.record(record)
@@ -106,11 +119,14 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
                 market_state_snapshot={"mid": market_state.mid, "spread": market_state.spread},
                 position_view=position_view.__dict__, action=None, account_state=_account_dict(account),
                 realized_pnl=net_pnl, cost_amount=cost_amount, outcome=outcome, cost_r=cost_r,
+                gap_type=gap_type,
             )
             write_tag_guard(environment_tag, close_record)
             recorder.record(close_record)
             position = None
             bars_held = 0
+
+        prev_timestamp = current_timestamp
 
     # BUGFIX (whole-branch review): the in-loop END_OF_REPLAY_FORCED_CLOSE branch
     # only fires for a position that was ALREADY open when bar n-1 was reached.
@@ -132,6 +148,7 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
             position_view=position_view.__dict__, action=None, account_state=_account_dict(account),
             realized_pnl=net_pnl, cost_amount=cost_amount,
             outcome=PositionOutcome.END_OF_REPLAY_FORCED_CLOSE, cost_r=cost_r,
+            gap_type="NORMAL",  # No prior gap context when force-closing at end of data
         )
         write_tag_guard(environment_tag, close_record)
         recorder.record(close_record)
