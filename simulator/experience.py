@@ -22,6 +22,9 @@ class ExperienceRecord:
     realized_pnl: Optional[float]
     cost_amount: Optional[float]
     outcome: Optional[PositionOutcome]
+    # Raw R-space cost ingredient from decision.ev_cost.round_trip_cost_r.
+    # Recorded, never applied -- reward shaping is Phase 2+.
+    cost_r: Optional[float] = None
 
 
 class ExperienceRecorder:

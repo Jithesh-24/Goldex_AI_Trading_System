@@ -22,9 +22,11 @@ def open_position(market_state, account: AccountState, side: Side, sl_price: Opt
     entry_price = entry_fill_price(side, market_state.mid, market_state.spread, config)
     size = (account.equity * config.risk_fraction_of_equity)
     margin_used = (size * entry_price) / config.leverage
+    entry_cost_amount = (market_state.spread / 2.0
+                         + market_state.spread * config.slippage_fraction_of_spread) * size
     position = Position(position_id=str(uuid.uuid4()), side=side, entry_time=market_state.market_timestamp,
                          entry_price=entry_price, size=size, sl_price=sl_price, tp_price=tp_price,
-                         margin_used=margin_used)
+                         margin_used=margin_used, entry_cost_amount=entry_cost_amount)
     new_account = AccountState(
         balance=account.balance, equity=account.equity,
         margin_used=account.margin_used + margin_used,
@@ -39,17 +41,49 @@ def close_position(market_state, account: AccountState, position: Position, exit
                     config: SimulatedExecutionConfig):
     direction = 1.0 if position.side == Side.LONG else -1.0
     realized_pnl = direction * (exit_price - position.entry_price) * position.size
-    sl_distance_r = (abs(position.entry_price - position.sl_price) / position.entry_price
-                      if position.sl_price is not None else None)
-    cost_r = compute_cost_r(market_state, sl_distance_r, config) if sl_distance_r is not None else None
-    cost_amount = (cost_r * sl_distance_r * position.entry_price * position.size) if cost_r is not None else 0.0
-    net_pnl = realized_pnl - cost_amount
+
+    # BUGFIX (whole-branch review): spread + slippage are ALREADY embedded in
+    # entry_fill_price()/exit_fill_price(), so realized_pnl is already net of
+    # round-trip execution cost. The previous code subtracted a second,
+    # separately-computed round-trip spread cost on top of that -- double
+    # charging, and asymmetrically so (only when an SL happened to be set).
+    # cost_amount now REPORTS the cost actually embedded in the fills.
+    exit_cost_amount = (market_state.spread / 2.0
+                        + market_state.spread * config.slippage_fraction_of_spread) * position.size
+    cost_amount = position.entry_cost_amount + exit_cost_amount
+
+    # BUGFIX (whole-branch review): decision.ev_cost.round_trip_cost_r requires
+    # candidate_sl_distance in R-MULTIPLES (already volatility-normalized), not
+    # a raw price-return fraction. The previous code passed |entry-sl|/entry (a
+    # return fraction), causing a second division by vol inside ev_cost and a
+    # cost_R inflated by ~1/vol. Convert to R here: R = return_fraction / vol.
+    # cost_r is a recorded raw ingredient (R-space diagnostic), never a second
+    # deduction from PnL -- no reward formula lives in the simulator.
+    cost_r = None
+    if position.sl_price is not None and getattr(market_state, "realized_vol_60s", None):
+        sl_return_fraction = abs(position.entry_price - position.sl_price) / position.entry_price
+        cost_r = compute_cost_r(market_state, sl_return_fraction / market_state.realized_vol_60s, config)
+
+    net_pnl = realized_pnl
     new_balance = account.balance + net_pnl
     new_account = AccountState(
         balance=new_balance, equity=new_balance, margin_used=0.0, margin_free=new_balance,
         exposure=0.0, open_position_id=None, simulation_timestamp=market_state.market_timestamp,
     )
-    return net_pnl, cost_amount, new_account
+    return net_pnl, cost_amount, cost_r, new_account
+
+
+def mark_to_market(account: AccountState, position: Position, current_mid: float) -> AccountState:
+    """BUGFIX (whole-branch review): equity was never revalued while a position
+    was open, so check_liquidation()'s equity/margin_used ratio was frozen at
+    its open-time value and LIQUIDATION could never fire -- the safety net the
+    design relies on for policies that run with no SL at all was dead code."""
+    equity = account.balance + position.unrealized_pnl(current_mid)
+    return AccountState(
+        balance=account.balance, equity=equity, margin_used=account.margin_used,
+        margin_free=equity - account.margin_used, exposure=account.exposure,
+        open_position_id=account.open_position_id, simulation_timestamp=account.simulation_timestamp,
+    )
 
 
 def check_liquidation(account: AccountState, config: SimulatedExecutionConfig) -> bool:

@@ -8,7 +8,9 @@ callables -- this module contains no trading logic of its own."""
 from typing import Callable, Optional
 
 from simulator.contracts import AccountState, EnvironmentTag, PositionOutcome, Side, SimulatedExecutionConfig
-from simulator.engine import open_position, close_position, check_liquidation, to_position_view
+from simulator.engine import (
+    open_position, close_position, check_liquidation, to_position_view, mark_to_market,
+)
 from simulator.execution import exit_fill_price, resolve_same_bar_ambiguity
 from simulator.experience import ExperienceRecord, ExperienceRecorder, write_tag_guard
 from simulator.market_state_builder import build_snapshot
@@ -57,6 +59,10 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
             continue
 
         bars_held += 1
+        # BUGFIX (whole-branch review): revalue equity against the current mid
+        # BEFORE the liquidation safety-net check, otherwise the check compares
+        # a frozen open-time equity and can never trigger.
+        account = mark_to_market(account, position, market_state.mid)
         position_view = to_position_view(position, market_state.mid, bars_held)
         outcome = None
         exit_price = None
@@ -92,16 +98,44 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
                     exit_price = exit_fill_price(position.side, market_state.mid, market_state.spread, config)
 
         if outcome is not None:
-            net_pnl, cost_amount, account = close_position(market_state, account, position, exit_price, config)
+            net_pnl, cost_amount, cost_r, account = close_position(
+                market_state, account, position, exit_price, config
+            )
             close_record = ExperienceRecord(
                 environment_tag=environment_tag, timestamp=market_state.market_timestamp, event_type="POSITION_CLOSED",
                 market_state_snapshot={"mid": market_state.mid, "spread": market_state.spread},
                 position_view=position_view.__dict__, action=None, account_state=_account_dict(account),
-                realized_pnl=net_pnl, cost_amount=cost_amount, outcome=outcome,
+                realized_pnl=net_pnl, cost_amount=cost_amount, outcome=outcome, cost_r=cost_r,
             )
             write_tag_guard(environment_tag, close_record)
             recorder.record(close_record)
             position = None
             bars_held = 0
+
+    # BUGFIX (whole-branch review): the in-loop END_OF_REPLAY_FORCED_CLOSE branch
+    # only fires for a position that was ALREADY open when bar n-1 was reached.
+    # A position opened by decide_fn ON bar n-1 hit `continue` and the loop then
+    # ended, leaving it open forever -- no close record, and an account left with
+    # a stale open_position_id/margin_used/exposure. Close it here so the
+    # "flat at end of replay" invariant is structural, not data-dependent.
+    if position is not None:
+        market_state = build_snapshot(df, n - 1)
+        account = mark_to_market(account, position, market_state.mid)
+        position_view = to_position_view(position, market_state.mid, bars_held)
+        exit_price = exit_fill_price(position.side, market_state.mid, market_state.spread, config)
+        net_pnl, cost_amount, cost_r, account = close_position(
+            market_state, account, position, exit_price, config
+        )
+        close_record = ExperienceRecord(
+            environment_tag=environment_tag, timestamp=market_state.market_timestamp, event_type="POSITION_CLOSED",
+            market_state_snapshot={"mid": market_state.mid, "spread": market_state.spread},
+            position_view=position_view.__dict__, action=None, account_state=_account_dict(account),
+            realized_pnl=net_pnl, cost_amount=cost_amount,
+            outcome=PositionOutcome.END_OF_REPLAY_FORCED_CLOSE, cost_r=cost_r,
+        )
+        write_tag_guard(environment_tag, close_record)
+        recorder.record(close_record)
+        position = None
+        bars_held = 0
 
     return recorder

@@ -6,7 +6,9 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from simulator.contracts import Side, AccountState, SimulatedExecutionConfig, Position
-from simulator.engine import open_position, close_position, check_liquidation, to_position_view
+from simulator.engine import (
+    open_position, close_position, check_liquidation, to_position_view, mark_to_market,
+)
 
 
 class _FakeMarketState:
@@ -39,11 +41,24 @@ def test_close_position_updates_balance_with_realized_pnl_minus_cost():
     ts1 = datetime(2020, 1, 1, 0, 10, tzinfo=timezone.utc)
     ms1 = _FakeMarketState(mid=1510.0, spread=0.2, market_timestamp=ts1)
     exit_price = 1509.5
-    net_pnl, cost_amount, new_account = close_position(ms1, account, position, exit_price, config)
+    net_pnl, cost_amount, cost_r, new_account = close_position(ms1, account, position, exit_price, config)
     assert new_account.open_position_id is None
     assert new_account.margin_used == 0.0
     assert new_account.balance == account.balance + net_pnl
-    assert cost_amount >= 0.0
+    # Regression: realized PnL is fill-based (spread/slippage already embedded);
+    # cost_amount REPORTS that embedded round-trip cost and is not deducted twice.
+    assert net_pnl == (exit_price - position.entry_price) * position.size
+    expected_round_trip = 2 * (0.2 / 2.0 + 0.2 * config.slippage_fraction_of_spread) * position.size
+    assert abs(cost_amount - expected_round_trip) < 1e-9
+    assert cost_amount > 0.0
+    # Regression: round_trip_cost_r must actually produce a value in replay
+    # (the live 5s staleness default previously made it None on every bar).
+    assert cost_r is not None and cost_r > 0.0
+    # Regression: sl_distance must be passed as an R-multiple, not a return
+    # fraction. cost_R = spread*2 / (R * vol * mid) = spread*2 / (abs price dist).
+    sl_return_fraction = abs(position.entry_price - position.sl_price) / position.entry_price
+    expected_cost_r = (0.2 * 2) / (sl_return_fraction * ms1.mid)
+    assert abs(cost_r - expected_cost_r) / expected_cost_r < 1e-9
 
 
 def test_check_liquidation_true_when_equity_below_threshold_ratio():
@@ -61,6 +76,25 @@ def test_check_liquidation_false_when_flat():
     assert check_liquidation(account, config) is False
 
 
+def test_mark_to_market_moves_equity_and_enables_liquidation():
+    """Regression: equity used to stay frozen at its open-time value while a
+    position was open, so check_liquidation() could never fire."""
+    config = SimulatedExecutionConfig(starting_balance=10000.0, leverage=100.0,
+                                       risk_fraction_of_equity=0.01, liquidation_threshold=0.2)
+    ts = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    account = AccountState.initial(config, ts)
+    ms = _FakeMarketState(mid=1500.0, spread=0.2, market_timestamp=ts)
+    position, account = open_position(ms, account, Side.LONG, sl_price=None, tp_price=None, config=config)
+    assert check_liquidation(account, config) is False
+    # A catastrophic adverse move must now be visible in equity and must trip
+    # the liquidation safety net even with no SL set.
+    crashed = mark_to_market(account, position, current_mid=1400.0)
+    assert crashed.equity < account.equity
+    assert crashed.equity == account.balance + position.unrealized_pnl(1400.0)
+    wiped = mark_to_market(account, position, current_mid=1500.0 - 9990.0 / position.size)
+    assert check_liquidation(wiped, config) is True
+
+
 def test_to_position_view_tracks_bars_held():
     ts = datetime(2020, 1, 1, tzinfo=timezone.utc)
     position = Position(position_id="p1", side=Side.LONG, entry_time=ts, entry_price=1500.0,
@@ -75,5 +109,6 @@ if __name__ == "__main__":
     test_close_position_updates_balance_with_realized_pnl_minus_cost()
     test_check_liquidation_true_when_equity_below_threshold_ratio()
     test_check_liquidation_false_when_flat()
+    test_mark_to_market_moves_equity_and_enables_liquidation()
     test_to_position_view_tracks_bars_held()
     print("tests/simulator/test_engine.py: OK")

@@ -39,7 +39,13 @@ class SimulatedExecutionConfig:
     margin_call_threshold: float = 0.5
     liquidation_threshold: float = 0.2
     risk_fraction_of_equity: float = 0.01
-    max_staleness_seconds: float = 5.0
+    # BUGFIX (whole-branch review): decision.ev_cost.round_trip_cost_r rejects a
+    # market_state whose market_timestamp is older than max_staleness_seconds
+    # relative to wall-clock now(). Historical replay timestamps are years old,
+    # so the live default of 5.0s made round_trip_cost_r return None on EVERY
+    # bar -- the entire cost model was silently inert. Replay is offline: the
+    # staleness guard is a live-feed-health check with no meaning here.
+    max_staleness_seconds: float = float("inf")
 
 
 @dataclass
@@ -69,6 +75,10 @@ class Position:
     sl_price: Optional[float]
     tp_price: Optional[float]
     margin_used: float
+    # Money cost already embedded in entry_price by entry_fill_price()
+    # (half-spread + slippage). Recorded so close_position can report the true
+    # round-trip execution cost without charging it a second time.
+    entry_cost_amount: float = 0.0
 
     def unrealized_pnl(self, current_mid: float) -> float:
         direction = 1.0 if self.side == Side.LONG else -1.0
