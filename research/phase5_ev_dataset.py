@@ -55,6 +55,7 @@ def realized_r_for_direction(direction: str, i: int, data: dict) -> float:
 def assemble_replay_dataset(max_holding: int, rows: int = None) -> dict:
     ds = assemble_v3_dataset(max_holding=max_holding, rows=rows)
     close, high, low, vol_tb, t0_idx = ds["close"], ds["high"], ds["low"], ds["vol_tb"], ds["t0_idx"]
+    feat_v3_index = ds["feat_v3"].index  # datetime index for timestamp recovery
     cfg = TripleBarrierConfig(pt_mult=1.0, sl_mult=1.0, max_holding=max_holding, min_vol=1e-6)
     labels = triple_barrier_labels(close, high, low, t0_idx, vol_tb, cfg, side=None)
     y = labels["label"].to_numpy()
@@ -96,6 +97,10 @@ def assemble_replay_dataset(max_holding: int, rows: int = None) -> dict:
     mid = close[t0_sel]
     vol_60s_proxy = vol_sel / (np.sqrt(max_holding) * HORIZON_VOL_SCALE)
 
+    # Event timestamps recovered from DataFrame index (used by V3BaselineCandidate
+    # to map real-time market events to precomputed OOF predictions).
+    timestamps = np.array([feat_v3_index[idx] for idx in t0_sel], dtype=object)
+
     return {"n": n, "p_direction": p_dir[combined], "p_opportunity": p_opp[combined],
             "p_barrier_win": p_bar[combined],
             "mae_r": mae_pred[combined], "mfe_r": mfe_pred[combined],
@@ -104,7 +109,8 @@ def assemble_replay_dataset(max_holding: int, rows: int = None) -> dict:
             "mid": mid, "vol_60s_proxy": vol_60s_proxy,
             "spread": np.full(n, REPRESENTATIVE_SPREAD),
             "direction_model_id": dir_oof["model_id"],
-            "side": dir_oof["side"][combined]}
+            "side": dir_oof["side"][combined],
+            "timestamp": timestamps}
 
 
 if __name__ == "__main__":
