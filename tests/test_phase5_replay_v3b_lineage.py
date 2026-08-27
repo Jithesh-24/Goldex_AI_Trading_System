@@ -19,6 +19,27 @@ def test_replay_dataset_exposes_direction_model_id_and_side():
     assert set(data["side"].tolist()) <= {1.0, -1.0}
 
 
+def test_replay_dataset_timestamps_are_real_tz_aware_and_ordered():
+    """GOLDEX V4 Phase 2 regression guard: assemble_replay_dataset's "timestamp"
+    key must expose real tz-aware event datetimes (used by
+    candidates.v3_baseline.V3BaselineCandidate to match live MarketState
+    timestamps against precomputed OOF predictions), not the plain RangeIndex
+    integers feat_v3.index would silently produce if indexed directly instead
+    of via feat_v3's "time" column."""
+    from datetime import datetime, timezone
+
+    data = assemble_replay_dataset(max_holding=15, rows=600000)
+    timestamps = data["timestamp"]
+    assert len(timestamps) == data["n"]
+    for ts in timestamps[:5]:
+        assert isinstance(ts, datetime), f"expected a real datetime, got {type(ts)}: {ts!r}"
+        assert ts.tzinfo is not None and ts.utcoffset() == timezone.utc.utcoffset(None), (
+            f"timestamp must be tz-aware UTC to match simulator.market_state_builder's convention, got {ts!r}"
+        )
+    for i in range(len(timestamps) - 1):
+        assert timestamps[i] <= timestamps[i + 1], "event timestamps must be chronologically non-decreasing"
+
+
 def test_replay_and_validate_uses_v3b_artifacts_and_never_trips_lineage_gate():
     """Full integration test: trains all 5 candidates then runs replay.
     Verifies that assumed_side/direction_model_id are wired through and
@@ -49,6 +70,9 @@ def test_replay_and_validate_uses_v3b_artifacts_and_never_trips_lineage_gate():
 if __name__ == "__main__":
     test_replay_dataset_exposes_direction_model_id_and_side()
     print("test_replay_dataset_exposes_direction_model_id_and_side: OK")
+
+    test_replay_dataset_timestamps_are_real_tz_aware_and_ordered()
+    print("test_replay_dataset_timestamps_are_real_tz_aware_and_ordered: OK")
 
     test_replay_and_validate_uses_v3b_artifacts_and_never_trips_lineage_gate()
     print("test_replay_and_validate_uses_v3b_artifacts_and_never_trips_lineage_gate: OK")

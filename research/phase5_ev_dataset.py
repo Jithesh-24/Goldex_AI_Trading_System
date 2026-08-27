@@ -55,7 +55,10 @@ def realized_r_for_direction(direction: str, i: int, data: dict) -> float:
 def assemble_replay_dataset(max_holding: int, rows: int = None) -> dict:
     ds = assemble_v3_dataset(max_holding=max_holding, rows=rows)
     close, high, low, vol_tb, t0_idx = ds["close"], ds["high"], ds["low"], ds["vol_tb"], ds["t0_idx"]
-    feat_v3_index = ds["feat_v3"].index  # datetime index for timestamp recovery
+    # feat_v3's own .index is a plain RangeIndex (0,1,2,...), NOT a datetime index --
+    # the real per-bar timestamps live in its "time" column. Using .index directly
+    # here would silently yield bare integers instead of timestamps.
+    feat_v3_time = ds["feat_v3"]["time"]
     cfg = TripleBarrierConfig(pt_mult=1.0, sl_mult=1.0, max_holding=max_holding, min_vol=1e-6)
     labels = triple_barrier_labels(close, high, low, t0_idx, vol_tb, cfg, side=None)
     y = labels["label"].to_numpy()
@@ -97,9 +100,13 @@ def assemble_replay_dataset(max_holding: int, rows: int = None) -> dict:
     mid = close[t0_sel]
     vol_60s_proxy = vol_sel / (np.sqrt(max_holding) * HORIZON_VOL_SCALE)
 
-    # Event timestamps recovered from DataFrame index (used by V3BaselineCandidate
-    # to map real-time market events to precomputed OOF predictions).
-    timestamps = np.array([feat_v3_index[idx] for idx in t0_sel], dtype=object)
+    # Event timestamps recovered from feat_v3's "time" column (used by
+    # V3BaselineCandidate to map real-time market events to precomputed OOF
+    # predictions). The raw column is tz-naive; localized to UTC here to match
+    # simulator.market_state_builder's convention of treating naive CSV
+    # timestamps as UTC, so dict-key equality against a live MarketState's
+    # market_timestamp (always tz-aware UTC) actually succeeds.
+    timestamps = feat_v3_time.iloc[t0_sel].dt.tz_localize("UTC").dt.to_pydatetime()
 
     return {"n": n, "p_direction": p_dir[combined], "p_opportunity": p_opp[combined],
             "p_barrier_win": p_bar[combined],
