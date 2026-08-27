@@ -112,8 +112,12 @@ All three follow Phase 3A's exact discipline: `data/gold_seed_merged_full6yr.csv
 | 20 | Phase 4 | rolling excess kurtosis (MI) | above-null, ambiguous re: trend confound |
 | 21 | Phase 4 | jump-detection flag (MI) | untested — measurement-tool gap (binary variable, quantile-bin estimator unsuited) |
 | 22 | Phase 4 | trajectory (sequence) vs. single-snapshot, logistic regression | clean negative, ~null |
+| 23 | Phase 4 | GARCH(1,1) conditional variance, OOS shallow-tree check | clean negative, ~null |
+| 24 | Phase 4 | Kalman velocity + innovation, OOS shallow-tree check | clean negative, ~null |
+| 25 | Phase 4 | rolling skew + excess kurtosis, OOS shallow-tree check | clean negative, ~null |
+| 26 | Phase 4 | all 5 representations combined, OOS shallow-tree check | clean negative, ~null (worst of the four) |
 
-**21 hypotheses tested across Phase 3/3A/4 stage 1 before this stage's headline result (#22).** Per the design doc's PBO caution (Section 3/21), any single "found something" result this late should be treated with extra skepticism, not celebrated — and #22, the test this stage was specifically built to answer, came back a clean negative, which is the honest, well-supported outcome here, not a disappointing one.
+**21 hypotheses tested across Phase 3/3A/4 stage 1 before this stage's headline result (#22); 25 more before the OOS follow-up (#23-26), all also negative.** Per the design doc's PBO caution (Section 3/21), any single "found something" result this late should be treated with extra skepticism, not celebrated — and #22, the test this stage was specifically built to answer, came back a clean negative, which is the honest, well-supported outcome here, not a disappointing one.
 
 ## 6. Bottleneck classification
 
@@ -133,12 +137,37 @@ Per Section 28's stop criterion: if Section 18's items 1-2 show no signal beyond
 2. **One narrow, cheap follow-up is justified before a full stop, not a new ladder step:** re-run GARCH/Kalman/skew/kurtosis through Phase 3A's Section-D-style treatment (a fixed shallow model, proper chronological OOS split, shuffled-label null) — the same cheap-statistics-tier check already built and validated in Phase 3A, applied to these three new representations. This is not Section 17 step 2 (no combiner, no stacking) — it is finishing Section 18 item 1's validation to the same rigor Phase 3A used, since the MI-only read is inconclusive (confounded) rather than clean for two of the three new mechanism families. Recommend doing this narrow follow-up under Phase 4's existing scope before any Phase 5 handoff decision, not as new phase-scope creep.
 3. If that follow-up also shows no OOS signal beyond null (the base-rate expectation given Phase 3A's prior 100% negative rate on this exact treatment), the overall recommendation is a full **STOP on further model/mechanism investment** for this data/representation combination, matching Phase 3A's own demonstrated discipline, and Phase 5 should not proceed to combiner/sequence-model work without new data (tick, options, or a genuinely different representation family) or a different question than "does M1 gold carry a learnable 5-bar edge."
 
+## 8. OOS follow-up check (narrow, per Stage 1's own recommendation)
+
+**File added:** `research/phase4_mechanism_oos_check.py`. Applies Phase 3A's Section D treatment (`research/phase3a_raw_path_geometry_probe.py`) to the three Stage 1 mechanism families, reusing each Stage 1 script's fitting/filtering function directly (`fit_garch11`, `kalman_level_trend_filter`, `_rolling_moment`) rather than reimplementing them.
+
+- DATA USED: `data/gold_seed_merged_full6yr.csv` rows 0:300,000 (training partition only; rows 300,000:400,000, the real Phase 3 validation split, never read).
+- MODEL: `DecisionTreeRegressor(max_depth=4, random_state=42)` — identical, fixed configuration to Phase 3A's Section D script, chosen before results, not tuned against the test split.
+- TARGET: 5-bar forward return, same convention as Phase 3A and Stage 1.
+- TRAIN/VALIDATION PERIOD: internal chronological split within the training partition — rows 0:240,000 train, rows 240,000:300,000 test (same split point as Phase 3A's Section D). The real Phase 3 validation split was never touched.
+
+RESULT (real vs. shuffled-label-null control, same fixed model, same split):
+
+| Representation | Real R² | Real dir. acc. | Null R² | Null dir. acc. |
+|---|---|---|---|---|
+| GARCH(1,1) conditional variance (1 feat) | 0.00051 | 0.4775 | −0.00021 | 0.4777 |
+| Kalman velocity + innovation (2 feat) | −0.00823 | 0.4734 | −0.00053 | 0.4784 |
+| Rolling skew + excess kurtosis (2 feat) | −0.00045 | 0.4843 | −0.00028 | 0.4748 |
+| Combined: all 5 features | −0.01279 | 0.4734 | −0.00020 | 0.4782 |
+
+- LIMITATION: one fixed shallow-tree model, one internal split point, no hyperparameter search — matching Phase 3A's Section D discipline exactly, so this is directly comparable to that prior result, not a broader search of possible OOS treatments.
+- CONCLUSION: every representation's real R² is at or below its null-control R² (GARCH's real R² of 0.00051 is trivially above its own null of −0.00021, but both are effectively zero and dir. acc. is below 0.5 and indistinguishable from the null's 0.4777 — not a genuine beat). Direction accuracy for every real and null condition sits at or below chance (≈0.47–0.48). This directly confirms Stage 1's flagged suspicion: the large marginal MI reported for GARCH, Kalman, and skew/kurtosis in Section 3 evaporates under a proper out-of-sample predictive check, exactly the way Phase 3A's momentum/path representations did. The combined-feature representation performs worst of all (real R² −0.01279), consistent with the fixed-depth tree overfitting noise across more inputs rather than finding genuine combined structure. No representation, alone or combined, shows OOS predictive signal beyond null.
+
+**Revised Section 6 classification:** the REPRESENTATION-LIMITED (partial, unresolved) classification from Section 6 is now resolved. With this OOS check completed, GARCH, Kalman (velocity + innovation), and skew/kurtosis all join the NO-ADDITIONAL-SIGNAL-FOUND classification alongside Phase 3A's momentum/path representations and Stage 1's trajectory-vs-snapshot test (#22). The only remaining open item is the jump-detection flag's measurement-tool gap (Section 6's DATA-RESOLUTION-LIMITED note), which this follow-up did not address (it was not part of Stage 1's flagged confound question — the flag showed zero marginal MI due to the estimator, not a large trend-confounded MI needing OOS resolution) and remains a disclosed gap, not a finding either way.
+
+**Revised Section 7 recommendation:** Stage 1's qualified stop is now resolved to an **unqualified STOP**. The narrow follow-up Stage 1 itself recommended has been run, and per its own stated base-rate expectation (matching Phase 3A's 100% negative rate on this exact treatment), it came back negative for every representation tested, individually and combined. There is no representation-family evidence in this Phase 4 stage supporting escalation to Section 17 step 2 (combiner) or step 3 (sequence model). Recommend Phase 5 not proceed with combiner or sequence-model work on this data/representation family without new data (tick, options, or a genuinely different representation family) or a different question than "does M1 gold carry a learnable 5-bar edge" — matching Phase 3A's and this stage's now-consistent discipline. The only unresolved, non-blocking gap is the jump-detection flag's measurement-tool limitation, which is not itself a basis for escalation.
+
 ---
 
 ## Verification
 
 - `decision_id` linking, no-look-ahead: `tests/simulator/test_decision_id_linkage.py` (3 tests, pass).
 - Trajectory assembly: `tests/research/test_phase4_trajectory_assembly.py` (5 tests, pass).
-- `/home/jith/.hermes/hermes-agent/venv/bin/python3 -m pytest tests/candidates tests/research tests/simulator -q` → **104 passed**.
+- `/home/jith/.hermes/hermes-agent/venv/bin/python3 -m pytest tests/candidates tests/research tests/simulator -q` → **104 passed** (unchanged after the Section 8 follow-up — `research/phase4_mechanism_oos_check.py` is a standalone script with no new tests, matching the existing OOS-probe scripts' pattern).
 - `models/registry/*.json` checked for the known nondeterministic-ordering diff after running scripts; none found before commit.
-- Files touched: all under `simulator/experience.py` (additive field only), `simulator/replay.py` (additive population logic only), `research/phase4_*.py` (4 new files), `tests/simulator/test_decision_id_linkage.py`, `tests/research/test_phase4_trajectory_assembly.py`, this report. **No changes to `simulator/engine.py`, `research/phase2_tournament.py`, `research/phase3_tournament.py`, any candidate file, or any roster.**
+- Files touched: all under `simulator/experience.py` (additive field only), `simulator/replay.py` (additive population logic only), `research/phase4_*.py` (5 new files, including the Section 8 follow-up), `tests/simulator/test_decision_id_linkage.py`, `tests/research/test_phase4_trajectory_assembly.py`, this report. **No changes to `simulator/engine.py`, `research/phase2_tournament.py`, `research/phase3_tournament.py`, any candidate file, or any roster.**
