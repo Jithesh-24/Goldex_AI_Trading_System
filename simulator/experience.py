@@ -36,6 +36,14 @@ class ExperienceRecord:
     # candidate doesn't expose one -- existing candidates keep working
     # unchanged.
     observation_features: Optional[dict] = None
+    # Phase 4 addition (additive, optional): links a DECIDE record that opens
+    # a position to the MANAGE records generated while that position is open
+    # and to the eventual POSITION_CLOSED record it produces. Generated only
+    # from information available at/after the decision that opens the
+    # position (see simulator/replay.py) -- never encodes anything about the
+    # future beyond "a position was opened here." None for DECIDE records
+    # that don't open a position (NO_TRADE), since there is nothing to link.
+    decision_id: Optional[str] = None
 
 
 class ExperienceRecorder:

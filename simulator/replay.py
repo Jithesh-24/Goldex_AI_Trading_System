@@ -5,6 +5,7 @@ liquidation as safety-net checks every bar regardless of what manage_fn
 returns. No inter-trade cooldown: the bar immediately after a close is
 eligible for a fresh decide_fn call. decide_fn/manage_fn are policy
 callables -- this module contains no trading logic of its own."""
+import uuid
 from typing import Callable, Optional
 
 from simulator.closure import classify_gap
@@ -66,6 +67,7 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
     position = None
     bars_held = 0
     prev_timestamp = None
+    current_decision_id = None
 
     for i in range(n):
         market_state = build_snapshot(df, i)
@@ -83,12 +85,16 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
             # Refuse to open new positions if there's a DATA_GAP
             if action in ("LONG", "SHORT") and gap_type == "DATA_GAP":
                 action = "NO_TRADE"
+            # decision_id is generated only when this decision actually opens a
+            # position, and only from a fresh random UUID -- it carries no
+            # information derived from future bars, just a unique linking key.
+            decision_id = str(uuid.uuid4()) if action in ("LONG", "SHORT") else None
             record = ExperienceRecord(
                 environment_tag=environment_tag, timestamp=market_state.market_timestamp, event_type="DECIDE",
                 market_state_snapshot={"mid": market_state.mid, "spread": market_state.spread},
                 position_view=None, action=action, account_state=_account_dict(account),
                 realized_pnl=None, cost_amount=None, outcome=None, gap_type=gap_type,
-                observation_features=observation_features,
+                observation_features=observation_features, decision_id=decision_id,
             )
             write_tag_guard(environment_tag, record)
             recorder.record(record)
@@ -96,6 +102,7 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
                 side = Side.LONG if action == "LONG" else Side.SHORT
                 position, account = open_position(market_state, account, side, sl_price, tp_price, config)
                 bars_held = 0
+                current_decision_id = decision_id
             prev_timestamp = current_timestamp
             continue
 
@@ -133,6 +140,7 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
                     position_view=position_view.__dict__, action=manage_decision,
                     account_state=_account_dict(account), realized_pnl=None, cost_amount=None, outcome=None,
                     gap_type=gap_type, observation_features=manage_observation_features,
+                    decision_id=current_decision_id,
                 )
                 write_tag_guard(environment_tag, record)
                 recorder.record(record)
@@ -149,12 +157,13 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
                 market_state_snapshot={"mid": market_state.mid, "spread": market_state.spread},
                 position_view=position_view.__dict__, action=None, account_state=_account_dict(account),
                 realized_pnl=net_pnl, cost_amount=cost_amount, outcome=outcome, cost_r=cost_r,
-                gap_type=gap_type,
+                gap_type=gap_type, decision_id=current_decision_id,
             )
             write_tag_guard(environment_tag, close_record)
             recorder.record(close_record)
             position = None
             bars_held = 0
+            current_decision_id = None
 
         prev_timestamp = current_timestamp
 
@@ -182,11 +191,12 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
             # Reuse that classification rather than hardcoding "NORMAL", which
             # would mislabel a position opened on a WEEKEND_CLOSURE bar and make
             # the DECIDE and POSITION_CLOSED records for the same bar disagree.
-            gap_type=gap_type,
+            gap_type=gap_type, decision_id=current_decision_id,
         )
         write_tag_guard(environment_tag, close_record)
         recorder.record(close_record)
         position = None
         bars_held = 0
+        current_decision_id = None
 
     return recorder
