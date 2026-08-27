@@ -27,3 +27,13 @@ class Candidate(Protocol):
 
     def manage(self, market_state, position_view, account) -> str:
         ...
+
+
+@runtime_checkable
+class LearningCandidate(Candidate, Protocol):
+    """Candidates that opt into Phase 3's learn() hook. A candidate satisfies
+    plain Candidate whether or not it implements learn() -- this protocol is
+    used only where code needs to check "does this candidate want to learn."
+    """
+    def learn(self, training_experience: list) -> None:
+        ...
