@@ -28,7 +28,8 @@ def test_no_trade_with_insufficient_history():
 def test_learn_updates_weights():
     candidate = SequenceHistoryCandidate()
     for i in range(15):
-        candidate.decide(_FakeMarketState(1500.0 + i * 0.2), None)
+        candidate.decide(_FakeMarketState(1500.0 + i * 150.0), None)
+    assert len(candidate._open_features) >= 2, "test setup must actually open positions"
     weights_before = dict(candidate.weights)
     records = [
         {"event_type": "POSITION_CLOSED", "realized_pnl": 5.0,

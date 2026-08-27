@@ -34,9 +34,10 @@ def test_no_trade_with_uninformative_prior_even_on_momentum():
 
 
 def test_learn_updates_posterior_from_wins():
-    candidate = BayesianOnlineCandidate()
+    candidate = BayesianOnlineCandidate(confidence_threshold=0.4)
     for i in range(10):
         candidate.decide(_FakeMarketState(1500.0 + i * 0.5), None)
+    assert len(candidate._open_sides) >= 1, "test setup must actually open a position"
     before = (candidate.long_alpha, candidate.long_beta)
     candidate.learn([{"event_type": "POSITION_CLOSED", "realized_pnl": 5.0}])
     after = (candidate.long_alpha, candidate.long_beta)

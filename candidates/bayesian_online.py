@@ -21,7 +21,7 @@ class BayesianOnlineCandidate:
         self.short_alpha, self.short_beta = prior_alpha, prior_beta
         self._closes = []
         self._last_side = None
-        self._last_momentum = None
+        self._open_sides = []
 
     def _momentum(self, market_state):
         if market_state.completed_m1 is not None:
@@ -36,14 +36,15 @@ class BayesianOnlineCandidate:
         momentum = self._momentum(market_state)
         if momentum is None:
             return ("NO_TRADE", None, None)
-        self._last_momentum = momentum
         long_belief = self.long_alpha / (self.long_alpha + self.long_beta)
         short_belief = self.short_alpha / (self.short_alpha + self.short_beta)
         if momentum > 0 and long_belief > self.confidence_threshold:
             self._last_side = "long"
+            self._open_sides.append("long")
             return ("LONG", None, None)
         if momentum < 0 and short_belief > self.confidence_threshold:
             self._last_side = "short"
+            self._open_sides.append("short")
             return ("SHORT", None, None)
         return ("NO_TRADE", None, None)
 
@@ -60,27 +61,18 @@ class BayesianOnlineCandidate:
         for record in training_experience:
             if record.get("event_type") != "POSITION_CLOSED":
                 continue
+            if not self._open_sides:
+                continue
+            side = self._open_sides.pop(0)
             pnl = float(record.get("realized_pnl") or 0.0)
             won = pnl > 0
-            if self._last_side == "long":
+            if side == "long":
                 if won:
                     self.long_alpha += 1
                 else:
                     self.long_beta += 1
-            elif self._last_side == "short":
+            elif side == "short":
                 if won:
                     self.short_alpha += 1
                 else:
                     self.short_beta += 1
-            elif self._last_momentum is not None:
-                # Fallback: if no explicit side was decided, use momentum direction
-                if self._last_momentum > 0:
-                    if won:
-                        self.long_alpha += 1
-                    else:
-                        self.long_beta += 1
-                elif self._last_momentum < 0:
-                    if won:
-                        self.short_alpha += 1
-                    else:
-                        self.short_beta += 1

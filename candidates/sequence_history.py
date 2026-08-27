@@ -28,7 +28,7 @@ class SequenceHistoryCandidate:
         self.weights = {"momentum": 1.0, "recent_form": 1.0}
         self._closes = []
         self._recent_outcomes = [0.5] * n_recent_trades
-        self._last_score_features = None
+        self._open_features = []
 
     def _features(self, market_state):
         if market_state.completed_m1 is not None:
@@ -48,11 +48,12 @@ class SequenceHistoryCandidate:
         features = self._features(market_state)
         if features is None:
             return ("NO_TRADE", None, None)
-        self._last_score_features = features
         score = self._score(features)
         if score > 0.55:
+            self._open_features.append(features)
             return ("LONG", None, None)
         if score < 0.45:
+            self._open_features.append(features)
             return ("SHORT", None, None)
         return ("NO_TRADE", None, None)
 
@@ -72,10 +73,11 @@ class SequenceHistoryCandidate:
             self._recent_outcomes.append(won)
             if len(self._recent_outcomes) > self.n_recent_trades:
                 self._recent_outcomes.pop(0)
-            if self._last_score_features is None:
+            if not self._open_features:
                 continue
-            prediction = self._score(self._last_score_features)
+            features = self._open_features.pop(0)
+            prediction = self._score(features)
             error = prediction - won
             for key in self.weights:
-                gradient = error * self._last_score_features.get(key, 0.0)
+                gradient = error * features.get(key, 0.0)
                 self.weights[key] -= self.learning_rate * gradient

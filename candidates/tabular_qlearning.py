@@ -28,9 +28,8 @@ class TabularQLearningCandidate:
         self.q_table = {}
         self._vols = []
         self._closes = []
-        self._last_state = None
-        self._last_action = None
         self._in_position = False
+        self._open_state_actions = []
 
     def _bin(self, value, edges):
         for i, edge in enumerate(edges):
@@ -76,9 +75,9 @@ class TabularQLearningCandidate:
             return ("NO_TRADE", None, None)
         actions = ["NO_TRADE", "LONG", "SHORT"]
         action = self._epsilon_greedy(state, actions)
-        self._last_state, self._last_action = state, action
         if action in ("LONG", "SHORT"):
             self._in_position = True
+            self._open_state_actions.append((state, action))
         return (action, None, None)
 
     def manage(self, market_state, position_view, account):
@@ -94,11 +93,10 @@ class TabularQLearningCandidate:
     def learn(self, training_experience: list) -> None:
         closed = [r for r in training_experience if r.get("event_type") == "POSITION_CLOSED"]
         for record in closed:
-            reward = float(record.get("realized_pnl") or 0.0)
-            state = self._last_state
-            action = self._last_action
-            if state is None or action is None:
+            if not self._open_state_actions:
                 continue
+            state, action = self._open_state_actions.pop(0)
+            reward = float(record.get("realized_pnl") or 0.0)
             q = self._q_values(state, ["NO_TRADE", "LONG", "SHORT"])
             best_next = max(q.values()) if q else 0.0
             q[action] += self.learning_rate * (reward + self.discount * best_next - q[action])

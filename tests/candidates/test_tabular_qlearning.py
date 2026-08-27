@@ -27,16 +27,17 @@ def test_decide_returns_valid_action_with_insufficient_history():
 
 
 def test_learn_updates_q_table_from_training_experience():
-    candidate = TabularQLearningCandidate(seed=1, exploration_epsilon=0.0)
-    for i in range(10):
+    candidate = TabularQLearningCandidate(seed=1, exploration_epsilon=1.0)
+    for i in range(20):
         candidate.decide(_FakeMarketState(1500.0 + i * 0.1), None)
+    assert len(candidate._open_state_actions) >= 2, "test setup must actually open positions"
     records = [
         {"event_type": "POSITION_CLOSED", "realized_pnl": 5.0, "timestamp": "2020-01-01T00:00:00+00:00"},
         {"event_type": "POSITION_CLOSED", "realized_pnl": -2.0, "timestamp": "2020-01-01T00:01:00+00:00"},
     ]
     q_before = copy.deepcopy(candidate.q_table)
     candidate.learn(records)
-    assert candidate.q_table != q_before or len(records) == 0
+    assert candidate.q_table != q_before
 
 
 def test_metadata_mechanism_family_is_tabular_rl():

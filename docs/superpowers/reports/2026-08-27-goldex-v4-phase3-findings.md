@@ -24,12 +24,14 @@ Passed. The random-trading baseline (28,613 validation trades) produced a mean p
 | statistical_null_mean_reversion | rule-based | REJECT | 6,239 | -10000.0000 | -1.603 (-2.295, -0.921) |
 | regime_conditioned_momentum | regime-statistical | REJECT | 1,789 | -9997.8647 | -5.589 (-9.377, -2.227) |
 | simple_learned_linear | learned-linear | REJECT | 119 | -9939.6722 | -83.527 (-193.549, 16.592) |
-| tabular_qlearning | tabular-rl | REJECT | 4,017 | -9999.9992 | -2.489 (-3.876, -1.130) |
+| tabular_qlearning | tabular-rl | REJECT | 4,603 | -10000.0000 | -2.172 (-3.853, -0.379) |
 | bayesian_online | bayesian-online | REJECT | 0 | 0.0000 | 0.0 |
 | hmm_regime | regime-generative | REJECT | 7,207 | -10000.0000 | -1.388 (-1.906, -0.903) |
 | sequence_history | sequence-history | REJECT | 0 | 0.0000 | 0.0 |
 
-Every non-control candidate was rejected on real historical validation data. Three candidates (`bayesian_online`, `sequence_history`, and `hmm_regime` on training) never opened a validation-set position at all — they learned to abstain rather than lose money, which is itself informative (they detected no exploitable setup rather than forcing trades into noise). The candidates that did trade all lost money with confidence intervals that exclude zero in most cases (except `simple_learned_linear`, whose CI straddles zero but is wide and built on only 119 trades — too few to draw any conclusion from).
+Every non-control candidate was rejected on real historical validation data. Two candidates, `bayesian_online` and `sequence_history`, never opened a position in training or validation — they learned to abstain rather than lose money, which is itself informative (they detected no exploitable setup rather than forcing trades into noise). The candidates that did trade all lost money with confidence intervals that exclude zero in most cases (except `simple_learned_linear`, whose CI straddles zero but is wide and built on only 119 trades — too few to draw any conclusion from).
+
+Note: an earlier version of this run had a credit-assignment bug in `tabular_qlearning`, `bayesian_online`, and `sequence_history` — their `learn()` methods updated whichever internal state/action/feature value happened to be set last, instead of the state/action that actually produced each closed trade's outcome (caught in sonnet whole-branch review). This was fixed by having each candidate track its own per-trade open state/action/features in a queue, consumed in order as trades close. The run was repeated after the fix; results above are from the corrected run. `bayesian_online` and `sequence_history` still never open a position on real data even with correct credit assignment, confirming their 0-trade result is a genuine abstention (a confidence threshold or decision score never crossed by real market signal), not an artifact of the bug. `tabular_qlearning`'s numbers shifted slightly but its REJECT verdict is unchanged.
 
 ## Summary
 
