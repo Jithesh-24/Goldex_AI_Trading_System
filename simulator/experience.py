@@ -26,6 +26,16 @@ class ExperienceRecord:
     # Raw R-space cost ingredient from decision.ev_cost.round_trip_cost_r.
     # Recorded, never applied -- reward shaping is Phase 2+.
     cost_r: Optional[float] = None
+    # Phase 3A addition (additive, optional): the full feature/observation
+    # vector a candidate actually had in hand at decision time, if the
+    # candidate chooses to expose one. Generic dict -- the simulator never
+    # inspects or hardcodes feature names, it just carries whatever a
+    # candidate/harness populates. Lets a future researcher reconstruct
+    # "what exactly did the agent know when it made this decision," which
+    # market_state_snapshot (mid/spread only) cannot answer. None when a
+    # candidate doesn't expose one -- existing candidates keep working
+    # unchanged.
+    observation_features: Optional[dict] = None
 
 
 class ExperienceRecorder:

@@ -20,6 +20,33 @@ DecideFn = Callable[[object, AccountState], tuple]
 ManageFn = Callable[[object, object, AccountState], str]
 
 
+def _extract_observation_features(fn: Callable) -> Optional[dict]:
+    """Phase 3A addition: optional, opt-in way for a candidate to expose the
+    feature/observation dict it used for its most recent decide()/manage()
+    call, without changing the decide_fn/manage_fn contract that
+    phase2_tournament.py and every existing candidate already rely on.
+
+    Convention: if `fn` is a bound method, and its instance (`fn.__self__`)
+    has an attribute `last_decision_features` set to a dict, that dict is
+    recorded and then cleared so a stale value from a previous bar can never
+    leak forward into a bar where the candidate didn't set anything. Nothing
+    here inspects or requires specific feature names -- purely a generic
+    passthrough. Candidates that don't set this attribute are unaffected;
+    this always returns None for them."""
+    instance = getattr(fn, "__self__", None)
+    if instance is None:
+        return None
+    features = getattr(instance, "last_decision_features", None)
+    if features is None:
+        return None
+    if not isinstance(features, dict):
+        return None
+    # Clear immediately so it can't be silently reused on the next bar if a
+    # candidate forgets to set it every call.
+    instance.last_decision_features = None
+    return features
+
+
 def _account_dict(account: AccountState) -> dict:
     return {
         "balance": account.balance, "equity": account.equity, "margin_used": account.margin_used,
@@ -52,6 +79,7 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
 
         if position is None:
             action, sl_price, tp_price = decide_fn(market_state, account)
+            observation_features = _extract_observation_features(decide_fn)
             # Refuse to open new positions if there's a DATA_GAP
             if action in ("LONG", "SHORT") and gap_type == "DATA_GAP":
                 action = "NO_TRADE"
@@ -60,6 +88,7 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
                 market_state_snapshot={"mid": market_state.mid, "spread": market_state.spread},
                 position_view=None, action=action, account_state=_account_dict(account),
                 realized_pnl=None, cost_amount=None, outcome=None, gap_type=gap_type,
+                observation_features=observation_features,
             )
             write_tag_guard(environment_tag, record)
             recorder.record(record)
@@ -97,12 +126,13 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
                 exit_price = exit_fill_price(position.side, market_state.mid, market_state.spread, config)
             else:
                 manage_decision = manage_fn(market_state, position_view, account)
+                manage_observation_features = _extract_observation_features(manage_fn)
                 record = ExperienceRecord(
                     environment_tag=environment_tag, timestamp=market_state.market_timestamp, event_type="MANAGE",
                     market_state_snapshot={"mid": market_state.mid, "spread": market_state.spread},
                     position_view=position_view.__dict__, action=manage_decision,
                     account_state=_account_dict(account), realized_pnl=None, cost_amount=None, outcome=None,
-                    gap_type=gap_type,
+                    gap_type=gap_type, observation_features=manage_observation_features,
                 )
                 write_tag_guard(environment_tag, record)
                 recorder.record(record)
