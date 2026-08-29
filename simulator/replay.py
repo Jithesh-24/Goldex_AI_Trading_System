@@ -56,7 +56,15 @@ def _account_dict(account: AccountState) -> dict:
         "balance": account.balance, "equity": account.equity, "margin_used": account.margin_used,
         "margin_free": account.margin_free, "exposure": account.exposure,
         "open_position_id": account.open_position_id,
+        "realized_pnl_total": account.realized_pnl_total, "drawdown": account.drawdown,
+        "currency": account.currency,
     }
+
+
+def _market_state_dict(market_state) -> dict:
+    """Full raw MarketState as a dict -- per Section 10, record raw facts,
+    do not compress into a strategy-specific label (e.g. mid/spread only)."""
+    return market_state.model_dump()
 
 
 def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedExecutionConfig,
@@ -96,7 +104,7 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
             decision_id = str(uuid.uuid4()) if action in ("LONG", "SHORT") else None
             record = ExperienceRecord(
                 environment_tag=environment_tag, timestamp=market_state.market_timestamp, event_type="DECIDE",
-                market_state_snapshot={"mid": market_state.mid, "spread": market_state.spread},
+                market_state_snapshot=_market_state_dict(market_state),
                 position_view=None, action=action, account_state=_account_dict(account),
                 realized_pnl=None, cost_amount=None, outcome=None, gap_type=gap_type,
                 observation_features=observation_features, decision_id=decision_id,
@@ -141,7 +149,7 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
                 manage_observation_features = _extract_observation_features(manage_fn)
                 record = ExperienceRecord(
                     environment_tag=environment_tag, timestamp=market_state.market_timestamp, event_type="MANAGE",
-                    market_state_snapshot={"mid": market_state.mid, "spread": market_state.spread},
+                    market_state_snapshot=_market_state_dict(market_state),
                     position_view=position_view.__dict__, action=manage_decision,
                     account_state=_account_dict(account), realized_pnl=None, cost_amount=None, outcome=None,
                     gap_type=gap_type, observation_features=manage_observation_features,
@@ -159,7 +167,7 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
             )
             close_record = ExperienceRecord(
                 environment_tag=environment_tag, timestamp=market_state.market_timestamp, event_type="POSITION_CLOSED",
-                market_state_snapshot={"mid": market_state.mid, "spread": market_state.spread},
+                market_state_snapshot=_market_state_dict(market_state),
                 position_view=position_view.__dict__, action=None, account_state=_account_dict(account),
                 realized_pnl=net_pnl, cost_amount=cost_amount, outcome=outcome, cost_r=cost_r,
                 gap_type=gap_type, decision_id=current_decision_id,
@@ -189,7 +197,7 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
         )
         close_record = ExperienceRecord(
             environment_tag=environment_tag, timestamp=market_state.market_timestamp, event_type="POSITION_CLOSED",
-            market_state_snapshot={"mid": market_state.mid, "spread": market_state.spread},
+            market_state_snapshot=_market_state_dict(market_state),
             position_view=position_view.__dict__, action=None, account_state=_account_dict(account),
             realized_pnl=net_pnl, cost_amount=cost_amount,
             outcome=PositionOutcome.END_OF_REPLAY_FORCED_CLOSE, cost_r=cost_r,

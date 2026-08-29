@@ -59,8 +59,23 @@ def test_replay_records_identical_snapshots_regardless_of_unreached_future():
     n_common = len(recorder_truncated.all_records())
     clean_records = recorder_clean.all_records()[:n_common]
     truncated_records = recorder_truncated.all_records()
+
+    def _snapshots_equal(snap_a, snap_b):
+        # NaN != NaN under normal equality, but a NaN field (e.g.
+        # realized_vol_60s before enough history exists) that stays NaN in
+        # both runs is not leakage -- only a genuine value change is.
+        if snap_a.keys() != snap_b.keys():
+            return False
+        for key in snap_a:
+            va, vb = snap_a[key], snap_b[key]
+            if isinstance(va, float) and isinstance(vb, float) and pd.isna(va) and pd.isna(vb):
+                continue
+            if va != vb:
+                return False
+        return True
+
     for a, b in zip(clean_records, truncated_records):
-        assert a.market_state_snapshot == b.market_state_snapshot, (
+        assert _snapshots_equal(a.market_state_snapshot, b.market_state_snapshot), (
             "leakage: truncating the dataset after the current decision point changed an "
             "earlier snapshot -- the earlier decision must not depend on data that doesn't exist yet"
         )

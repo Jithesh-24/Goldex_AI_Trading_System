@@ -5,10 +5,13 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+import pandas as pd
 import pytest
 
-from simulator.contracts import EnvironmentTag, PositionOutcome
+from contracts.market_state import MarketState
+from simulator.contracts import EnvironmentTag, PositionOutcome, SimulatedExecutionConfig
 from simulator.experience import ExperienceRecord, ExperienceRecorder, write_tag_guard
+from simulator.replay import run_replay
 
 
 def _record(tag=EnvironmentTag.SIMULATED_TRAINING):
@@ -49,9 +52,58 @@ def test_experience_record_captures_position_closed_event():
     assert record.realized_pnl == 15.0
 
 
+def _make_df(n=10):
+    times = pd.date_range("2020-01-06 10:00:00", periods=n, freq="1min")
+    prices = [1500.0 + i * 0.1 for i in range(n)]
+    return pd.DataFrame({
+        "time": times, "open": prices,
+        "high": [p + 0.3 for p in prices], "low": [p - 0.3 for p in prices],
+        "close": [p + 0.05 for p in prices], "tick_volume": [10] * n, "spread": [20.0] * n,
+    })
+
+
+def test_market_state_snapshot_contains_full_market_state_field_set():
+    df = _make_df()
+    config = SimulatedExecutionConfig()
+
+    def always_no_trade(market_state, account):
+        return ("NO_TRADE", None, None)
+
+    recorder = run_replay(df, always_no_trade, lambda *a: "HOLD", config, EnvironmentTag.SIMULATED_TRAINING)
+    records = recorder.all_records()
+    assert records, "expected at least one recorded record"
+    expected_fields = set(MarketState.model_fields.keys())
+    for record in records:
+        assert set(record.market_state_snapshot.keys()) == expected_fields, (
+            f"market_state_snapshot fields {set(record.market_state_snapshot.keys())} "
+            f"do not match full MarketState field set {expected_fields}"
+        )
+    # Sanity: not just mid/spread -- e.g. identity/feed-health fields are present too.
+    assert "symbol" in records[0].market_state_snapshot
+    assert "feed_health" in records[0].market_state_snapshot
+
+
+def test_account_state_dict_includes_realized_pnl_drawdown_currency():
+    df = _make_df()
+    config = SimulatedExecutionConfig()
+
+    def always_no_trade(market_state, account):
+        return ("NO_TRADE", None, None)
+
+    recorder = run_replay(df, always_no_trade, lambda *a: "HOLD", config, EnvironmentTag.SIMULATED_TRAINING)
+    records = recorder.all_records()
+    assert records, "expected at least one recorded record"
+    for record in records:
+        assert "realized_pnl_total" in record.account_state
+        assert "drawdown" in record.account_state
+        assert "currency" in record.account_state
+
+
 if __name__ == "__main__":
     test_recorder_stores_records_in_order()
     test_write_tag_guard_allows_matching_tag()
     test_write_tag_guard_rejects_mismatched_tag()
     test_experience_record_captures_position_closed_event()
+    test_market_state_snapshot_contains_full_market_state_field_set()
+    test_account_state_dict_includes_realized_pnl_drawdown_currency()
     print("tests/simulator/test_experience.py: OK")
