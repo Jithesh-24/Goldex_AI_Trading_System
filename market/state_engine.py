@@ -2,40 +2,18 @@
 on_tick() is O(1)/O(window size), never reloads history. bootstrap() is
 the one explicit, startup-only exception that seeds from a bounded
 recent backfill (Section 13 of the design spec)."""
-import math
 from collections import deque
 from datetime import datetime, timezone
 
 from contracts.tick import Tick
 from contracts.market_state import MarketState, M1BarState, FeedHealthState, DataQuality
+from contracts.data_quality import is_invalid_price as _is_invalid_price
+from contracts.data_quality import is_anomalous_spread as _is_anomalous_spread
 
 TICK_WINDOW_SEC = 300      # ring buffer retention, matches xm_ticker.py's proven 5-min window
 M1_BUFFER_BARS = 480       # ~8 hours of completed M1 bars retained
 STALE_AFTER_SEC = 5.0
 VOL_LOOKBACK_BARS = 60     # matches simulator/market_state_builder.py's realized_vol_60s window
-
-# Task 12 -- same thresholds/rationale as simulator/market_state_builder.py's
-# spread-anomaly check (kept numerically identical so historical replay and
-# live trading agree on what "anomalous" means): 5 std devs above the
-# trailing spread_mean_60s/spread_std_60s this engine already tracks, with
-# a x10-of-mean fallback while that window is too young for a std (e.g.
-# right after startup).
-SPREAD_ANOMALY_STD_MULT = 5.0
-SPREAD_ANOMALY_MEAN_RATIO = 10.0
-
-
-def _is_invalid_price(x) -> bool:
-    return x is None or math.isnan(x) or math.isinf(x) or x <= 0
-
-
-def _is_anomalous_spread(spread, spread_mean_60s, spread_std_60s) -> bool:
-    if spread is None or math.isnan(spread) or math.isinf(spread) or spread < 0:
-        return True
-    if spread_mean_60s is None or spread_mean_60s <= 0:
-        return False
-    if spread_std_60s and spread_std_60s > 0:
-        return spread > spread_mean_60s + SPREAD_ANOMALY_STD_MULT * spread_std_60s
-    return spread > spread_mean_60s * SPREAD_ANOMALY_MEAN_RATIO
 
 
 def is_market_closed(utc_dt):
@@ -102,6 +80,20 @@ class StateEngine:
         return list(self.completed_m1)[-n:]
 
     def on_tick(self, tick: Tick):
+        """Three-way return contract:
+        - Out-of-order or duplicate tick (identical market_timestamp+bid+ask
+          as the last accepted tick): returns None. Nothing is built or
+          surfaced -- these are treated as noise, not data.
+        - Invalid-price tick (zero/negative/NaN/inf bid/ask/mid, or a
+          crossed market where ask < bid) or one with an anomalous spread:
+          returns a MarketState, NOT None -- with data_quality=INVALID and
+          bid/ask carried forward from the last known-good tick, so the bad
+          reading is visible to the consumer instead of silently dropped.
+          Ring buffers/last-known state are left untouched by an
+          invalid-price tick so it can't poison later windows.
+        - Normal tick: returns a MarketState with data_quality=VALID (or
+          INVALID if its spread is anomalous relative to recent history).
+        """
         market_ts = tick.market_timestamp.timestamp()
 
         # out-of-order: reject

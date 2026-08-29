@@ -12,38 +12,14 @@ contracts.market_state.MarketState's existing source Literal was designed to
 distinguish from "mt5_live"."""
 from datetime import timezone
 
-import math
-
 import pandas as pd
 
 from contracts.market_state import MarketState, M1BarState, DataQuality, FeedHealthState
+from contracts.data_quality import is_invalid_price as _is_invalid_price
+from contracts.data_quality import is_anomalous_spread as _is_anomalous_spread
 
 SPREAD_POINTS_TO_PRICE = 0.01
 VOL_LOOKBACK_BARS = 60
-
-# Task 12 -- data-quality thresholds. Spread anomaly is judged against the
-# same trailing spread_mean_60s/spread_std_60s this module already computes
-# below (real per-file history, not a fabricated baseline). 5 std devs is a
-# conservative "this is not noise" bar; the x10-of-mean fallback covers the
-# early-window case where std is 0 or unavailable (e.g. i==0), using the
-# example from the task brief ("spread suddenly 100x normal") scaled down
-# to something that won't false-positive on ordinary widening.
-SPREAD_ANOMALY_STD_MULT = 5.0
-SPREAD_ANOMALY_MEAN_RATIO = 10.0
-
-
-def _is_invalid_price(x: float) -> bool:
-    return x is None or math.isnan(x) or math.isinf(x) or x <= 0
-
-
-def _is_anomalous_spread(spread_price: float, spread_mean_60s, spread_std_60s) -> bool:
-    if spread_price < 0 or math.isnan(spread_price) or math.isinf(spread_price):
-        return True
-    if spread_mean_60s is None or spread_mean_60s <= 0:
-        return False
-    if spread_std_60s and spread_std_60s > 0:
-        return spread_price > spread_mean_60s + SPREAD_ANOMALY_STD_MULT * spread_std_60s
-    return spread_price > spread_mean_60s * SPREAD_ANOMALY_MEAN_RATIO
 
 
 def _trailing_bar_window(df: pd.DataFrame, i: int, seconds: float) -> pd.DataFrame:
