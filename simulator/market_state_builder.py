@@ -20,6 +20,25 @@ SPREAD_POINTS_TO_PRICE = 0.01
 VOL_LOOKBACK_BARS = 60
 
 
+def _trailing_bar_window(df: pd.DataFrame, i: int, seconds: float) -> pd.DataFrame:
+    """Completed bars (indices < i, so no leakage of row i's own high/low/
+    close) whose timestamp falls within `seconds` before ts. This is the
+    finest-granularity real sample the historical path has: one row per
+    minute, each carrying that minute's tick_volume and one spread
+    reading -- vs. the live path's per-tick ring buffer. Used to compute
+    real (not fabricated) tick_count_60s/300s and spread_mean/std_60s
+    below. At i==0 there are no prior bars and the window is empty --
+    that yields a genuine 0/None, not a hardcoded placeholder."""
+    if i == 0:
+        return df.iloc[0:0]
+    # Compare in the DataFrame's own (possibly tz-naive) timestamp dtype --
+    # ts may have been coerced to tz-aware for the MarketState fields, but
+    # df["time"] itself is whatever dtype the caller's frame uses.
+    cutoff = df.iloc[i]["time"] - pd.Timedelta(seconds=seconds)
+    prior = df.iloc[:i]
+    return prior[prior["time"] >= cutoff]
+
+
 def build_snapshot(df: pd.DataFrame, i: int, symbol: str = "XAUUSD", sequence: int = 0) -> MarketState:
     row = df.iloc[i]
     ts = row["time"].to_pydatetime()
@@ -56,14 +75,42 @@ def build_snapshot(df: pd.DataFrame, i: int, symbol: str = "XAUUSD", sequence: i
     else:
         realized_vol_60s = None
 
+    # tick_count_60s/300s and spread_mean/std_60s: computed for real from
+    # the bar-derived data we actually have (tick_volume + spread columns),
+    # not hardcoded. They are structurally coarser than the live path's
+    # per-tick figures -- one sample per minute instead of one per tick --
+    # because bar data has no sub-minute resolution. That coarseness is a
+    # real property of historical bar data, not something to paper over by
+    # leaving them 0/None when real (if approximate) values are available.
+    win_60s = _trailing_bar_window(df, i, 60)
+    win_300s = _trailing_bar_window(df, i, 300)
+    tick_count_60s = int(win_60s["tick_volume"].sum()) if len(win_60s) else 0
+    tick_count_300s = int(win_300s["tick_volume"].sum()) if len(win_300s) else 0
+
+    spreads_60s = win_60s["spread"] * SPREAD_POINTS_TO_PRICE
+    if len(spreads_60s) > 0:
+        spread_mean_60s = float(spreads_60s.mean())
+        spread_std_60s = float(spreads_60s.std(ddof=0)) if len(spreads_60s) > 1 else 0.0
+    else:
+        spread_mean_60s = None
+        spread_std_60s = None
+
+    # ingestion_timestamp/processing_timestamp collapsed to market_timestamp
+    # by design, not oversight: historical replay has no real ingestion or
+    # processing pipeline to time -- there is nothing happening between
+    # "bar observed" and "state built" to measure a delta over, unlike the
+    # live path where ticks genuinely travel through a socket and a queue.
+    # A configurable synthetic offset was considered and rejected: it would
+    # require picking a distribution for a latency that never occurred,
+    # adding fake noise to a field that's currently at least honestly zero.
     return MarketState(
         symbol=symbol, source="synthetic_replay", state_version="v1", sequence=sequence,
         market_timestamp=ts, ingestion_timestamp=ts, processing_timestamp=ts,
         bid=bid, ask=ask, mid=mid, spread=spread_price, last=mid,
         last_quality=DataQuality.VALID,
-        tick_count_60s=0, tick_count_300s=0, tick_rate_per_sec=0.0,
+        tick_count_60s=tick_count_60s, tick_count_300s=tick_count_300s, tick_rate_per_sec=0.0,
         current_m1=current_m1, completed_m1=completed_m1,
-        realized_vol_60s=realized_vol_60s, spread_mean_60s=None, spread_std_60s=None,
+        realized_vol_60s=realized_vol_60s, spread_mean_60s=spread_mean_60s, spread_std_60s=spread_std_60s,
         feed_health=FeedHealthState.CONNECTED, last_tick_age_sec=0.0,
         feed_latency_sec=0.0, state_update_latency_sec=0.0,
     )

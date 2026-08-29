@@ -11,6 +11,7 @@ from contracts.market_state import MarketState, M1BarState, FeedHealthState, Dat
 TICK_WINDOW_SEC = 300      # ring buffer retention, matches xm_ticker.py's proven 5-min window
 M1_BUFFER_BARS = 480       # ~8 hours of completed M1 bars retained
 STALE_AFTER_SEC = 5.0
+VOL_LOOKBACK_BARS = 60     # matches simulator/market_state_builder.py's realized_vol_60s window
 
 
 def is_market_closed(utc_dt):
@@ -140,6 +141,25 @@ class StateEngine:
         else:
             spread_std = 0.0 if spread_window else None
 
+        # realized_vol_60s -- mirrors simulator/market_state_builder.py's
+        # convention exactly: std of pct-change returns over a trailing
+        # window of up-to-60 completed M1 bar closes (VOL_LOOKBACK_BARS on
+        # the historical side). Adapted to the live path's own bar buffer
+        # (self.completed_m1, already the source completed_m1 below draws
+        # its single latest entry from) instead of a DataFrame window.
+        closes = [b.close for b in list(self.completed_m1)[-VOL_LOOKBACK_BARS:]]
+        if len(closes) >= 2:
+            returns = [(closes[k] - closes[k - 1]) / closes[k - 1] for k in range(1, len(closes))
+                       if closes[k - 1] != 0]
+            if len(returns) > 1:
+                mean = sum(returns) / len(returns)
+                variance = sum((r - mean) ** 2 for r in returns) / (len(returns) - 1)
+                realized_vol_60s = variance ** 0.5
+            else:
+                realized_vol_60s = None
+        else:
+            realized_vol_60s = None
+
         self._sequence += 1
         now = datetime.now(timezone.utc)
         processing_ts = now
@@ -153,7 +173,7 @@ class StateEngine:
             tick_count_60s=tick_count_60s, tick_count_300s=tick_count_300s,
             tick_rate_per_sec=tick_rate, current_m1=self.current_m1,
             completed_m1=self.completed_m1[-1] if self.completed_m1 else None,
-            realized_vol_60s=None, spread_mean_60s=spread_mean, spread_std_60s=spread_std,
+            realized_vol_60s=realized_vol_60s, spread_mean_60s=spread_mean, spread_std_60s=spread_std,
             feed_health=FeedHealthState.CONNECTED,
             last_tick_age_sec=(processing_ts - tick.ingestion_timestamp).total_seconds(),
             feed_latency_sec=(tick.ingestion_timestamp - tick.market_timestamp).total_seconds(),
