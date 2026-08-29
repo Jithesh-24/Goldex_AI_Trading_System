@@ -113,9 +113,19 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
             recorder.record(record)
             if action in ("LONG", "SHORT"):
                 side = Side.LONG if action == "LONG" else Side.SHORT
-                position, account = open_position(market_state, account, side, sl_price, tp_price, config, size)
-                bars_held = 0
-                current_decision_id = decision_id
+                position, account, rejection_reason = open_position(
+                    market_state, account, side, sl_price, tp_price, config, size
+                )
+                if rejection_reason is not None:
+                    # Rejected entry: no position opens, account state is
+                    # unchanged (open_position returns the same account back).
+                    # Treated like a NO_TRADE bar -- the replay loop simply
+                    # continues, flat, to the next bar.
+                    position = None
+                    current_decision_id = None
+                else:
+                    bars_held = 0
+                    current_decision_id = decision_id
             prev_timestamp = current_timestamp
             continue
 

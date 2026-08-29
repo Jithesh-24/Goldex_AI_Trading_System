@@ -112,7 +112,13 @@ def test_run_replay_liquidates_an_unstopped_position_on_a_catastrophic_move():
         "high": [p + 0.2 for p in prices], "low": [p - 0.2 for p in prices],
         "close": prices, "tick_volume": [10] * n, "spread": [20.0] * n,
     })
-    config = SimulatedExecutionConfig(risk_fraction_of_equity=1.0)  # size = equity units
+    # Task 11: open_position now rejects when required margin exceeds
+    # margin_free, so risk_fraction_of_equity must stay small enough for the
+    # entry to actually open (size=equity units at leverage=100 would itself
+    # be rejected as INSUFFICIENT_MARGIN) -- the catastrophic price collapse
+    # below is what wipes equity out and triggers LIQUIDATION, not oversized
+    # entry margin.
+    config = SimulatedExecutionConfig(risk_fraction_of_equity=0.01)
     calls = {"n": 0}
 
     def decide(market_state, account):

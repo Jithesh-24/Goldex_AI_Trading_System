@@ -23,10 +23,32 @@ def to_position_view(position: Position, current_mid: float, bars_held: int) -> 
 def open_position(market_state, account: AccountState, side: Side, sl_price: Optional[float],
                    tp_price: Optional[float], config: SimulatedExecutionConfig,
                    size: Optional[float] = None):
+    """Returns (position, account, rejection_reason). On success, position is
+    the newly-opened Position, account reflects it, and rejection_reason is
+    None. On rejection, position is None, account is returned UNCHANGED (the
+    same object passed in), and rejection_reason is a short machine-readable
+    string explaining why (mirrors the "None signals can't-compute" convention
+    used elsewhere in this module, e.g. compute_cost_r) -- no fabricated fill
+    is ever produced."""
     entry_price = entry_fill_price(side, market_state.mid, market_state.spread, config)
     if size is None:
         size = (account.equity * config.risk_fraction_of_equity)
+
+    if sl_price is not None:
+        if side == Side.LONG and sl_price >= entry_price:
+            return None, account, "INVALID_SL_WRONG_SIDE"
+        if side == Side.SHORT and sl_price <= entry_price:
+            return None, account, "INVALID_SL_WRONG_SIDE"
+    if tp_price is not None:
+        if side == Side.LONG and tp_price <= entry_price:
+            return None, account, "INVALID_TP_WRONG_SIDE"
+        if side == Side.SHORT and tp_price >= entry_price:
+            return None, account, "INVALID_TP_WRONG_SIDE"
+
     margin_used = (size * entry_price) / config.leverage
+    if margin_used > account.margin_free:
+        return None, account, "INSUFFICIENT_MARGIN"
+
     entry_cost_amount = (market_state.spread / 2.0
                          + market_state.spread * config.slippage_fraction_of_spread) * size
     position = Position(position_id=str(uuid.uuid4()), side=side, entry_time=market_state.market_timestamp,
@@ -42,7 +64,7 @@ def open_position(market_state, account: AccountState, side: Side, sl_price: Opt
         realized_pnl_total=account.realized_pnl_total,
         peak_equity=account.peak_equity, drawdown=account.drawdown, currency=account.currency,
     )
-    return position, new_account
+    return position, new_account, None
 
 
 def close_position(market_state, account: AccountState, position: Position, exit_price: float,

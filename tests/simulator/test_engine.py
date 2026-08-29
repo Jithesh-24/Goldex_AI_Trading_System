@@ -24,7 +24,8 @@ def test_open_position_reduces_margin_free():
     ts = datetime(2020, 1, 1, tzinfo=timezone.utc)
     account = AccountState.initial(config, ts)
     ms = _FakeMarketState(mid=1500.0, spread=0.2, market_timestamp=ts)
-    position, new_account = open_position(ms, account, Side.LONG, sl_price=1495.0, tp_price=None, config=config)
+    position, new_account, rejection_reason = open_position(ms, account, Side.LONG, sl_price=1495.0, tp_price=None, config=config)
+    assert rejection_reason is None
     assert position.side == Side.LONG
     assert position.entry_price > 1500.0  # crossed the spread
     assert new_account.margin_used > 0.0
@@ -37,7 +38,7 @@ def test_close_position_updates_balance_with_realized_pnl_minus_cost():
     ts0 = datetime(2020, 1, 1, tzinfo=timezone.utc)
     account = AccountState.initial(config, ts0)
     ms0 = _FakeMarketState(mid=1500.0, spread=0.2, market_timestamp=ts0)
-    position, account = open_position(ms0, account, Side.LONG, sl_price=1495.0, tp_price=None, config=config)
+    position, account, _rejection_reason = open_position(ms0, account, Side.LONG, sl_price=1495.0, tp_price=None, config=config)
     ts1 = datetime(2020, 1, 1, 0, 10, tzinfo=timezone.utc)
     ms1 = _FakeMarketState(mid=1510.0, spread=0.2, market_timestamp=ts1)
     exit_price = 1509.5
@@ -84,7 +85,7 @@ def test_mark_to_market_moves_equity_and_enables_liquidation():
     ts = datetime(2020, 1, 1, tzinfo=timezone.utc)
     account = AccountState.initial(config, ts)
     ms = _FakeMarketState(mid=1500.0, spread=0.2, market_timestamp=ts)
-    position, account = open_position(ms, account, Side.LONG, sl_price=None, tp_price=None, config=config)
+    position, account, _rejection_reason = open_position(ms, account, Side.LONG, sl_price=None, tp_price=None, config=config)
     assert check_liquidation(account, config) is False
     # A catastrophic adverse move must now be visible in equity and must trip
     # the liquidation safety net even with no SL set.
@@ -108,7 +109,7 @@ def test_realized_pnl_and_drawdown_track_across_sequence_of_trades():
 
     # Trade 1: winner.
     ms0 = _FakeMarketState(mid=1500.0, spread=0.2, market_timestamp=ts)
-    position, account = open_position(ms0, account, Side.LONG, sl_price=1495.0, tp_price=None, config=config)
+    position, account, _rejection_reason = open_position(ms0, account, Side.LONG, sl_price=1495.0, tp_price=None, config=config)
     ts1 = datetime(2020, 1, 1, 0, 10, tzinfo=timezone.utc)
     ms1 = _FakeMarketState(mid=1510.0, spread=0.2, market_timestamp=ts1)
     net_pnl_1, _, _, account = close_position(ms1, account, position, exit_price=1509.5, config=config)
@@ -121,7 +122,7 @@ def test_realized_pnl_and_drawdown_track_across_sequence_of_trades():
 
     # Trade 2: loser, large enough to pull equity below the running peak.
     ms2 = _FakeMarketState(mid=1510.0, spread=0.2, market_timestamp=ts1)
-    position, account = open_position(ms2, account, Side.LONG, sl_price=1495.0, tp_price=None, config=config)
+    position, account, _rejection_reason = open_position(ms2, account, Side.LONG, sl_price=1495.0, tp_price=None, config=config)
     ts2 = datetime(2020, 1, 1, 0, 20, tzinfo=timezone.utc)
     ms3 = _FakeMarketState(mid=1490.0, spread=0.2, market_timestamp=ts2)
     net_pnl_2, _, _, account = close_position(ms3, account, position, exit_price=1490.5, config=config)
@@ -138,7 +139,7 @@ def test_realized_pnl_and_drawdown_track_across_sequence_of_trades():
 
     # Trade 3: winner, but not large enough to exceed the trade-1 peak yet.
     ms4 = _FakeMarketState(mid=1490.0, spread=0.2, market_timestamp=ts2)
-    position, account = open_position(ms4, account, Side.LONG, sl_price=1485.0, tp_price=None, config=config)
+    position, account, _rejection_reason = open_position(ms4, account, Side.LONG, sl_price=1485.0, tp_price=None, config=config)
     ts3 = datetime(2020, 1, 1, 0, 30, tzinfo=timezone.utc)
     ms5 = _FakeMarketState(mid=1492.0, spread=0.2, market_timestamp=ts3)
     net_pnl_3, _, _, account = close_position(ms5, account, position, exit_price=1491.5, config=config)
@@ -150,7 +151,7 @@ def test_realized_pnl_and_drawdown_track_across_sequence_of_trades():
 
     # Mark-to-market on an open position must also feed peak/drawdown tracking.
     ms6 = _FakeMarketState(mid=1492.0, spread=0.2, market_timestamp=ts3)
-    position, account = open_position(ms6, account, Side.LONG, sl_price=None, tp_price=None, config=config)
+    position, account, _rejection_reason = open_position(ms6, account, Side.LONG, sl_price=None, tp_price=None, config=config)
     marked = mark_to_market(account, position, current_mid=1600.0)
     assert marked.equity > peak_after_trade_1
     assert marked.peak_equity == marked.equity  # new all-time high via mark-to-market alone
@@ -166,7 +167,7 @@ def test_position_state_completeness_across_open_hold_close():
     ts0 = datetime(2020, 1, 1, tzinfo=timezone.utc)
     account = AccountState.initial(config, ts0)
     ms0 = _FakeMarketState(mid=1500.0, spread=0.2, market_timestamp=ts0)
-    position, account = open_position(ms0, account, Side.LONG, sl_price=1495.0, tp_price=None, config=config)
+    position, account, _rejection_reason = open_position(ms0, account, Side.LONG, sl_price=1495.0, tp_price=None, config=config)
 
     # OPEN: exit_reason must be absent (nothing has exited yet), current_price
     # is known from entry, execution_cost_total is entry cost only so far.
@@ -217,6 +218,80 @@ def test_position_state_completeness_across_open_hold_close():
     assert close_view.current_price == exit_price
 
 
+def test_open_position_rejects_when_size_exceeds_available_margin():
+    """Task 11: requesting a size whose required margin exceeds
+    account.margin_free must reject -- no fabricated fill, no position
+    opened, account state genuinely unchanged (same values, not just
+    no-exception)."""
+    config = SimulatedExecutionConfig(starting_balance=10000.0, leverage=100.0, risk_fraction_of_equity=0.01)
+    ts = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    account = AccountState.initial(config, ts)
+    ms = _FakeMarketState(mid=1500.0, spread=0.2, market_timestamp=ts)
+    # margin required = size * entry_price / leverage. With leverage=100 and
+    # margin_free=10000, a size this large requires far more margin than
+    # is available (size * ~1500 / 100 >> 10000).
+    huge_size = 10_000.0
+    position, new_account, rejection_reason = open_position(
+        ms, account, Side.LONG, sl_price=1495.0, tp_price=None, config=config, size=huge_size
+    )
+    assert position is None
+    assert rejection_reason == "INSUFFICIENT_MARGIN"
+    assert new_account.balance == account.balance
+    assert new_account.equity == account.equity
+    assert new_account.margin_used == account.margin_used
+    assert new_account.margin_free == account.margin_free
+    assert new_account.exposure == account.exposure
+    assert new_account.open_position_id == account.open_position_id
+
+
+def test_open_position_rejects_invalid_sl_direction():
+    """Task 11: SL on the wrong side of entry for the given direction (e.g.
+    LONG with SL above entry, SHORT with SL below entry) must reject rather
+    than silently fill."""
+    config = SimulatedExecutionConfig(starting_balance=10000.0, leverage=100.0, risk_fraction_of_equity=0.01)
+    ts = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    account = AccountState.initial(config, ts)
+    ms = _FakeMarketState(mid=1500.0, spread=0.2, market_timestamp=ts)
+
+    # LONG with SL ABOVE entry is invalid.
+    position, new_account, rejection_reason = open_position(
+        ms, account, Side.LONG, sl_price=1505.0, tp_price=None, config=config
+    )
+    assert position is None
+    assert rejection_reason == "INVALID_SL_WRONG_SIDE"
+    assert new_account.margin_used == account.margin_used
+    assert new_account.open_position_id == account.open_position_id
+
+    # SHORT with SL BELOW entry is invalid.
+    position, new_account, rejection_reason = open_position(
+        ms, account, Side.SHORT, sl_price=1495.0, tp_price=None, config=config
+    )
+    assert position is None
+    assert rejection_reason == "INVALID_SL_WRONG_SIDE"
+    assert new_account.margin_used == account.margin_used
+
+
+def test_open_position_rejects_invalid_tp_direction():
+    """Task 11: TP on the wrong side of entry is invalid too (LONG with TP
+    below entry, SHORT with TP above entry)."""
+    config = SimulatedExecutionConfig(starting_balance=10000.0, leverage=100.0, risk_fraction_of_equity=0.01)
+    ts = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    account = AccountState.initial(config, ts)
+    ms = _FakeMarketState(mid=1500.0, spread=0.2, market_timestamp=ts)
+
+    position, new_account, rejection_reason = open_position(
+        ms, account, Side.LONG, sl_price=None, tp_price=1495.0, config=config
+    )
+    assert position is None
+    assert rejection_reason == "INVALID_TP_WRONG_SIDE"
+
+    position, new_account, rejection_reason = open_position(
+        ms, account, Side.SHORT, sl_price=None, tp_price=1505.0, config=config
+    )
+    assert position is None
+    assert rejection_reason == "INVALID_TP_WRONG_SIDE"
+
+
 def test_to_position_view_tracks_bars_held():
     ts = datetime(2020, 1, 1, tzinfo=timezone.utc)
     position = Position(position_id="p1", side=Side.LONG, entry_time=ts, entry_price=1500.0,
@@ -234,5 +309,8 @@ if __name__ == "__main__":
     test_mark_to_market_moves_equity_and_enables_liquidation()
     test_realized_pnl_and_drawdown_track_across_sequence_of_trades()
     test_position_state_completeness_across_open_hold_close()
+    test_open_position_rejects_when_size_exceeds_available_margin()
+    test_open_position_rejects_invalid_sl_direction()
+    test_open_position_rejects_invalid_tp_direction()
     test_to_position_view_tracks_bars_held()
     print("tests/simulator/test_engine.py: OK")
