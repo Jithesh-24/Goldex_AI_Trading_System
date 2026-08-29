@@ -33,6 +33,8 @@ def open_position(market_state, account: AccountState, side: Side, sl_price: Opt
         margin_free=account.equity - (account.margin_used + margin_used),
         exposure=account.exposure + size * entry_price,
         open_position_id=position.position_id, simulation_timestamp=market_state.market_timestamp,
+        realized_pnl_total=account.realized_pnl_total,
+        peak_equity=account.peak_equity, drawdown=account.drawdown, currency=account.currency,
     )
     return position, new_account
 
@@ -66,9 +68,12 @@ def close_position(market_state, account: AccountState, position: Position, exit
 
     net_pnl = realized_pnl
     new_balance = account.balance + net_pnl
+    peak_equity, drawdown = AccountState.compute_drawdown(account.peak_equity, new_balance)
     new_account = AccountState(
         balance=new_balance, equity=new_balance, margin_used=0.0, margin_free=new_balance,
         exposure=0.0, open_position_id=None, simulation_timestamp=market_state.market_timestamp,
+        realized_pnl_total=account.realized_pnl_total + net_pnl,
+        peak_equity=peak_equity, drawdown=drawdown, currency=account.currency,
     )
     return net_pnl, cost_amount, cost_r, new_account
 
@@ -79,10 +84,13 @@ def mark_to_market(account: AccountState, position: Position, current_mid: float
     its open-time value and LIQUIDATION could never fire -- the safety net the
     design relies on for policies that run with no SL at all was dead code."""
     equity = account.balance + position.unrealized_pnl(current_mid)
+    peak_equity, drawdown = AccountState.compute_drawdown(account.peak_equity, equity)
     return AccountState(
         balance=account.balance, equity=equity, margin_used=account.margin_used,
         margin_free=equity - account.margin_used, exposure=account.exposure,
         open_position_id=account.open_position_id, simulation_timestamp=account.simulation_timestamp,
+        realized_pnl_total=account.realized_pnl_total,
+        peak_equity=peak_equity, drawdown=drawdown, currency=account.currency,
     )
 
 

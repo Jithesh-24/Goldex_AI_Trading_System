@@ -39,6 +39,11 @@ class SimulatedExecutionConfig:
     margin_call_threshold: float = 0.5
     liquidation_threshold: float = 0.2
     risk_fraction_of_equity: float = 0.01
+    # Config-driven default for AccountState.currency. Nothing elsewhere in the
+    # config schema (config/schema.py) specifies an account currency yet, so a
+    # plain "USD" literal default lives here until a real multi-currency need
+    # arises.
+    currency: str = "USD"
     # BUGFIX (whole-branch review): decision.ev_cost.round_trip_cost_r rejects a
     # market_state whose market_timestamp is older than max_staleness_seconds
     # relative to wall-clock now(). Historical replay timestamps are years old,
@@ -57,12 +62,36 @@ class AccountState:
     exposure: float
     open_position_id: Optional[str]
     simulation_timestamp: datetime
+    # Sum of net_pnl across every close_position() call so far this run.
+    realized_pnl_total: float = 0.0
+    # Highest equity observed so far this run (monotonically non-decreasing).
+    # None until the first equity value is known (AccountState.initial() sets
+    # it to starting_balance immediately, so in practice this is only None for
+    # ad-hoc AccountState(...) construction, e.g. in tests).
+    peak_equity: Optional[float] = None
+    # Convention: drawdown = (peak_equity - equity) / peak_equity, i.e. the
+    # fractional retracement from the running peak. 0.0 at/above peak, grows
+    # toward 1.0 as equity falls toward zero. Recomputed any time equity
+    # changes (open-position mark_to_market and close-time settlement).
+    drawdown: float = 0.0
+    currency: str = "USD"
 
     @classmethod
     def initial(cls, config: SimulatedExecutionConfig, timestamp: datetime) -> "AccountState":
         return cls(balance=config.starting_balance, equity=config.starting_balance,
                     margin_used=0.0, margin_free=config.starting_balance,
-                    exposure=0.0, open_position_id=None, simulation_timestamp=timestamp)
+                    exposure=0.0, open_position_id=None, simulation_timestamp=timestamp,
+                    realized_pnl_total=0.0, peak_equity=config.starting_balance, drawdown=0.0,
+                    currency=config.currency)
+
+    @staticmethod
+    def compute_drawdown(prior_peak_equity: Optional[float], equity: float) -> tuple:
+        """Returns (peak_equity, drawdown) for the given new equity value,
+        given the running peak equity before this update. peak_equity only
+        ever increases or stays flat; drawdown = (peak - equity) / peak."""
+        peak_equity = equity if prior_peak_equity is None else max(prior_peak_equity, equity)
+        drawdown = 0.0 if peak_equity <= 0 else (peak_equity - equity) / peak_equity
+        return peak_equity, drawdown
 
 
 @dataclass
