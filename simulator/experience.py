@@ -44,6 +44,14 @@ class ExperienceRecord:
     # future beyond "a position was opened here." None for DECIDE records
     # that don't open a position (NO_TRADE), since there is nothing to link.
     decision_id: Optional[str] = None
+    # Set only when this DECIDE record's action was LONG/SHORT but
+    # open_position() rejected it (insufficient margin, invalid SL/TP). The
+    # record is written before open_position() runs (see simulator/replay.py),
+    # so without this field a rejected entry is indistinguishable from a real
+    # one -- same action, same decision_id, no POSITION_CLOSED ever follows.
+    # This field makes that distinguishable and honest. None for every
+    # record that isn't a rejected entry attempt.
+    rejection_reason: Optional[str] = None
 
 
 class ExperienceRecorder:

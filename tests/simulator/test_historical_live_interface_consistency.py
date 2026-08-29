@@ -144,6 +144,90 @@ def test_historical_and_live_states_agree_on_field_availability():
             )
 
 
+def test_historical_market_closed_matches_live_computation():
+    """Regression for the market_closed divergence: build_snapshot must
+    compute market_closed the same way the live path does (is_market_closed
+    on the bar's own timestamp), not silently default to False. Saturday
+    2020-01-04 is a known-closed timestamp on the XM GOLD.i# schedule --
+    verifies the historical path actually flags it, not just that it agrees
+    with an equally-wrong live default."""
+    from datetime import datetime, timezone
+    from market.state_engine import is_market_closed
+
+    saturday = datetime(2020, 1, 4, 12, 0, 0, tzinfo=timezone.utc)
+    assert is_market_closed(saturday) is True
+
+    df = pd.DataFrame({
+        "time": [saturday, saturday + timedelta(minutes=1)],
+        "open": [2500.0, 2500.1], "high": [2500.2, 2500.3], "low": [2499.8, 2499.9],
+        "close": [2500.05, 2500.15], "tick_volume": [10, 11], "spread": [20.0, 21.0],
+    })
+    snap = build_snapshot(df, 1)
+    assert snap.market_closed is True
+
+    weekday = datetime(2020, 1, 6, 10, 0, 0, tzinfo=timezone.utc)
+    df2 = pd.DataFrame({
+        "time": [weekday, weekday + timedelta(minutes=1)],
+        "open": [2500.0, 2500.1], "high": [2500.2, 2500.3], "low": [2499.8, 2499.9],
+        "close": [2500.05, 2500.15], "tick_volume": [10, 11], "spread": [20.0, 21.0],
+    })
+    snap2 = build_snapshot(df2, 1)
+    assert snap2.market_closed is False
+
+
+def test_historical_and_live_agree_field_by_field_or_declare_divergence():
+    """Broader than test_historical_and_live_states_agree_on_field_availability:
+    for every MarketState field, either both paths agree on the value (for
+    fields both sides can genuinely compute the same way, given equivalent
+    input) or the field is explicitly declared as an accepted divergence with
+    a stated reason. This is what would have caught the market_closed bug --
+    a False-vs-False comparison passes None-ness checks but not an explicit
+    equality/declaration check like this one."""
+    df = _make_df()
+    hist_snap = build_snapshot(df, N_BARS - 1)
+
+    engine = StateEngine("XAUUSD")
+    live_state = _feed_equivalent_ticks(engine, df)
+    assert live_state is not None
+
+    hist_dict = hist_snap.model_dump()
+    live_dict = live_state.model_dump()
+
+    # Fields expected to genuinely diverge between the two paths, with why.
+    ACCEPTED_DIVERGENCES = {
+        "source": "historical is 'synthetic_replay', live is the tick's own source",
+        "sequence": "independent per-path counters",
+        "ingestion_timestamp": "historical collapses to market_timestamp (no real ingestion pipeline)",
+        "processing_timestamp": "historical collapses to market_timestamp; live uses wall-clock now()",
+        "last_tick_age_sec": "historical is always 0.0 (no wall-clock replay); live measures real latency",
+        "feed_latency_sec": "historical is always 0.0; live measures real ingestion latency",
+        "state_update_latency_sec": "historical is always 0.0; live measures real processing latency",
+        "tick_rate_per_sec": "historical hardcodes 0.0 (no sub-bar tick rate at bar granularity)",
+        "current_m1": "different open/high/low/close construction (synthetic mid-bar vs tick-built)",
+        "completed_m1": "different tick_count/end_time provenance between paths",
+        "tick_count_60s": "coarser one-sample-per-minute vs per-tick sampling",
+        "tick_count_300s": "coarser one-sample-per-minute vs per-tick sampling",
+        "spread_mean_60s": "coarser one-sample-per-minute vs per-tick sampling",
+        "spread_std_60s": "structurally ~0 at bar granularity (see market_state_builder.py comment)",
+        "realized_vol_60s": "independent bar-buffer bookkeeping between paths, both real but not identical",
+        "bid": "constructed from equivalent but not bit-identical mid/spread math",
+        "ask": "constructed from equivalent but not bit-identical mid/spread math",
+        "mid": "historical bar-open price vs live per-tick mid; equivalent inputs, not guaranteed identical",
+        "spread": "equivalent inputs, not guaranteed bit-identical after independent rounding paths",
+        "last": "equivalent inputs, not guaranteed bit-identical",
+    }
+    for field, live_val in live_dict.items():
+        hist_val = hist_dict[field]
+        if field in ACCEPTED_DIVERGENCES:
+            continue
+        assert hist_val == live_val, (
+            f"{field} diverges between historical ({hist_val!r}) and live "
+            f"({live_val!r}) but is not declared an accepted divergence -- "
+            f"either fix the historical path to match, or add {field!r} to "
+            f"ACCEPTED_DIVERGENCES with a stated reason."
+        )
+
+
 def test_historical_timestamp_collapse_is_documented_not_accidental():
     """ingestion_timestamp == processing_timestamp == market_timestamp on
     the historical path is a deliberate zero-offset simplification (see

@@ -17,6 +17,7 @@ import pandas as pd
 from contracts.market_state import MarketState, M1BarState, DataQuality, FeedHealthState
 from contracts.data_quality import is_invalid_price as _is_invalid_price
 from contracts.data_quality import is_anomalous_spread as _is_anomalous_spread
+from market.state_engine import is_market_closed
 
 SPREAD_POINTS_TO_PRICE = 0.01
 VOL_LOOKBACK_BARS = 60
@@ -30,7 +31,16 @@ def _trailing_bar_window(df: pd.DataFrame, i: int, seconds: float) -> pd.DataFra
     reading -- vs. the live path's per-tick ring buffer. Used to compute
     real (not fabricated) tick_count_60s/300s and spread_mean/std_60s
     below. At i==0 there are no prior bars and the window is empty --
-    that yields a genuine 0/None, not a hardcoded placeholder."""
+    that yields a genuine 0/None, not a hardcoded placeholder.
+
+    HONESTY NOTE: at M1 bar granularity, rows are spaced exactly 60 seconds
+    apart, so a `seconds=60` call here structurally returns at most ONE row
+    (the single immediately-prior bar) -- it is never a multi-sample window.
+    That makes spread_std_60s (std of one point) always 0.0 downstream, and
+    tick_count_60s/spread_mean_60s are just that one prior bar's own values,
+    not a real 60-second aggregate. See the note near spread_std_60s's
+    computation in build_snapshot() for what this means for the spread-
+    anomaly check."""
     if i == 0:
         return df.iloc[0:0]
     # Compare in the DataFrame's own (possibly tz-naive) timestamp dtype --
@@ -110,6 +120,18 @@ def build_snapshot(df: pd.DataFrame, i: int, symbol: str = "XAUUSD", sequence: i
     # because bar data has no sub-minute resolution. That coarseness is a
     # real property of historical bar data, not something to paper over by
     # leaving them 0/None when real (if approximate) values are available.
+    #
+    # HONESTY NOTE on the 60s window specifically: at M1 spacing, the 60s
+    # trailing window (_trailing_bar_window(df, i, 60)) contains exactly one
+    # prior bar, so spread_std_60s below is STRUCTURALLY ALWAYS 0.0 (std of
+    # a single sample) -- it is not "real but noisy," it is a hard
+    # consequence of bar granularity. That makes the 5-sigma branch of
+    # is_anomalous_spread() (contracts/data_quality.py) effectively dead on
+    # this path: with std==0 it always falls through to the 10x-mean-ratio
+    # fallback, which is the only spread-anomaly detector that's actually
+    # active for historical replay. This is deliberate per Phase 1 scope
+    # (do not fabricate sub-bar precision the data doesn't have) -- not
+    # something to "fix" by widening the window here.
     win_60s = _trailing_bar_window(df, i, 60)
     win_300s = _trailing_bar_window(df, i, 300)
     tick_count_60s = int(win_60s["tick_volume"].sum()) if len(win_60s) else 0
@@ -146,6 +168,7 @@ def build_snapshot(df: pd.DataFrame, i: int, symbol: str = "XAUUSD", sequence: i
         tick_count_60s=tick_count_60s, tick_count_300s=tick_count_300s, tick_rate_per_sec=0.0,
         current_m1=current_m1, completed_m1=completed_m1,
         realized_vol_60s=realized_vol_60s, spread_mean_60s=spread_mean_60s, spread_std_60s=spread_std_60s,
+        market_closed=is_market_closed(ts),
         feed_health=FeedHealthState.CONNECTED, last_tick_age_sec=0.0,
         feed_latency_sec=0.0, state_update_latency_sec=0.0,
     )

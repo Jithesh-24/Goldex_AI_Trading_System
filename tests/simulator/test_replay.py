@@ -49,6 +49,52 @@ def _open_one_long_then_hold_forever():
     return decide, manage
 
 
+def _open_one_oversized_long_then_no_trade():
+    """decide_fn returns a LONG with an explicit size big enough to blow
+    through margin_free on the very first bar -- open_position() must reject
+    it (INSUFFICIENT_MARGIN)."""
+    state = {"tried": False}
+
+    def decide(market_state, account):
+        if not state["tried"]:
+            state["tried"] = True
+            return ("LONG", None, None, 1_000_000.0)
+        return ("NO_TRADE", None, None)
+
+    def manage(market_state, position_view, account):
+        return "HOLD"
+
+    return decide, manage
+
+
+def test_rejected_entry_marks_decide_record_with_rejection_reason_not_fabricated_open():
+    df = _make_df()
+    config = SimulatedExecutionConfig()
+    decide, manage = _open_one_oversized_long_then_no_trade()
+    recorder = run_replay(df, decide, manage, config, EnvironmentTag.SIMULATED_TRAINING)
+    records = recorder.all_records()
+
+    # The rejected DECIDE record still shows action=LONG (raw fact: that was
+    # the decision), but must now carry the rejection reason...
+    rejected = [r for r in records if r.action == "LONG"]
+    assert len(rejected) == 1
+    assert rejected[0].rejection_reason == "INSUFFICIENT_MARGIN"
+
+    # ...and no POSITION_CLOSED record should ever reference this
+    # decision_id, since no position was actually opened.
+    assert rejected[0].decision_id is not None
+    closed_for_this_decision = [
+        r for r in records
+        if r.event_type == "POSITION_CLOSED" and r.decision_id == rejected[0].decision_id
+    ]
+    assert closed_for_this_decision == []
+
+    # Every non-rejected record has no rejection_reason.
+    for r in records:
+        if r is not rejected[0]:
+            assert r.rejection_reason is None
+
+
 def test_run_replay_opens_and_force_closes_at_end_of_data():
     df = _make_df()
     config = SimulatedExecutionConfig()

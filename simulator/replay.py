@@ -120,7 +120,12 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
                     # Rejected entry: no position opens, account state is
                     # unchanged (open_position returns the same account back).
                     # Treated like a NO_TRADE bar -- the replay loop simply
-                    # continues, flat, to the next bar.
+                    # continues, flat, to the next bar. The DECIDE record
+                    # written above still shows action=LONG/SHORT and a
+                    # decision_id -- stamp the rejection reason onto it now so
+                    # a future reader can tell this apart from a real open
+                    # (no POSITION_CLOSED will ever follow it).
+                    record.rejection_reason = rejection_reason
                     position = None
                     current_decision_id = None
                 else:

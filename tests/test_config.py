@@ -17,3 +17,12 @@ def test_risk_config_matches_risk_yaml():
     assert risk.currency == raw["currency"]
     assert risk.leverage == raw["leverage"]
     assert risk.margin_call_level == raw["margin_call_level"]
+
+
+def test_load_config_is_cached():
+    """load_config() is @functools.lru_cache'd (Finding 4 fix) -- repeated
+    calls with the same config_dir must return the identical object, not
+    re-parse the 6 YAML files each time."""
+    first = load_config()
+    second = load_config()
+    assert first is second

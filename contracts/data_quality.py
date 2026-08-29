@@ -16,6 +16,14 @@ import math
 SPREAD_ANOMALY_STD_MULT = 5.0
 SPREAD_ANOMALY_MEAN_RATIO = 10.0
 
+# HISTORICAL-PATH NOTE: simulator/market_state_builder.py's 60-second
+# trailing window contains exactly one prior M1 bar at bar granularity, so
+# the spread_std it passes here is structurally always 0.0 -- the 5-sigma
+# branch below never fires on the historical path; only the 10x-mean-ratio
+# fallback provides real spread-anomaly detection for replay. The live path
+# (market/state_engine.py) has a genuine multi-tick std and both branches
+# are live there.
+
 
 def is_invalid_price(x) -> bool:
     """True for a zero/negative/NaN/inf/missing price."""
