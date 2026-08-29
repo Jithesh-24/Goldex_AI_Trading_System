@@ -1,14 +1,13 @@
 """simulator/execution.py
 Spread-crossing entry/exit fills plus a configurable slippage fraction of
 spread (slippage is unmodeled anywhere else in this codebase -- see
-decision/ev_cost.py, which handles spread cost only, not slippage). Cost
-still goes through decision.ev_cost.round_trip_cost_r unmodified.
-resolve_same_bar_ambiguity reuses features/labeling.py's existing
-_triple_barrier_core convention: if both SL and TP are touched within one
-bar, the adverse side wins."""
+simulator/cost_model.py, which handles spread cost only, not slippage).
+resolve_same_bar_ambiguity uses the same "adverse side wins" convention as
+the retired V3 triple-barrier labeling did when both SL and TP are touched
+within one bar."""
 from typing import Optional
 
-from decision.ev_cost import round_trip_cost_r
+from simulator.cost_model import round_trip_cost_r
 from simulator.contracts import Side, SimulatedExecutionConfig
 
 

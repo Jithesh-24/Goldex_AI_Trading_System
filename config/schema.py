@@ -33,20 +33,6 @@ class FeaturesConfig(BaseModel):
     daily_buffer_size: int
 
 
-class ModelRoleConfig(BaseModel):
-    direction: Optional[str] = None
-    opportunity_meta: Optional[str] = None
-    regime: Optional[str] = None
-    mae_quantile: Optional[str] = None
-    mfe_quantile: Optional[str] = None
-    barrier_probability: Optional[str] = None
-    execution_decay: Optional[str] = None
-
-
-class DecisionConfig(BaseModel):
-    meta_prob_threshold: float = Field(ge=0.0, le=1.0)
-
-
 class RiskConfig(BaseModel):
     pass
 
@@ -65,10 +51,6 @@ class JournalConfig(BaseModel):
     )
 
 
-class LearningConfig(BaseModel):
-    acc_regression_tolerance: float
-
-
 class RuntimeConfig(BaseModel):
     base_dir: str
     outdir: str
@@ -77,10 +59,7 @@ class RuntimeConfig(BaseModel):
 class Config(BaseModel):
     market: MarketConfig
     features: FeaturesConfig
-    models: ModelRoleConfig
-    decision: DecisionConfig
     risk: RiskConfig
     telegram: TelegramConfig
     journal: JournalConfig
-    learning: LearningConfig
     runtime: RuntimeConfig

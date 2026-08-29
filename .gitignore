@@ -1,4 +1,7 @@
 *.csv
+!data/gold_seed.csv
+!data/xm_bars_backfill.csv
+data/*.bak_*
 *.npy
 *.log
 *.jsonl
