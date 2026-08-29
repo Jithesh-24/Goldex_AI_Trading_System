@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from contracts.market_state import DataQuality
 from contracts.tick import Tick
 from market.state_engine import StateEngine, is_market_closed
 
@@ -108,6 +109,88 @@ def test_on_tick_multiple_ticks_closure_status_changes():
     assert state_closed.market_closed is True
 
 
+def test_on_tick_valid_tick_flagged_valid():
+    """An ordinary tick gets data_quality=VALID."""
+    engine = StateEngine("GOLD.i#")
+    monday_1000 = datetime(2026, 1, 5, 10, 0, tzinfo=timezone.utc)
+    state = engine.on_tick(_make_tick(monday_1000))
+    assert state.data_quality == DataQuality.VALID
+
+
+def test_on_tick_nan_mid_flagged_invalid():
+    """A corrupted tick (NaN mid) bypassing Tick's own pydantic validation
+    (via model_construct, simulating a bad upstream record) must be flagged
+    INVALID and still produce a usable MarketState with positive bid/ask --
+    not silently dropped and not crashing."""
+    engine = StateEngine("GOLD.i#")
+    ts = datetime(2026, 1, 5, 10, 0, tzinfo=timezone.utc)
+    good_tick = _make_tick(ts)
+    engine.on_tick(good_tick)  # seed a known-good last_bid/last_ask
+
+    bad_tick = Tick.model_construct(
+        symbol="GOLD.i#", market_timestamp=ts.replace(second=1),
+        ingestion_timestamp=datetime.now(timezone.utc),
+        bid=1500.0, ask=1500.5, mid=float("nan"), spread=0.5,
+        last=None, source="synthetic_replay", internal_seq=2,
+    )
+    state = engine.on_tick(bad_tick)
+    assert state is not None
+    assert state.data_quality == DataQuality.INVALID
+    assert state.bid > 0
+    assert state.ask > 0
+    # last known-good bid/ask (from good_tick) is what got carried forward
+    assert state.bid == good_tick.bid
+    assert state.ask == good_tick.ask
+
+
+def test_on_tick_negative_bid_flagged_invalid():
+    """A corrupted tick with a negative bid (bypassing Tick's own gt=0
+    validation) must be flagged rather than silently accepted."""
+    engine = StateEngine("GOLD.i#")
+    ts = datetime(2026, 1, 5, 10, 0, tzinfo=timezone.utc)
+    bad_tick = Tick.model_construct(
+        symbol="GOLD.i#", market_timestamp=ts,
+        ingestion_timestamp=datetime.now(timezone.utc),
+        bid=-1.0, ask=1500.5, mid=750.0, spread=1501.5,
+        last=None, source="synthetic_replay", internal_seq=1,
+    )
+    state = engine.on_tick(bad_tick)
+    assert state is not None
+    assert state.data_quality == DataQuality.INVALID
+    assert state.bid > 0
+
+
+def test_on_tick_anomalous_spread_flagged_invalid():
+    """A spread suddenly far outside the trailing window's normal range is
+    flagged, even though bid/ask/mid are all individually valid."""
+    engine = StateEngine("GOLD.i#")
+    base = datetime(2026, 1, 5, 10, 0, 0, tzinfo=timezone.utc)
+    # Build up a normal spread history (~0.5) over several ticks.
+    for k in range(10):
+        ts = base.replace(second=k)
+        engine.on_tick(_make_tick(ts, bid=1500.0 + k * 0.01, ask=1500.5 + k * 0.01))
+
+    # Now a tick with a spread 100x the established norm.
+    ts = base.replace(second=11)
+    spike_tick = _make_tick(ts, bid=1500.0, ask=1550.0)
+    state = engine.on_tick(spike_tick)
+    assert state is not None
+    assert state.data_quality == DataQuality.INVALID
+
+
+def test_on_tick_normal_spread_stays_valid():
+    """Ordinary spread fluctuation within the ~0.5 range does not trip the
+    anomaly flag."""
+    engine = StateEngine("GOLD.i#")
+    base = datetime(2026, 1, 5, 10, 0, 0, tzinfo=timezone.utc)
+    state = None
+    for k in range(10):
+        ts = base.replace(second=k)
+        state = engine.on_tick(_make_tick(ts, bid=1500.0 + k * 0.01, ask=1500.5 + k * 0.01))
+    assert state is not None
+    assert state.data_quality == DataQuality.VALID
+
+
 if __name__ == "__main__":
     test_is_market_closed_friday_evening()
     test_is_market_closed_friday_afternoon()
@@ -119,4 +202,9 @@ if __name__ == "__main__":
     test_on_tick_during_closure_sets_market_closed_true()
     test_on_tick_during_open_sets_market_closed_false()
     test_on_tick_multiple_ticks_closure_status_changes()
+    test_on_tick_valid_tick_flagged_valid()
+    test_on_tick_nan_mid_flagged_invalid()
+    test_on_tick_negative_bid_flagged_invalid()
+    test_on_tick_anomalous_spread_flagged_invalid()
+    test_on_tick_normal_spread_stays_valid()
     print("tests/test_market_closure_detection.py: OK")

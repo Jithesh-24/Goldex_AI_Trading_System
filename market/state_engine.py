@@ -2,6 +2,7 @@
 on_tick() is O(1)/O(window size), never reloads history. bootstrap() is
 the one explicit, startup-only exception that seeds from a bounded
 recent backfill (Section 13 of the design spec)."""
+import math
 from collections import deque
 from datetime import datetime, timezone
 
@@ -12,6 +13,29 @@ TICK_WINDOW_SEC = 300      # ring buffer retention, matches xm_ticker.py's prove
 M1_BUFFER_BARS = 480       # ~8 hours of completed M1 bars retained
 STALE_AFTER_SEC = 5.0
 VOL_LOOKBACK_BARS = 60     # matches simulator/market_state_builder.py's realized_vol_60s window
+
+# Task 12 -- same thresholds/rationale as simulator/market_state_builder.py's
+# spread-anomaly check (kept numerically identical so historical replay and
+# live trading agree on what "anomalous" means): 5 std devs above the
+# trailing spread_mean_60s/spread_std_60s this engine already tracks, with
+# a x10-of-mean fallback while that window is too young for a std (e.g.
+# right after startup).
+SPREAD_ANOMALY_STD_MULT = 5.0
+SPREAD_ANOMALY_MEAN_RATIO = 10.0
+
+
+def _is_invalid_price(x) -> bool:
+    return x is None or math.isnan(x) or math.isinf(x) or x <= 0
+
+
+def _is_anomalous_spread(spread, spread_mean_60s, spread_std_60s) -> bool:
+    if spread is None or math.isnan(spread) or math.isinf(spread) or spread < 0:
+        return True
+    if spread_mean_60s is None or spread_mean_60s <= 0:
+        return False
+    if spread_std_60s and spread_std_60s > 0:
+        return spread > spread_mean_60s + SPREAD_ANOMALY_STD_MULT * spread_std_60s
+    return spread > spread_mean_60s * SPREAD_ANOMALY_MEAN_RATIO
 
 
 def is_market_closed(utc_dt):
@@ -88,6 +112,51 @@ class StateEngine:
                 and self._last_ask == tick.ask):
             return None
 
+        # Task 12 -- invalid price (zero/negative/NaN/inf bid/ask/mid, or a
+        # crossed market where ask < bid). Tick's own pydantic gt=0 on
+        # bid/ask already blocks most of this at construction time; this is
+        # defense-in-depth for callers that bypass validation (or corrupt
+        # mid, which is unconstrained) and, crucially, is what lets us
+        # surface the problem on a returned MarketState instead of the tick
+        # simply vanishing. Unlike out-of-order/duplicate above, we do NOT
+        # return None here: silently dropping would hide the corruption
+        # from the consumer entirely. Instead emit a flagged snapshot built
+        # from the last known-good bid/ask, and skip updating ring
+        # buffers/last-known state with the bad reading so it can't poison
+        # later ticks' spread stats or window calculations.
+        invalid_price = (
+            _is_invalid_price(tick.bid) or _is_invalid_price(tick.ask)
+            or _is_invalid_price(tick.mid) or tick.ask < tick.bid
+        )
+        if invalid_price:
+            self._sequence += 1
+            now = datetime.now(timezone.utc)
+            fallback_bid = self._last_bid if self._last_bid and self._last_bid > 0 else 0.01
+            fallback_ask = self._last_ask if self._last_ask and self._last_ask > 0 else 0.01
+            return MarketState(
+                symbol=self.symbol, source=tick.source, sequence=self._sequence,
+                market_timestamp=tick.market_timestamp, ingestion_timestamp=tick.ingestion_timestamp,
+                processing_timestamp=now, bid=fallback_bid, ask=fallback_ask,
+                mid=(fallback_bid + fallback_ask) / 2.0, spread=fallback_ask - fallback_bid,
+                last=tick.last, last_quality=DataQuality.UNAVAILABLE if tick.last is None else DataQuality.VALID,
+                data_quality=DataQuality.INVALID,
+                tick_count_60s=len(self._tick_times_60s), tick_count_300s=len(self._tick_times),
+                tick_rate_per_sec=0.0, current_m1=self.current_m1,
+                completed_m1=self.completed_m1[-1] if self.completed_m1 else None,
+                realized_vol_60s=None, spread_mean_60s=None, spread_std_60s=None,
+                market_closed=is_market_closed(tick.market_timestamp),
+                feed_health=FeedHealthState.CONNECTED,
+                last_tick_age_sec=(now - tick.ingestion_timestamp).total_seconds(),
+                feed_latency_sec=(tick.ingestion_timestamp - tick.market_timestamp).total_seconds(),
+                state_update_latency_sec=(now - tick.ingestion_timestamp).total_seconds(),
+            )
+
+        # Snapshot spread history BEFORE this tick's spread is appended
+        # below, so the anomaly check judges the new tick against prior
+        # ticks only -- mirrors the historical path's _trailing_bar_window,
+        # which likewise excludes the row being evaluated.
+        prior_spreads = list(self._spreads)
+
         self._last_market_ts = market_ts
         self._last_bid, self._last_ask = tick.bid, tick.ask
 
@@ -160,6 +229,16 @@ class StateEngine:
         else:
             realized_vol_60s = None
 
+        prior_mean = sum(prior_spreads) / len(prior_spreads) if prior_spreads else None
+        prior_std = None
+        if len(prior_spreads) > 1:
+            prior_variance = sum((x - prior_mean) ** 2 for x in prior_spreads) / len(prior_spreads)
+            prior_std = prior_variance ** 0.5
+        data_quality = (
+            DataQuality.INVALID if _is_anomalous_spread(tick.spread, prior_mean, prior_std)
+            else DataQuality.VALID
+        )
+
         self._sequence += 1
         now = datetime.now(timezone.utc)
         processing_ts = now
@@ -170,6 +249,7 @@ class StateEngine:
             processing_timestamp=processing_ts, bid=tick.bid, ask=tick.ask, mid=tick.mid,
             spread=tick.spread, last=tick.last,
             last_quality=DataQuality.UNAVAILABLE if tick.last is None else DataQuality.VALID,
+            data_quality=data_quality,
             tick_count_60s=tick_count_60s, tick_count_300s=tick_count_300s,
             tick_rate_per_sec=tick_rate, current_m1=self.current_m1,
             completed_m1=self.completed_m1[-1] if self.completed_m1 else None,

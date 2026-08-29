@@ -12,12 +12,38 @@ contracts.market_state.MarketState's existing source Literal was designed to
 distinguish from "mt5_live"."""
 from datetime import timezone
 
+import math
+
 import pandas as pd
 
 from contracts.market_state import MarketState, M1BarState, DataQuality, FeedHealthState
 
 SPREAD_POINTS_TO_PRICE = 0.01
 VOL_LOOKBACK_BARS = 60
+
+# Task 12 -- data-quality thresholds. Spread anomaly is judged against the
+# same trailing spread_mean_60s/spread_std_60s this module already computes
+# below (real per-file history, not a fabricated baseline). 5 std devs is a
+# conservative "this is not noise" bar; the x10-of-mean fallback covers the
+# early-window case where std is 0 or unavailable (e.g. i==0), using the
+# example from the task brief ("spread suddenly 100x normal") scaled down
+# to something that won't false-positive on ordinary widening.
+SPREAD_ANOMALY_STD_MULT = 5.0
+SPREAD_ANOMALY_MEAN_RATIO = 10.0
+
+
+def _is_invalid_price(x: float) -> bool:
+    return x is None or math.isnan(x) or math.isinf(x) or x <= 0
+
+
+def _is_anomalous_spread(spread_price: float, spread_mean_60s, spread_std_60s) -> bool:
+    if spread_price < 0 or math.isnan(spread_price) or math.isinf(spread_price):
+        return True
+    if spread_mean_60s is None or spread_mean_60s <= 0:
+        return False
+    if spread_std_60s and spread_std_60s > 0:
+        return spread_price > spread_mean_60s + SPREAD_ANOMALY_STD_MULT * spread_std_60s
+    return spread_price > spread_mean_60s * SPREAD_ANOMALY_MEAN_RATIO
 
 
 def _trailing_bar_window(df: pd.DataFrame, i: int, seconds: float) -> pd.DataFrame:
@@ -39,13 +65,39 @@ def _trailing_bar_window(df: pd.DataFrame, i: int, seconds: float) -> pd.DataFra
     return prior[prior["time"] >= cutoff]
 
 
+def _last_valid_mid(df: pd.DataFrame, i: int) -> float:
+    """Nearest prior row (i.e. rows [0..i-1], never i or later -- no
+    leakage) with a finite positive open, walking backward. Falls back to
+    1.0 only if every prior row is also invalid (degenerate/corrupted
+    input); data_quality=INVALID on the returned snapshot is what tells a
+    consumer not to trust the price either way."""
+    for j in range(i - 1, -1, -1):
+        candidate = float(df.iloc[j]["open"])
+        if not _is_invalid_price(candidate):
+            return candidate
+    return 1.0
+
+
 def build_snapshot(df: pd.DataFrame, i: int, symbol: str = "XAUUSD", sequence: int = 0) -> MarketState:
     row = df.iloc[i]
     ts = row["time"].to_pydatetime()
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)
-    spread_price = float(row["spread"]) * SPREAD_POINTS_TO_PRICE
-    mid = float(row["open"])
+
+    raw_mid = float(row["open"])
+    raw_spread_price = float(row["spread"]) * SPREAD_POINTS_TO_PRICE
+
+    data_quality = DataQuality.VALID
+    if _is_invalid_price(raw_mid):
+        # Invalid price: substitute the nearest known-good mid so bid/ask
+        # (both gt=0 in the contract) stay constructible, and flag it --
+        # never pass the bad reading through as if it were a real price.
+        mid = _last_valid_mid(df, i)
+        spread_price = 0.0 if _is_invalid_price(raw_spread_price) else raw_spread_price
+        data_quality = DataQuality.INVALID
+    else:
+        mid = raw_mid
+        spread_price = raw_spread_price
     bid = mid - spread_price / 2.0
     ask = mid + spread_price / 2.0
 
@@ -95,6 +147,13 @@ def build_snapshot(df: pd.DataFrame, i: int, symbol: str = "XAUUSD", sequence: i
         spread_mean_60s = None
         spread_std_60s = None
 
+    # Spread-anomaly check: only meaningful against the *current* row's raw
+    # spread (not the substituted one above -- if the price itself was
+    # invalid we've already flagged INVALID and a spread anomaly on top of
+    # that adds no information for the consumer).
+    if data_quality == DataQuality.VALID and _is_anomalous_spread(raw_spread_price, spread_mean_60s, spread_std_60s):
+        data_quality = DataQuality.INVALID
+
     # ingestion_timestamp/processing_timestamp collapsed to market_timestamp
     # by design, not oversight: historical replay has no real ingestion or
     # processing pipeline to time -- there is nothing happening between
@@ -107,7 +166,7 @@ def build_snapshot(df: pd.DataFrame, i: int, symbol: str = "XAUUSD", sequence: i
         symbol=symbol, source="synthetic_replay", state_version="v1", sequence=sequence,
         market_timestamp=ts, ingestion_timestamp=ts, processing_timestamp=ts,
         bid=bid, ask=ask, mid=mid, spread=spread_price, last=mid,
-        last_quality=DataQuality.VALID,
+        last_quality=DataQuality.VALID, data_quality=data_quality,
         tick_count_60s=tick_count_60s, tick_count_300s=tick_count_300s, tick_rate_per_sec=0.0,
         current_m1=current_m1, completed_m1=completed_m1,
         realized_vol_60s=realized_vol_60s, spread_mean_60s=spread_mean_60s, spread_std_60s=spread_std_60s,

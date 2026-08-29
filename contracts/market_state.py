@@ -23,6 +23,13 @@ class DataQuality(str, Enum):
     STALE = "STALE"
     UNAVAILABLE = "UNAVAILABLE"
     UNKNOWN = "UNKNOWN"
+    INVALID = "INVALID"  # Task 12: corrupted/rejected record -- an invalid
+    # price (zero/negative/NaN bid/ask/mid) or an anomalous spread was
+    # detected. A single value covers both cases deliberately: both mean
+    # "do not trust this snapshot's price fields," and a consumer's
+    # required response (don't trade on it) is the same either way. Kept
+    # coarse on purpose -- see market_state_builder.py/state_engine.py for
+    # the specific thresholds that trigger it.
 
 
 class M1BarState(BaseModel):
@@ -53,6 +60,12 @@ class MarketState(BaseModel):
     spread: float
     last: Optional[float] = None
     last_quality: DataQuality = DataQuality.UNAVAILABLE
+    # Task 12: quality of THIS snapshot's core price fields (bid/ask/mid/
+    # spread) -- distinct from last_quality above, which only ever judges
+    # the separate `last` (last-traded-price) field. VALID unless an
+    # invalid price or an anomalous spread was detected and substituted/
+    # carried forward; see the two builders for detection logic.
+    data_quality: DataQuality = DataQuality.VALID
     # ACTIVITY
     tick_count_60s: int
     tick_count_300s: int
