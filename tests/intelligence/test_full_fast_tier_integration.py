@@ -30,49 +30,63 @@ runtime well under Task 12's observed latency ceiling while still
 exercising the composed system for real, end to end.
 
 INTEGRATION FINDING (genuine, discovered while building this test, not
-worked around in production code): `intelligence/bootstrap.py`'s
-`analytical_sltp_bootstrap` sets `sl_distance = SL_VOL_MULTIPLIER * vol *
-mid` (a price distance proportional to `vol`), and
-`intelligence/decision_engine.py`'s `decide()` immediately re-normalizes
-that same distance back into an R-multiple as
-`sl_distance_r = sl_distance_price / (vol * mid)`. Algebraically this
-ALWAYS equals exactly `SL_VOL_MULTIPLIER` (2.0) regardless of the actual
-price data -- `vol` cancels out completely, so the SL/TP bootstrap's
-volatility-scaling has zero effect on the R-multiple the EV/cost gate
-actually receives. `simulator.cost_model.round_trip_cost_r` then computes
-`cost_r = (spread * 2) / (candidate_sl_distance_r * vol * mid)`, i.e.
-`cost_r = spread / (SL_VOL_MULTIPLIER/2 * vol * mid)` given the constant
-above -- so `cost_r` scales INVERSELY with `vol`, while
-`decide()`'s `edge_proxy_r = abs(belief) * (1 - uncertainty)` is bounded in
-`[0, 1]` regardless of `vol`. For any synthetic (or real) price series
-whose realized_vol_60s is small relative to `spread / mid` (roughly
-`vol < spread / (SL_VOL_MULTIPLIER * mid)`, e.g. vol below ~5e-5 at this
-test's spread=0.2/mid=1900 scale), `cost_r` exceeds 1.0 and the EV/cost
-gate at intelligence/decision_engine.py's `decide()` (`edge_proxy_r <=
-cost_r: return NO_TRADE`) rejects EVERY candidate trade unconditionally --
-no belief/uncertainty combination can ever clear it, since edge_proxy_r's
-ceiling is 1.0. This was directly observed: the original 2,000-bar,
-noise-std=0.05 dataset produced realized_vol_60s around 4e-5 throughout and
-`cost_r` around 2.4-2.9 the entire run -- structurally un-clearable, 0
-trades in 2000 bars. Raising per-bar noise (std 0.35 below, giving
-realized_vol_60s around 2.5e-4-3e-4) pushes cost_r down into the
-0.35-0.5 range, well under a 0.45-0.9 edge_proxy_r, and trades occur
-normally. This is a real calibration gap between Task 11's SL/TP bootstrap
-and Task 6's EV/cost gate -- not a bug that breaks the seam (both compose
-without error, and the "never fabricate a cost" conservative-NO_TRADE
-behavior is itself correct), but a documented finding that the current
-SL_VOL_MULTIPLIER-cancels-out interaction between them means this composed
-system will structurally trade nothing at all in genuinely low-realized-
-volatility conditions, independent of how directional/confident the
-reasoner's belief is. Reported here rather than silently tuned away in
-production code, per this task's brief ("if you discover ANY integration
-mismatch ... that's a genuine finding to report prominently, not something
-to silently work around by changing your test to avoid the mismatch") --
-this test instead documents the mismatch and chooses a noisier-but-
-plausible dataset to still exercise the trading path end to end; Task 12's
-later tuning pass (or a follow-up task) is the right place to decide
-whether SL_VOL_MULTIPLIER, the edge_proxy formula, or the cost normalization
-itself should change.
+worked around in production code, corrected after a review pass caught an
+error in an earlier draft of this note -- see below): `intelligence/
+bootstrap.py`'s `analytical_sltp_bootstrap` sets `sl_distance =
+SL_VOL_MULTIPLIER * vol * mid`, and `intelligence/decision_engine.py`'s
+`decide()` immediately re-normalizes that same distance back into an
+R-multiple as `sl_distance_r = sl_distance_price / (vol * mid)`. `vol`
+cancels out of THAT ratio, so `sl_distance_r` is always exactly
+`SL_VOL_MULTIPLIER` (2.0) -- this part is correct and expected, not a bug:
+an R-multiple is by construction dimensionless in vol (a "2-sigma stop" is
+always "2R" by definition, regardless of what sigma numerically is).
+
+What does NOT cancel is `vol` out of `cost_r` itself.
+`simulator.cost_model.round_trip_cost_r` computes
+`cost_r = (spread * 2) / (sl_distance_r * vol * mid)`, i.e., substituting
+the constant above, `cost_r = spread / (SL_VOL_MULTIPLIER/2 * vol * mid)`
+-- `vol` sits in the denominator here and does NOT cancel, so `cost_r`
+correctly falls as `vol` rises: vol-scaling the stop is exactly the
+mechanism that makes a wider (higher-vol) stop absorb a fixed spread cost
+more easily. `decide()` rejects a candidate when `edge_proxy_r <= cost_r`
+where `edge_proxy_r = abs(belief) * (1 - uncertainty)` is capped at 1.0.
+`cost_r > 1.0` (making the trade un-clearable at ANY belief) happens
+precisely when `vol < spread / (SL_VOL_MULTIPLIER * mid)` -- i.e. when the
+round-trip spread cost, measured against a 2-sigma stop, would eat more
+than the entire available risk budget. Refusing to trade in that regime is
+CORRECT financial behavior, not a defect: it is the EV/cost gate doing
+exactly what it is meant to do (never trade when the edge can't plausibly
+clear round-trip cost).
+
+This was directly observed: the original 2,000-bar, noise-std=0.05 dataset
+produced realized_vol_60s around 4e-5 (below that spread/(SL_VOL_MULTIPLIER
+* mid) ~5e-5 threshold at this test's spread=0.2/mid=1900 scale) throughout,
+so `cost_r` sat around 2.4-2.9 the entire run and correctly rejected all
+2000 bars. Raising per-bar noise (std 0.35 below, giving realized_vol_60s
+around 2.5e-4-3e-4, comfortably above the threshold) pushes cost_r down into
+the 0.35-0.5 range, and trades occur normally once genuine edge is present.
+
+The real, narrower, legitimate concern this exercise surfaced: `edge_proxy_r`
+is a dimensionless, ad hoc confidence score (`|belief| * (1-uncertainty)`,
+both already normalized quantities from the reasoner) being compared
+directly against `cost_r`, which is a genuine R-multiple in the market's own
+risk units -- nothing establishes that these two quantities are on a
+comparable numeric scale (e.g. that an `edge_proxy_r` of 0.5 actually
+corresponds to anything like "0.5R of real expected edge"). `decide()`'s own
+module docstring already flags `edge_proxy_r` as "a crude, dimensionless
+in-[0, 1] stand-in for real expected R" -- this test's finding is not that
+the gate is broken, but that its threshold interacts with real market
+regimes exactly the way the vol-vs-spread math predicts, and that
+`edge_proxy_r`'s calibration against `cost_r`'s R-multiple scale is still an
+open item (consistent with Task 12's already-documented deferred-tuning
+scope), worth a deliberate look before this gate's specific pass/reject
+boundary is trusted at any particular belief threshold. Reported here per
+this task's brief ("if you discover ANY integration mismatch ... that's a
+genuine finding to report prominently, not something to silently work around
+by changing your test to avoid the mismatch") -- this test documents the
+finding and chooses a noisier-but-plausible dataset (tradeable vol regime)
+to still exercise the trading path end to end, rather than treating the
+low-vol NO_TRADE behavior as a bug to route around.
 
 Four sub-checks, all against ONE composed run's actual ExperienceRecord
 stream (plus a second, freshly-constructed engine/run for the no-look-ahead
@@ -112,9 +126,10 @@ N_BARS = 300
 
 # Per-bar noise std: deliberately larger than a "gentle drift" convention
 # would use (see the module docstring's INTEGRATION FINDING note) -- this
-# pushes realized_vol_60s up into the regime where the EV/cost gate can
-# actually pass at all, given SL_VOL_MULTIPLIER's cancellation. Without
-# this, the composed system trades zero times regardless of dataset length.
+# pushes realized_vol_60s above the spread/(SL_VOL_MULTIPLIER * mid)
+# threshold so the EV/cost gate can actually pass at all. Below that
+# threshold the round-trip spread cost exceeds the entire 2-sigma risk
+# budget, so the composed system correctly refuses to trade at any belief.
 NOISE_STD = 0.35
 
 
@@ -226,27 +241,31 @@ def test_full_composed_fast_tier_end_to_end_through_real_replay():
         assert thesis is not None
         assert len(thesis.load_bearing_sources) > 0
 
-    # Thesis correctly cleared at exit: after the full run, if the run ends
-    # flat (no open position at the very last bar), engine.open_thesis must
-    # be None. If the run ends with a position still open, that's fine too
-    # (the dataset simply ended mid-trade) -- assert on whichever real
-    # end-state occurred rather than assuming one.
-    closed_decision_ids = {r.decision_id for r in records if r.event_type == "POSITION_CLOSED"}
-    entry_decision_ids = [r.decision_id for r in entry_decides]
-    last_entry_id = entry_decision_ids[-1]
-    if last_entry_id in closed_decision_ids:
-        # The most recent trade closed at some point before the run ended;
-        # decide() unconditionally clears any leftover thesis the next time
-        # it's entered while flat (see decision_engine.py's decide()) -- and
-        # since the run ended, either another decide() ran after that close
-        # (clearing it) or the run ended exactly at close. Either way, at
-        # least one full open->close cycle happened cleanly.
-        assert True
-    # Regardless of end-state, thesis must never survive past its own trade's
-    # close into a DIFFERENT trade's entry: verify no two consecutive entries
-    # share a load-bearing-sources object identity (would indicate stale reuse).
-    for a, b in zip(engine.entry_theses_in_order, engine.entry_theses_in_order[1:]):
-        assert a is not b
+    # Thesis correctly cleared at exit. The real, non-vacuous check: whether
+    # the run ended FLAT (no position open on the final bar) is determined
+    # directly from the last DECIDE/MANAGE record's event_type -- MANAGE
+    # only ever fires while a position is open (simulator/replay.py only
+    # calls manage_fn while `position is not None`), so if the last such
+    # record is a DECIDE, the run ended flat; if it's a MANAGE, a position
+    # was still open when the dataset ran out.
+    last_decide_or_manage = [r for r in records if r.event_type in ("DECIDE", "MANAGE")][-1]
+    if last_decide_or_manage.event_type == "DECIDE":
+        # Ended flat: engine.open_thesis must genuinely be None -- this is
+        # the actual clearing behavior under test (decision_engine.py's
+        # decide() unconditionally clears any leftover thesis the moment
+        # it is entered while flat, and the run's last decide() call did
+        # exactly that).
+        assert engine.open_thesis is None, (
+            "run ended flat but engine.open_thesis was not cleared -- thesis leaked past its "
+            "position's close"
+        )
+    else:
+        # Ended with a position still open (dataset ran out mid-trade): the
+        # thesis for that still-open position should still be present, not
+        # spuriously cleared.
+        assert engine.open_thesis is not None, (
+            "run ended with a position still open but engine.open_thesis was already cleared"
+        )
 
     # --- (b) rejection handling (engineered via tiny starting balance) ---
     # NOTE: a tiny starting_balance ALONE does not force a rejection here --
