@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 import pandas as pd
 
-from simulator.contracts import EnvironmentTag, SimulatedExecutionConfig, PositionOutcome
+from simulator.contracts import AccountState, EnvironmentTag, SimulatedExecutionConfig, PositionOutcome
 from simulator.replay import run_replay
 
 
@@ -184,6 +184,36 @@ def test_run_replay_data_gap_blocks_new_entries():
     assert decide_records[2].action == "LONG"
 
 
+def test_run_replay_uses_caller_supplied_size_when_decide_fn_returns_a_4_tuple():
+    """DecideFn may optionally return a 4th tuple element, size. When present
+    (and not None), the opened position must use it instead of the engine's
+    equity * risk_fraction_of_equity default."""
+    df = _make_df(n=6)
+    config = SimulatedExecutionConfig(risk_fraction_of_equity=0.5)  # default would be equity * 0.5
+    explicit_size = 3.25
+    calls = {"n": 0}
+
+    def decide(market_state, account):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return ("LONG", None, None, explicit_size)
+        return ("NO_TRADE", None, None)
+
+    opened_position_views = []
+
+    def manage(market_state, position_view, account):
+        opened_position_views.append(position_view)
+        return "HOLD"
+
+    recorder = run_replay(df, decide, manage, config, EnvironmentTag.SIMULATED_TRAINING)
+    assert len(opened_position_views) > 0
+    assert opened_position_views[0].size == explicit_size
+    # Sanity: the risk-fraction default (equity * 0.5, equity starts >> 3.25)
+    # would clearly differ from explicit_size, so this is a discriminating test.
+    account = AccountState.initial(config, df.iloc[0]["time"].to_pydatetime())
+    assert explicit_size != account.equity * config.risk_fraction_of_equity
+
+
 if __name__ == "__main__":
     test_run_replay_all_no_trade_never_opens_position()
     test_run_replay_force_closes_a_position_opened_on_the_very_last_bar()
@@ -191,4 +221,5 @@ if __name__ == "__main__":
     test_run_replay_opens_and_force_closes_at_end_of_data()
     test_run_replay_reopens_immediately_after_exit_no_cooldown()
     test_run_replay_data_gap_blocks_new_entries()
+    test_run_replay_uses_caller_supplied_size_when_decide_fn_returns_a_4_tuple()
     print("tests/simulator/test_replay.py: OK")

@@ -18,6 +18,9 @@ from simulator.experience import ExperienceRecord, ExperienceRecorder, write_tag
 from simulator.market_state_builder import build_snapshot
 
 DecideFn = Callable[[object, AccountState], tuple]
+# Returns (action, sl_price, tp_price) or (action, sl_price, tp_price, size).
+# size is optional (4th element); when omitted or None, open_position() falls
+# back to its existing risk-fraction-of-equity default.
 ManageFn = Callable[[object, object, AccountState], str]
 
 
@@ -80,7 +83,9 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
             gap_type = classify_gap(prev_timestamp, current_timestamp)
 
         if position is None:
-            action, sl_price, tp_price = decide_fn(market_state, account)
+            decision = decide_fn(market_state, account)
+            action, sl_price, tp_price = decision[0], decision[1], decision[2]
+            size = decision[3] if len(decision) > 3 else None
             observation_features = _extract_observation_features(decide_fn)
             # Refuse to open new positions if there's a DATA_GAP
             if action in ("LONG", "SHORT") and gap_type == "DATA_GAP":
@@ -100,7 +105,7 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
             recorder.record(record)
             if action in ("LONG", "SHORT"):
                 side = Side.LONG if action == "LONG" else Side.SHORT
-                position, account = open_position(market_state, account, side, sl_price, tp_price, config)
+                position, account = open_position(market_state, account, side, sl_price, tp_price, config, size)
                 bars_held = 0
                 current_decision_id = decision_id
             prev_timestamp = current_timestamp

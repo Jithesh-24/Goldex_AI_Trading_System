@@ -21,9 +21,11 @@ def to_position_view(position: Position, current_mid: float, bars_held: int) -> 
 
 
 def open_position(market_state, account: AccountState, side: Side, sl_price: Optional[float],
-                   tp_price: Optional[float], config: SimulatedExecutionConfig):
+                   tp_price: Optional[float], config: SimulatedExecutionConfig,
+                   size: Optional[float] = None):
     entry_price = entry_fill_price(side, market_state.mid, market_state.spread, config)
-    size = (account.equity * config.risk_fraction_of_equity)
+    if size is None:
+        size = (account.equity * config.risk_fraction_of_equity)
     margin_used = (size * entry_price) / config.leverage
     entry_cost_amount = (market_state.spread / 2.0
                          + market_state.spread * config.slippage_fraction_of_spread) * size
