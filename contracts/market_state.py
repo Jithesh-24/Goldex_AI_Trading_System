@@ -64,6 +64,8 @@ class MarketState(BaseModel):
     realized_vol_60s: Optional[float] = None
     spread_mean_60s: Optional[float] = None
     spread_std_60s: Optional[float] = None
+    # MARKET STATUS
+    market_closed: bool = False
     # FEED HEALTH
     feed_health: FeedHealthState
     last_tick_age_sec: float

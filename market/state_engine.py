@@ -174,6 +174,7 @@ class StateEngine:
             tick_rate_per_sec=tick_rate, current_m1=self.current_m1,
             completed_m1=self.completed_m1[-1] if self.completed_m1 else None,
             realized_vol_60s=realized_vol_60s, spread_mean_60s=spread_mean, spread_std_60s=spread_std,
+            market_closed=is_market_closed(tick.market_timestamp),
             feed_health=FeedHealthState.CONNECTED,
             last_tick_age_sec=(processing_ts - tick.ingestion_timestamp).total_seconds(),
             feed_latency_sec=(tick.ingestion_timestamp - tick.market_timestamp).total_seconds(),
