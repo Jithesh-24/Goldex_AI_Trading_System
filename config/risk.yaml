@@ -1,1 +1,7 @@
-{}
+# Account/margin/leverage configuration (Phase 1 infra -- not a trading
+# decision). Values mirror typical retail FX/CFD broker defaults: 1:100
+# leverage, USD account currency, and a 50% margin level margin-call
+# threshold (equity / margin_used).
+currency: "USD"
+leverage: 100.0
+margin_call_level: 0.5

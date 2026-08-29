@@ -3,10 +3,24 @@ GOLDEX V4 Phase 1 core data contracts. Neither sl_price nor tp_price is ever
 mandatory on a Position -- a policy may run with either, both, or neither
 (see docs/superpowers/specs/2026-08-26-goldex-v4-phase1-simulator-design.md
 Section 13). No fixed holding horizon appears anywhere in this module."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Optional
+
+
+def _default_leverage() -> float:
+    """Sourced from config/risk.yaml (RiskConfig.leverage) rather than a
+    hardcoded literal. Imported lazily to avoid a module-load-time
+    dependency between simulator and config."""
+    from config.loader import load_config
+    return load_config().risk.leverage
+
+
+def _default_currency() -> str:
+    """Sourced from config/risk.yaml (RiskConfig.currency)."""
+    from config.loader import load_config
+    return load_config().risk.currency
 
 
 class EnvironmentTag(str, Enum):
@@ -33,17 +47,16 @@ class Side(str, Enum):
 @dataclass
 class SimulatedExecutionConfig:
     starting_balance: float = 10000.0
-    leverage: float = 100.0
+    # Defaults sourced from config/risk.yaml (RiskConfig.leverage /
+    # RiskConfig.currency) via lazy factories -- see _default_leverage /
+    # _default_currency above -- rather than hardcoded literals.
+    leverage: float = field(default_factory=_default_leverage)
     slippage_fraction_of_spread: float = 0.5
     latency_ms: float = 0.0
     margin_call_threshold: float = 0.5
     liquidation_threshold: float = 0.2
     risk_fraction_of_equity: float = 0.01
-    # Config-driven default for AccountState.currency. Nothing elsewhere in the
-    # config schema (config/schema.py) specifies an account currency yet, so a
-    # plain "USD" literal default lives here until a real multi-currency need
-    # arises.
-    currency: str = "USD"
+    currency: str = field(default_factory=_default_currency)
     # BUGFIX (whole-branch review): decision.ev_cost.round_trip_cost_r rejects a
     # market_state whose market_timestamp is older than max_staleness_seconds
     # relative to wall-clock now(). Historical replay timestamps are years old,

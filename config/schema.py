@@ -34,7 +34,15 @@ class FeaturesConfig(BaseModel):
 
 
 class RiskConfig(BaseModel):
-    pass
+    # Account currency for simulated/live trading.
+    currency: str
+    # Account leverage ratio (e.g. 100.0 == 1:100).
+    leverage: float
+    # Margin level (equity / margin_used) at which a margin call would
+    # trigger, expressed as a fraction (e.g. 0.5 == 50%). Representing the
+    # configured constraint value only -- no margin-call enforcement logic
+    # lives in this module.
+    margin_call_level: float
 
 
 class TelegramConfig(BaseModel):
