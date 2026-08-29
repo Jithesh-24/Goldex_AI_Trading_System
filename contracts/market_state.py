@@ -65,7 +65,7 @@ class MarketState(BaseModel):
     spread_mean_60s: Optional[float] = None
     spread_std_60s: Optional[float] = None
     # MARKET STATUS
-    market_closed: bool = False
+    market_closed: bool = False  # Separate from feed_health (connection status) and data_quality (per-field validity); schedules are orthogonal concerns
     # FEED HEALTH
     feed_health: FeedHealthState
     last_tick_age_sec: float
