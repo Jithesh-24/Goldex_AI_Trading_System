@@ -33,6 +33,7 @@ import numpy as np
 
 from intelligence.evidence import EvidenceRegistry
 from intelligence.fast_tier import FastTierReasoner, Hypothesis, ToolTrust
+from intelligence.thesis import Thesis
 
 # --- Direction/threshold design (documented, deliberately simple) ---------
 # A Hypothesis is only acted on if its net_directional_belief is clearly
@@ -95,8 +96,44 @@ class FastTierDecisionEngine:
         self.sltp_bootstrap = sltp_bootstrap
         # See module docstring's closes_so_far design note.
         self._closes: list[float] = []
+        # Task 7: thesis memory. At most one Thesis at a time, held as a
+        # private instance attribute -- never a module-level dict -- so
+        # there is no structural way for one position's load-bearing
+        # sources to leak into another's. None while flat.
+        self._open_thesis: Optional[Thesis] = None
+
+    @property
+    def open_thesis(self) -> Optional[Thesis]:
+        """The Thesis for the currently open position, or None while flat."""
+        return self._open_thesis
+
+    def clear_thesis(self) -> None:
+        """Discards the retained thesis. Called below whenever `decide()`
+        is entered with a leftover thesis still set (see note in `decide()`
+        for why that's the general-purpose exit-detection point given this
+        engine's DecideFn/ManageFn seam). Also exposed as a public method
+        so a future MANAGE-driven exit (Task 8's real continuous
+        reassessment, once `manage()` can itself decide "EXIT") can clear
+        the thesis at the exact bar it triggers the exit, rather than
+        waiting for the next `decide()` call."""
+        self._open_thesis = None
 
     def decide(self, market_state, account) -> tuple:
+        # `simulator.replay.run_replay` only ever calls decide() while flat
+        # (simulator/replay.py:93-94) -- so entering decide() with
+        # self._open_thesis still set means the previously open position
+        # closed (SL/TP hit, liquidation, or a POLICY_EXIT) via a path this
+        # engine's DecideFn/ManageFn seam never observes directly (manage()
+        # isn't even called on a bar where price already closed the
+        # position -- see simulator/replay.py's same-bar-ambiguity check
+        # running before manage_fn). This is therefore the one place that's
+        # structurally guaranteed to run exactly once between any position's
+        # close and the next one's possible open, making it the correct
+        # place to enforce "no leakage across positions" unconditionally,
+        # regardless of which path closed the prior position.
+        if self._open_thesis is not None:
+            self.clear_thesis()
+
         self._closes.append(float(market_state.mid))
         closes_so_far = np.asarray(self._closes, dtype=np.float64)
 
@@ -130,11 +167,25 @@ class FastTierDecisionEngine:
             return ("NO_TRADE", None, None, None)
 
         size = self.sizing_bootstrap(hyp, account)
+
+        # Task 7: retain this entry's load-bearing sources for as long as
+        # the position stays open. Only set on an actual LONG/SHORT (never
+        # on NO_TRADE, since no position is opening).
+        self._open_thesis = Thesis(
+            load_bearing_sources=list(hyp.load_bearing_sources),
+            entry_belief=hyp.net_directional_belief,
+            entry_timestamp=market_state.market_timestamp,
+        )
         return (direction, sl_price, tp_price, size)
 
     def manage(self, market_state, position_view, account) -> str:
-        """Stub: always HOLD for this task. Task 7/8 build the real
+        """Stub: always HOLD for this task. Task 8 builds the real
         thesis-based continuous reassessment on top of this stub -- this
         engine's own scope (per the task brief) is only the DECIDE seam plus
-        a minimal, contract-honoring MANAGE stub."""
+        a minimal, contract-honoring MANAGE stub. When Task 8's reassessment
+        logic decides to return "EXIT" here, it should also call
+        `self.clear_thesis()` at that point so the thesis is discarded on
+        the exact bar that triggers the exit; `decide()`'s own self-heal
+        (see its docstring) is the fallback that still guarantees clearing
+        even for exits this stub never sees (SL/TP hit, liquidation)."""
         return "HOLD"
