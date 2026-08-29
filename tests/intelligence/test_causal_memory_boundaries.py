@@ -27,15 +27,28 @@ trade's outcome could be threaded into an EARLIER trade's `update()` call
 Thesis it was given. A "poisoned" scenario is only constructible by having
 the *caller* pass the wrong (thesis, records) pairing to
 `assign_trade_credit` -- i.e. a caller-side bug in how theses are keyed by
-decision_id, not a leakage bug in credit_assignment.py itself. This test
-suite proves the real API (i): produces order-invariant ToolTrust
-posteriors when correctly-grouped trades are credited in scrambled order
-(the property a "future outcome leaked backward" bug would violate), and
-(ii) demonstrates that mis-pairing a decision_id with the WRONG trade's
-Thesis (the only constructible poisoning vector) does change the outcome,
-confirming `assign_replay_credit`'s decision_id-keyed lookup is exactly
-what prevents this in real use -- correct keying is what "structurally
-cannot leak" depends on.
+decision_id, not a leakage bug in credit_assignment.py itself. This test suite's actual causal no-look-ahead guard is the
+truncation-vs-full test below: crediting decisions 1..k from a record
+stream truncated right after decision k's close must produce IDENTICAL
+`ToolTrust` posteriors to crediting from the full record stream 1..N --
+i.e. a later, not-yet-closed trade's mere PRESENCE in the input stream
+must never change an earlier trade's credit. That is the direct analogue
+of Task 3/5's truncate-and-recompute no-look-ahead pattern, applied to
+credit assignment instead of evidence computation, and it is what would
+catch a bug where credit assignment folds in some order-symmetric
+"outcomes seen so far" side channel that a naive call-order-permutation
+test cannot distinguish from a causally correct implementation (a fixed,
+fully-materialized dataset replayed in different `update()` call orders
+is float-commutative regardless of causal correctness -- see the
+docstring on `test_credit_assignment_order_invariant_regardless_of_processing_order`
+below for why that test, while still a real and worthwhile guard on
+`ToolTrust`'s own accumulation semantics, does NOT by itself prove the
+causal property this task exists to harden). This suite also (separately)
+demonstrates that mis-pairing a decision_id with the WRONG trade's Thesis
+(the only constructible cross-trade poisoning vector against the real
+`assign_replay_credit` API) does change the outcome, confirming
+`assign_replay_credit`'s decision_id-keyed lookup is exactly what prevents
+that in real use.
 """
 import os
 import sys
@@ -99,20 +112,32 @@ def _thesis(load_bearing):
 # ---------------------------------------------------------------------------
 
 def test_credit_assignment_order_invariant_regardless_of_processing_order():
-    """Constructs 4 trades in chronological order, where trade 4's outcome
-    (loss) is the deliberate OPPOSITE of trade 1's outcome (win) on the same
-    (source, bucket) pair -- exactly the "opposite future outcome" setup the
-    brief asks for. Credits them via the real `assign_trade_credit` in
-    natural chronological order, then again in a scrambled/reversed order,
-    and asserts ToolTrust's resulting posteriors are IDENTICAL either way.
+    """NOTE ON SCOPE (relabeled after review): this test proves
+    call-order-commutativity of ToolTrust's additive Beta accumulator over a
+    FIXED, fully-materialized set of trades -- it does NOT by itself prove
+    the causal no-look-ahead property this task exists to harden. Floating-
+    point addition is commutative, so ANY implementation that calls
+    `update()` exactly once per (source, trade) pair will pass a call-order
+    permutation test as long as every trade's records already exist in full
+    for every permutation -- only the *call order* varies here, never *what
+    data is visible at each step*. A leaky implementation that folded in a
+    running "outcomes-seen-so-far" side channel (itself order-symmetric)
+    would sail through this exact test while genuinely violating causality.
+    The real causal no-look-ahead guard is
+    `test_credit_assignment_truncated_vs_full_stream_identical_for_common_prefix`
+    below, which varies what's actually IN the input stream (truncated vs.
+    full), not just call order over an unchanged fixed dataset.
 
-    This is the direct guard: a bug that accidentally threaded a LATER
-    trade's `agreed` value into an EARLIER trade's `update()` call (e.g. a
-    shared/mutated-in-place records list, or crediting against the wrong
-    trade's close_record) would make the two processing orders diverge --
-    either because the wrong agreed value gets used somewhere, or because
-    processing order would matter at all for a causally-correct mechanism
-    (it must not, since each trade's credit is self-contained).
+    This test remains a real, worthwhile, differently-scoped guard on
+    ToolTrust's own accumulation semantics: constructs 4 trades in
+    chronological order, where trade 4's outcome (loss) is the deliberate
+    OPPOSITE of trade 1's outcome (win) on the same (source, bucket) pair.
+    Credits them via the real `assign_trade_credit` in natural chronological
+    order, then again in a scrambled/reversed order, and asserts ToolTrust's
+    resulting posteriors are IDENTICAL either way -- i.e. the accumulator
+    itself has no order-dependent state (no decay, no recency weighting, no
+    aliasing bug in a shared/mutated-in-place records list) that would make
+    two orderings of the SAME fixed dataset diverge.
     """
     base_t = datetime(2024, 1, 1, tzinfo=timezone.utc)
     bucket = 2
@@ -176,6 +201,95 @@ def test_credit_assignment_order_invariant_regardless_of_processing_order():
     # (not that the test is vacuously order-invariant because nothing
     # happened).
     assert chronological.posterior_mean("alpha", bucket) == pytest.approx(0.5)
+
+
+def test_credit_assignment_truncated_vs_full_stream_identical_for_common_prefix():
+    """THE flagship causal no-look-ahead guard for this task (the direct
+    analogue of Task 3/5's truncate-and-recompute pattern, applied to
+    credit assignment instead of evidence computation): credit decisions
+    1..k using a record stream TRUNCATED right after decision k's own
+    POSITION_CLOSED record (so decisions k+1..N -- later, not-yet-closed-
+    at-that-point trades -- are simply ABSENT from the input, not merely
+    reordered) vs. crediting decisions 1..k from the FULL record stream
+    1..N (where those later trades' records genuinely exist, interleaved
+    after decision k's close). Confirms decisions 1..k's resulting
+    ToolTrust posteriors are IDENTICAL either way.
+
+    This is the property `test_credit_assignment_order_invariant_...`
+    above cannot prove: unlike a call-order permutation over one fixed,
+    fully-materialized dataset (which is float-commutative for any
+    per-trade-independent implementation, leaky or not), this test varies
+    *what data is actually present* in the input at the point decisions
+    1..k are credited. A bug that let `assign_replay_credit` (or a helper
+    it calls) fold information from ANY record occurring after a given
+    decision's own close -- e.g. a running side-channel counter, a lookback
+    window computed over the whole stream, or grouping logic that
+    accidentally peeks past the current decision's own records -- would
+    make the truncated and full runs diverge for decisions 1..k, even
+    though a naive order-permutation test would never catch it (order-
+    symmetric leakage passes order-invariance trivially).
+    """
+    base_t = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    bucket = 3
+
+    # 6 trades, k = 3: decisions 1..3 close (in order) before decisions 4..6
+    # even begin. Decisions 1..3 use sources "alpha"/"beta"/"gamma";
+    # decisions 4..6 (the "future" relative to the truncation point) use
+    # DISJOINT source names "delta"/"echo"/"foxtrot" on the SAME bucket --
+    # disjoint so that the ONLY way the full run's posteriors for
+    # alpha/beta/gamma could differ from the truncated run's is if
+    # something from decisions 4..6 leaked backward (there is no legitimate
+    # reason for them to differ, since no real trade ever credits
+    # alpha/beta/gamma a second time in either run).
+    early = [("alpha", True), ("beta", False), ("gamma", True)]
+    late = [("delta", False), ("echo", True), ("foxtrot", False)]
+    all_trades = []
+    for idx, (source_name, agreed) in enumerate(early + late):
+        decision_id = f"d{idx + 1}"
+        t0 = base_t + timedelta(minutes=2 * idx)
+        t1 = t0 + timedelta(minutes=1)
+        pnl = 10.0 if agreed else -10.0
+        records = [_decide_record(decision_id, t0), _closed_record(decision_id, t1, realized_pnl=pnl)]
+        thesis = _thesis([(source_name, bucket, 0.5)])
+        all_trades.append((decision_id, records, thesis))
+
+    k = 3
+
+    # Full stream: every trade's records, in natural chronological order.
+    full_records = [r for (_, records, _) in all_trades for r in records]
+    full_theses = {decision_id: thesis for (decision_id, _, thesis) in all_trades}
+    trust_full = ToolTrust()
+    assign_replay_credit(full_records, full_theses, trust_full)
+
+    # Truncated stream: ONLY decisions 1..k's records exist at all -- decisions
+    # k+1..N (the "future," not-yet-closed-at-that-point trades) are absent
+    # from the input entirely, not just reordered.
+    truncated_records = [r for (_, records, _) in all_trades[:k] for r in records]
+    truncated_theses = {decision_id: thesis for (decision_id, _, thesis) in all_trades[:k]}
+    trust_truncated = ToolTrust()
+    assign_replay_credit(truncated_records, truncated_theses, trust_truncated)
+
+    for source_name, _agreed in early:
+        mean_full = trust_full.posterior_mean(source_name, bucket)
+        mean_truncated = trust_truncated.posterior_mean(source_name, bucket)
+        assert mean_full == pytest.approx(mean_truncated), (
+            f"{source_name}: credit for decisions 1..{k} differs between the truncated "
+            "and full record streams -- a later, not-yet-closed trade's presence in the "
+            "input leaked into an earlier trade's ToolTrust update"
+        )
+
+    # Sanity: the two streams are NOT trivially identical because there was
+    # no real "future" data to leak in the first place -- confirm decisions
+    # 4..6 genuinely did get credited in the full run (their sources moved
+    # off the untouched Beta(1,1) prior mean of 0.5), proving real
+    # information existed that COULD have leaked and provably didn't.
+    for source_name, _agreed in late:
+        assert trust_full.posterior_mean(source_name, bucket) != pytest.approx(0.5), (
+            f"{source_name}: expected to be credited in the full run (sanity check that "
+            "the 'future' trades in this scenario are not vacuous)"
+        )
+        # And correctly absent from the truncated run, which never saw them.
+        assert trust_truncated.posterior_mean(source_name, bucket) == pytest.approx(0.5)
 
 
 def test_earlier_trade_credit_unaffected_by_poisoning_a_later_trades_outcome():
@@ -372,6 +486,7 @@ def test_context_bucket_unaffected_by_poisoning_closes_beyond_current_index():
 
 if __name__ == "__main__":
     test_credit_assignment_order_invariant_regardless_of_processing_order()
+    test_credit_assignment_truncated_vs_full_stream_identical_for_common_prefix()
     test_earlier_trade_credit_unaffected_by_poisoning_a_later_trades_outcome()
     test_replay_credit_mispairing_thesis_across_decision_ids_changes_outcome()
     test_context_bucket_truncated_vs_full_prefix_identical()
