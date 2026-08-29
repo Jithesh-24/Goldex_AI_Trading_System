@@ -59,7 +59,11 @@ def _closed(decision_id, t, realized_pnl, outcome=PositionOutcome.TP_HIT, cost_a
 
 def test_winning_trade_credits_exactly_its_load_bearing_sources_as_agreed():
     trust = ToolTrust()
-    thesis = Thesis(load_bearing_sources=[("momentum_scalar", 2, 0.4), ("garch_conditional_variance", 1, -0.1)])
+    # Both sources voted LONG (positive contribution), matching the LONG
+    # trade -- so a win validates both. (A source whose contribution
+    # DISAGREED with the trade's direction is covered by
+    # test_dissenting_load_bearing_source_gets_opposite_credit below.)
+    thesis = Thesis(load_bearing_sources=[("momentum_scalar", 2, 0.4), ("kalman_innovation", 1, 0.1)])
     records = [
         _decide("d1", T0, "LONG"),
         _manage("d1", T0 + timedelta(minutes=1)),
@@ -68,7 +72,7 @@ def test_winning_trade_credits_exactly_its_load_bearing_sources_as_agreed():
     credited = assign_trade_credit(records, thesis, trust)
     assert credited is True
     assert trust.posterior_mean("momentum_scalar", 2) > 0.5
-    assert trust.posterior_mean("garch_conditional_variance", 1) > 0.5
+    assert trust.posterior_mean("kalman_innovation", 1) > 0.5
     # Untouched source stays at the Beta(1,1) prior mean.
     assert trust.posterior_mean("kalman_filtered_velocity", 0) == 0.5
 
@@ -141,8 +145,12 @@ def test_two_nearby_trades_with_overlapping_source_sets_credit_separately():
     """
     trust = ToolTrust()
 
-    thesis_a = Thesis(load_bearing_sources=[("momentum_scalar", 2, 0.4), ("garch_conditional_variance", 1, -0.1)])
-    thesis_b = Thesis(load_bearing_sources=[("momentum_scalar", 2, 0.3), ("kalman_filtered_velocity", 0, 0.2)])
+    # Contribution signs match each trade's own direction (A LONG -> both
+    # positive; B SHORT -> both negative), so this test isolates per-trade
+    # ATTRIBUTION without also entangling the per-source dissent logic --
+    # that is tested separately below.
+    thesis_a = Thesis(load_bearing_sources=[("momentum_scalar", 2, 0.4), ("kalman_innovation", 1, 0.1)])
+    thesis_b = Thesis(load_bearing_sources=[("momentum_scalar", 2, -0.3), ("kalman_filtered_velocity", 0, -0.2)])
 
     records = [
         _decide("a", T0, "LONG"),
@@ -162,9 +170,9 @@ def test_two_nearby_trades_with_overlapping_source_sets_credit_separately():
     a, b = trust._get("momentum_scalar", 2)
     assert (a, b) == (2.0, 2.0)
 
-    # garch_conditional_variance (bucket 1): only A's thesis used it, and A
+    # kalman_innovation (bucket 1): only A's thesis used it, and A
     # won -> exactly one agree update, never touched by B.
-    a, b = trust._get("garch_conditional_variance", 1)
+    a, b = trust._get("kalman_innovation", 1)
     assert (a, b) == (2.0, 1.0)
 
     # kalman_filtered_velocity (bucket 0): only B's thesis used it, and B
@@ -206,3 +214,75 @@ def test_group_by_decision_drops_no_trade_records_and_groups_correctly():
     assert set(groups.keys()) == {"a", "b"}
     assert len(groups["a"]) == 3
     assert len(groups["b"]) == 2
+
+
+# --- C2 regression: signed per-source credit ---------------------------
+
+def test_dissenting_load_bearing_source_gets_opposite_credit():
+    """Whole-branch-review C2 regression. `Thesis.load_bearing_sources` is
+    sign-agnostic (a source qualifies on |contribution| >= floor), so it can
+    contain a source that voted OPPOSITE to the direction the trade was
+    actually taken in. Crediting the trade-level `realized_pnl > 0` flag
+    uniformly to every load-bearing source rewarded such a dissenter for an
+    outcome it had argued against.
+
+    Here the trade goes LONG and WINS. `momentum_scalar` voted LONG (+0.4)
+    and must be credited as agreed; `kalman_innovation` voted SHORT (-0.35)
+    and must be credited as NOT agreed. The two must move in OPPOSITE
+    directions -- that is the whole point.
+    """
+    trust = ToolTrust()
+    thesis = Thesis(load_bearing_sources=[
+        ("momentum_scalar", 2, 0.4),      # agrees with the LONG that was taken
+        ("kalman_innovation", 2, -0.35),  # dissents: argued SHORT
+    ])
+    records = [
+        _decide("d1", T0, "LONG"),
+        _closed("d1", T0 + timedelta(minutes=2), realized_pnl=25.0),
+    ]
+    assert assign_trade_credit(records, thesis, trust) is True
+
+    agreeing = trust.posterior_mean("momentum_scalar", 2)
+    dissenting = trust.posterior_mean("kalman_innovation", 2)
+    assert agreeing > 0.5, "source that voted with the winning direction must be credited as agreed"
+    assert dissenting < 0.5, (
+        "source that voted AGAINST the direction actually taken must NOT be credited as agreed "
+        "just because the trade it argued against happened to profit"
+    )
+    assert (agreeing > 0.5) != (dissenting > 0.5), "agreeing and dissenting sources must move oppositely"
+
+
+def test_dissenting_source_is_vindicated_when_the_trade_loses():
+    """The symmetric half of the same rule: the trade goes LONG and LOSES,
+    so the source that argued SHORT was RIGHT (agreed=True) and the source
+    that argued LONG was wrong (agreed=False)."""
+    trust = ToolTrust()
+    thesis = Thesis(load_bearing_sources=[
+        ("momentum_scalar", 3, 0.4),
+        ("kalman_innovation", 3, -0.35),
+    ])
+    records = [
+        _decide("d1", T0, "LONG"),
+        _closed("d1", T0 + timedelta(minutes=2), realized_pnl=-25.0),
+    ]
+    assert assign_trade_credit(records, thesis, trust) is True
+    assert trust.posterior_mean("momentum_scalar", 3) < 0.5
+    assert trust.posterior_mean("kalman_innovation", 3) > 0.5
+
+
+def test_short_trade_credit_is_relative_to_the_short_direction():
+    """Direction is taken from the DECIDE record's action, not from a
+    hardcoded LONG assumption: on a WINNING SHORT, the SHORT-voting
+    (negative-contribution) source is the one validated."""
+    trust = ToolTrust()
+    thesis = Thesis(load_bearing_sources=[
+        ("momentum_scalar", 1, -0.4),   # voted SHORT, matching the SHORT taken
+        ("kalman_innovation", 1, 0.3),  # voted LONG, dissenting
+    ])
+    records = [
+        _decide("d1", T0, "SHORT"),
+        _closed("d1", T0 + timedelta(minutes=2), realized_pnl=40.0),
+    ]
+    assert assign_trade_credit(records, thesis, trust) is True
+    assert trust.posterior_mean("momentum_scalar", 1) > 0.5
+    assert trust.posterior_mean("kalman_innovation", 1) < 0.5

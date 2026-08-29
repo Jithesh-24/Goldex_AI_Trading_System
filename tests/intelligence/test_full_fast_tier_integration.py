@@ -118,7 +118,7 @@ from intelligence.credit_assignment import assign_replay_credit
 from intelligence.decision_engine import FastTierDecisionEngine
 from intelligence.evidence_sources import build_default_registry
 from intelligence.fast_tier import FastTierReasoner, ToolTrust
-from simulator.contracts import EnvironmentTag, SimulatedExecutionConfig
+from simulator.contracts import EnvironmentTag, PositionOutcome, SimulatedExecutionConfig
 from simulator.cost_model import round_trip_cost_r
 from simulator.replay import run_replay
 
@@ -224,6 +224,30 @@ def test_full_composed_fast_tier_end_to_end_through_real_replay():
     assert N_BARS <= len(records) <= 2 * N_BARS
     n_closed = sum(1 for r in records if r.event_type == "POSITION_CLOSED")
     assert n_closed >= 1, "expected at least one closed position over this run"
+
+    # --- (e) MANAGE-driven POLICY_EXIT actually composes ------------------
+    # Task 8's thesis-invalidation exit was previously only proven in
+    # isolation (tests/intelligence/test_position_management.py); this
+    # asserts it genuinely fires through the REAL engine wired into the REAL
+    # run_replay, i.e. that manage() -> "EXIT" -> POSITION_CLOSED(POLICY_EXIT)
+    # composes end to end with the rest of the system.
+    policy_exits = [
+        r for r in records
+        if r.event_type == "POSITION_CLOSED" and r.outcome == PositionOutcome.POLICY_EXIT
+    ]
+    assert len(policy_exits) >= 1, (
+        "expected at least one MANAGE-driven POLICY_EXIT in the composed run -- Task 8's "
+        f"thesis-invalidation exit never fired through the real replay. Outcomes seen: "
+        f"{sorted({str(r.outcome) for r in records if r.event_type == 'POSITION_CLOSED'})}"
+    )
+    # Every POLICY_EXIT must belong to a real, non-rejected trade lifecycle
+    # (i.e. it links back to a DECIDE that actually opened a position).
+    entry_ids = {
+        r.decision_id for r in records
+        if r.event_type == "DECIDE" and r.action in ("LONG", "SHORT") and r.rejection_reason is None
+    }
+    for r in policy_exits:
+        assert r.decision_id in entry_ids
 
     decide_records = [r for r in records if r.event_type == "DECIDE"]
     actions = {r.action for r in decide_records}
@@ -400,3 +424,48 @@ def test_no_look_ahead_full_composed_system_truncate_and_recompute():
             f"composed system"
         )
         assert a.rejection_reason == b.rejection_reason, f"record {i}: rejection_reason diverged"
+
+
+def test_stale_market_data_cost_gate_forces_no_trade_across_the_composed_run():
+    """(f) the stale-market-data NO_TRADE branch, composed.
+
+    `simulator.cost_model.round_trip_cost_r` measures staleness against WALL
+    CLOCK (`datetime.now(timezone.utc) - market_state.market_timestamp`), so
+    a historical replay dataset is by construction ancient. The main test
+    above therefore passes `max_staleness_seconds=float("inf")` to exercise
+    the trading path at all. Here we pass a REAL 5-second staleness budget
+    instead: every bar's cost is then uncomputable, `round_trip_cost_r`
+    returns None, and `decide()`'s "never fabricate a cost" branch must turn
+    every single bar into NO_TRADE -- no position may ever open.
+
+    This is the composed-system proof that the conservative stale-data
+    branch is wired through, not just unit-tested in isolation."""
+    df = _make_df()
+    config = SimulatedExecutionConfig()
+
+    def _strict_staleness_cost_gate(market_state, candidate_sl_distance_r):
+        return round_trip_cost_r(market_state, candidate_sl_distance_r, max_staleness_seconds=5.0)
+
+    registry = build_default_registry()
+    engine = FastTierDecisionEngine(
+        registry=registry,
+        trust=ToolTrust(),
+        reasoner=FastTierReasoner(registry),
+        ev_cost_gate=_strict_staleness_cost_gate,
+        sizing_bootstrap=analytical_sizing_bootstrap(config),
+        sltp_bootstrap=analytical_sltp_bootstrap,
+    )
+    recorder = run_replay(df, engine.decide, engine.manage, config, EnvironmentTag.SIMULATED_TRAINING)
+    records = recorder.all_records()
+
+    # Sanity: the SAME dataset does trade when staleness is not enforced
+    # (asserted by the main test above), so an all-NO_TRADE result here is
+    # attributable to the staleness gate specifically, not to a dataset that
+    # never trades anyway.
+    decide_records = [r for r in records if r.event_type == "DECIDE"]
+    assert len(decide_records) == len(df), "expected one DECIDE per bar when never in a position"
+    assert all(r.action == "NO_TRADE" for r in decide_records), (
+        "stale market data must force NO_TRADE on every bar -- decide() fabricated a cost"
+    )
+    assert not any(r.event_type == "POSITION_CLOSED" for r in records)
+    assert engine.open_thesis is None

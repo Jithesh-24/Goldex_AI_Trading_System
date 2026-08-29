@@ -48,6 +48,37 @@ EXPENSIVE_SOURCE_NAMES = frozenset({
 # GARCH-variance / Kalman-velocity magnitude scalar computed below.
 N_CONTEXT_BUCKETS = 5
 
+# Explicit sentinel context bucket for "no usable context evidence at all"
+# (both the GARCH-variance and the Kalman-velocity readings are missing,
+# non-finite, or applicability-gated to zero confidence). Deliberately
+# OUTSIDE [0, N_CONTEXT_BUCKETS - 1] so it can never collide with a genuine
+# reading, however low: pooling "we know nothing about the current regime"
+# with "we measured a genuinely quiet regime" would train one Beta posterior
+# on two categorically different situations. ToolTrust keys on
+# (source_name, context_bucket) tuples, so a negative bucket is a perfectly
+# valid, permanently distinct key.
+GATED_OUT_CONTEXT_BUCKET = -1
+
+# Re-centering constants for the context magnitude (see context_bucket()).
+# The raw magnitude log1p(sigma2) + log1p(|velocity|) is non-negative by
+# construction, so squashing it directly through a logistic gives a value
+# that is ALWAYS >= 0.5 -- structurally stranding the lower half of the
+# bucket range (with N_CONTEXT_BUCKETS=5, buckets 0 and 1 were literally
+# unreachable, leaving only 3 live buckets instead of 5). The fix is to
+# squash the LOG of that magnitude, centered on a typical observed value,
+# so the sigmoid input is genuinely two-sided.
+#
+# MAGNITUDE_LOG_CENTER: log of a typical mid-regime magnitude. Measured
+# empirically over synthetic random-walk closes at this repo's XAUUSD price
+# scale (median raw magnitude ~0.15 across sampled decision points).
+# MAGNITUDE_LOG_SCALE: how many e-folds of magnitude span the bucket range.
+# At 1.0, roughly a factor-of-e change in magnitude moves one bucket over
+# the middle of the range, so magnitudes from ~0.02 (bucket 0) to ~1.0
+# (bucket 4) are all reachable -- a realistic quiet-to-turbulent span.
+# Both are documented round numbers, not fit to profitable data.
+MAGNITUDE_LOG_CENTER = math.log(0.15)
+MAGNITUDE_LOG_SCALE = 1.0
+
 
 class ToolTrust:
     """Per-(source_name, context_bucket) Beta(alpha, beta) posterior over
@@ -86,16 +117,19 @@ class ToolTrust:
         return float(beta_dist(a, b).var())
 
 
-def _evidence_scalar(evidence: dict[str, EvidenceValue], name: str) -> float:
+def _evidence_scalar(evidence: dict[str, EvidenceValue], name: str) -> Optional[float]:
+    """The usable scalar for `name`, or None if there is no usable reading
+    at all (missing, non-finite, or applicability-gated to zero confidence).
+    None is distinct from 0.0 on purpose -- see GATED_OUT_CONTEXT_BUCKET."""
     ev = evidence.get(name)
     if ev is None or ev.value is None or not math.isfinite(ev.value):
-        return 0.0
+        return None
     # A source Task 4's applicability gate has zeroed out (confidence <= 0,
     # e.g. insufficient history or invalid MarketState) must not steer
     # bucket selection -- it's not trustworthy evidence of anything,
     # including "how turbulent the market is right now."
     if ev.confidence <= 0.0:
-        return 0.0
+        return None
     return float(ev.value)
 
 
@@ -106,20 +140,46 @@ def context_bucket(evidence: dict[str, EvidenceValue]) -> int:
     `log1p(GARCH sigma^2) + log1p(|Kalman velocity|)`: a monotonically
     increasing "how turbulent/fast-moving is the market right now" magnitude
     that combines a volatility-scale term and a trend-speed-scale term on
-    comparable (log) footing. That magnitude is squashed through a logistic
-    sigmoid into (0, 1) (so no fixed scale needs to be guessed -- the
-    binning is scale-free) and multiplied into N_CONTEXT_BUCKETS equal-width
-    bins. Missing/inapplicable evidence contributes 0.0 to the magnitude
-    (sigmoid(0) = 0.5 -> a mid bucket), never raises.
+    comparable (log) footing.
+
+    That magnitude is then squashed through a logistic sigmoid in LOG space,
+    centered on MAGNITUDE_LOG_CENTER and scaled by MAGNITUDE_LOG_SCALE,
+    before being multiplied into N_CONTEXT_BUCKETS equal-width bins. The log
+    re-centering matters: the raw magnitude is non-negative by construction,
+    so squashing it directly gave sigmoid >= 0.5 ALWAYS and made buckets 0
+    and 1 structurally unreachable (only 3 of 5 buckets were ever live).
+    Centering in log space makes the sigmoid input genuinely two-sided, so
+    the full bucket range is reachable over realistic vol/velocity ranges.
+
+    If BOTH context readings are unusable (missing, non-finite, or
+    applicability-gated to zero confidence), this returns the explicit
+    GATED_OUT_CONTEXT_BUCKET sentinel rather than any in-range bucket -- "we
+    have no idea what regime this is" must not pool with a genuine
+    low-magnitude reading. If only ONE reading is usable, the other
+    contributes 0.0 to the magnitude and a real bucket is still returned:
+    that is a genuine (partial) measurement, not an absence of one. Never
+    raises.
     """
-    sigma2 = max(_evidence_scalar(evidence, "garch_conditional_variance"), 0.0)
-    velocity = abs(_evidence_scalar(evidence, "kalman_filtered_velocity"))
+    sigma2_raw = _evidence_scalar(evidence, "garch_conditional_variance")
+    velocity_raw = _evidence_scalar(evidence, "kalman_filtered_velocity")
+
+    if sigma2_raw is None and velocity_raw is None:
+        return GATED_OUT_CONTEXT_BUCKET
+
+    sigma2 = max(sigma2_raw, 0.0) if sigma2_raw is not None else 0.0
+    velocity = abs(velocity_raw) if velocity_raw is not None else 0.0
 
     magnitude = math.log1p(sigma2) + math.log1p(velocity)
-    scaled = 1.0 / (1.0 + math.exp(-magnitude))  # logistic squash into (0, 1)
+    if magnitude <= 0.0:
+        # Both terms are exactly zero -- a real, measured, maximally quiet
+        # reading. Floor it into the lowest bucket rather than taking a log
+        # of zero.
+        return 0
+    z = (math.log(magnitude) - MAGNITUDE_LOG_CENTER) / MAGNITUDE_LOG_SCALE
+    scaled = 1.0 / (1.0 + math.exp(-z))  # logistic squash into (0, 1)
 
     bucket = int(scaled * N_CONTEXT_BUCKETS)
-    return min(bucket, N_CONTEXT_BUCKETS - 1)
+    return min(max(bucket, 0), N_CONTEXT_BUCKETS - 1)
 
 
 @dataclass
@@ -212,8 +272,33 @@ class FastTierReasoner:
         contributions: list[tuple[float, float, float]] = []  # (signed_contribution, uncertainty, weight)
         load_bearing: list[tuple[str, int, float]] = []
 
+        specs = self.registry.specs()
         for name, ev in gated_evidence.items():
             if ev.value is None or not math.isfinite(ev.value) or ev.confidence <= 0.0:
+                continue
+            # C1 fix: only sources whose VALUE SIGN encodes a price
+            # direction may cast a directional vote. A variance or a
+            # variance ratio is non-negative by construction and would
+            # otherwise cast a permanent, unfalsifiable LONG vote that no
+            # amount of trust learning could ever cancel (a Beta posterior
+            # mean is strictly in (0, 1), never 0, never negative); a skew
+            # or kurtosis reading is signed but its sign means "tail shape",
+            # not "price up/down". Non-directional sources are still
+            # computed and still applicability-gated above, and still feed
+            # context_bucket() (which conditions on exactly the GARCH
+            # variance and Kalman velocity magnitude) -- they simply take no
+            # part in net_directional_belief.
+            #
+            # They are consequently also excluded from load_bearing_sources:
+            # that list exists to drive credit assignment
+            # (intelligence/credit_assignment.py), whose whole semantics --
+            # and ToolTrust's own documented semantics above -- is "did THIS
+            # source's directional call agree with the realized outcome."
+            # That question is undefined for a source that never made a
+            # directional call, so crediting one either way would be
+            # fabricated evidence.
+            spec = specs.get(name)
+            if spec is None or not spec.is_directional:
                 continue
             trust_mean = trust.posterior_mean(name, bucket)
             trust_unc = trust.posterior_uncertainty(name, bucket)

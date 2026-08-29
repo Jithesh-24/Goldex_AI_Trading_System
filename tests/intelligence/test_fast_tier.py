@@ -13,6 +13,7 @@ from contracts.market_state import DataQuality, FeedHealthState, MarketState
 from intelligence.evidence import EvidenceRegistry, EvidenceSourceSpec, EvidenceValue
 from intelligence.evidence_sources import build_default_registry
 from intelligence.fast_tier import (
+    GATED_OUT_CONTEXT_BUCKET,
     EXPENSIVE_SOURCE_NAMES,
     FastTierReasoner,
     Hypothesis,
@@ -88,16 +89,19 @@ def _registry_with_context_sources(sigma2, velocity, test_value=1.0, test_conf=1
         name="garch_conditional_variance", mathematical_formulation="stub",
         required_inputs=["closes"], assumptions="stub", known_failure_conditions="none",
         compute=lambda closes: EvidenceValue(sigma2, 1.0, "garch_conditional_variance"),
+        is_directional=False,  # mirrors production: a variance is not a price-direction vote
     ))
     registry.register(EvidenceSourceSpec(
         name="kalman_filtered_velocity", mathematical_formulation="stub",
         required_inputs=["closes"], assumptions="stub", known_failure_conditions="none",
         compute=lambda closes: EvidenceValue(velocity, 1.0, "kalman_filtered_velocity"),
+        is_directional=True,
     ))
     registry.register(EvidenceSourceSpec(
         name="test_source", mathematical_formulation="stub",
         required_inputs=["closes"], assumptions="stub", known_failure_conditions="none",
         compute=lambda closes: EvidenceValue(test_value, test_conf, "test_source"),
+        is_directional=True,
     ))
     return registry
 
@@ -188,6 +192,7 @@ def _fixed_registry(value_a, value_b, conf=1.0):
         assumptions="test stub",
         known_failure_conditions="none",
         compute=lambda closes: EvidenceValue(value_a, conf, "source_a"),
+        is_directional=True,
     ))
     registry.register(EvidenceSourceSpec(
         name="source_b",
@@ -196,6 +201,7 @@ def _fixed_registry(value_a, value_b, conf=1.0):
         assumptions="test stub",
         known_failure_conditions="none",
         compute=lambda closes: EvidenceValue(value_b, conf, "source_b"),
+        is_directional=True,
     ))
     return registry
 
@@ -336,16 +342,19 @@ def test_expensive_sources_not_recomputed_every_bar():
         name="garch_conditional_variance", mathematical_formulation="stub",
         required_inputs=["closes"], assumptions="stub", known_failure_conditions="none",
         compute=garch_compute,
+        is_directional=False,
     ))
     registry.register(EvidenceSourceSpec(
         name="kalman_filtered_velocity", mathematical_formulation="stub",
         required_inputs=["closes"], assumptions="stub", known_failure_conditions="none",
         compute=kalman_v_compute,
+        is_directional=True,
     ))
     registry.register(EvidenceSourceSpec(
         name="momentum_scalar", mathematical_formulation="stub",
         required_inputs=["closes"], assumptions="stub", known_failure_conditions="none",
         compute=cheap_compute,
+        is_directional=True,
     ))
 
     reasoner = FastTierReasoner(registry, refit_interval=50)
@@ -403,12 +412,139 @@ def test_context_bucket_is_continuous_derived_and_monotonic():
 
 
 def test_context_bucket_handles_missing_evidence_gracefully():
-    # No exception, and it must fall inside the valid bucket range.
+    # No exception. With NO usable context evidence at all, the result is the
+    # explicit GATED_OUT_CONTEXT_BUCKET sentinel -- deliberately outside the
+    # genuine bucket range, so "we know nothing about this regime" never
+    # pools with a real measurement (see below).
     bucket = context_bucket({})
-    assert 0 <= bucket < N_CONTEXT_BUCKETS
+    assert bucket == GATED_OUT_CONTEXT_BUCKET
+    assert not (0 <= bucket < N_CONTEXT_BUCKETS)
 
     bucket_none_value = context_bucket({
         "garch_conditional_variance": EvidenceValue(None, 0.0, "garch_conditional_variance"),
         "kalman_filtered_velocity": EvidenceValue(None, 0.0, "kalman_filtered_velocity"),
     })
     assert bucket_none_value == bucket
+
+    # A zero-CONFIDENCE (applicability-gated) reading is also "no usable
+    # evidence", even though the values themselves are finite.
+    assert context_bucket({
+        "garch_conditional_variance": EvidenceValue(1.0, 0.0, "garch_conditional_variance"),
+        "kalman_filtered_velocity": EvidenceValue(0.5, 0.0, "kalman_filtered_velocity"),
+    }) == GATED_OUT_CONTEXT_BUCKET
+
+
+def test_gated_out_sentinel_is_distinguishable_from_a_genuine_low_reading():
+    """Whole-branch-review regression: the fully-gated-out case must NOT
+    share a bucket with any value a genuine reading can produce -- otherwise
+    one Beta posterior is trained on two categorically different situations
+    ("no information" vs "a real, quiet market")."""
+    gated = context_bucket({})
+    genuine_buckets = set()
+    for sigma2 in (0.0, 1e-9, 1e-6, 1e-3, 0.05, 0.5, 5.0, 50.0):
+        for velocity in (0.0, 1e-9, 1e-4, 0.01, 0.3, 3.0, 30.0):
+            genuine_buckets.add(context_bucket({
+                "garch_conditional_variance": EvidenceValue(sigma2, 1.0, "garch_conditional_variance"),
+                "kalman_filtered_velocity": EvidenceValue(velocity, 1.0, "kalman_filtered_velocity"),
+            }))
+    assert gated not in genuine_buckets, (
+        "the gated-out sentinel collides with a bucket a genuine reading can produce"
+    )
+
+
+def test_every_context_bucket_is_reachable_over_realistic_inputs():
+    """Whole-branch-review regression: the magnitude formula used to be
+    non-negative by construction, so the logistic squash never went below
+    0.5 and buckets 0 and 1 were STRUCTURALLY unreachable (only 3 of the 5
+    buckets were ever live). Over a realistic quiet-to-turbulent span of
+    GARCH variance and Kalman velocity, every bucket must be reachable."""
+    observed = set()
+    for sigma2 in (1e-6, 1e-4, 1e-3, 0.01, 0.05, 0.15, 0.5, 1.5, 5.0, 20.0):
+        for velocity in (1e-6, 1e-4, 1e-3, 0.01, 0.05, 0.2, 1.0, 5.0):
+            observed.add(context_bucket({
+                "garch_conditional_variance": EvidenceValue(sigma2, 1.0, "garch_conditional_variance"),
+                "kalman_filtered_velocity": EvidenceValue(velocity, 1.0, "kalman_filtered_velocity"),
+            }))
+    assert observed == set(range(N_CONTEXT_BUCKETS)), (
+        f"only buckets {sorted(observed)} reachable; expected all of "
+        f"{list(range(N_CONTEXT_BUCKETS))}"
+    )
+
+
+# --- C1 regression: no structural directional bias ----------------------
+
+def test_net_directional_belief_is_unbiased_on_symmetric_driftless_data():
+    """Whole-branch-review C1 regression.
+
+    `hypothesis()` used to fold EVERY source's `copysign(1, value)` into
+    `net_directional_belief`. But `multiscale_vol_ratio` and
+    `garch_conditional_variance` are non-negative BY CONSTRUCTION, so they
+    voted LONG on literally every sample, and no Beta posterior mean (which
+    lives strictly in (0, 1)) could ever zero or flip that vote. The measured
+    consequence on driftless random walks was a mean
+    `net_directional_belief` of about +0.32 and a ~78%/7% LONG/SHORT split --
+    a hard long-only bias living in the aggregation math itself.
+
+    On truly symmetric, zero-drift data, the expected net belief is ~0: for
+    every up-path there is an equally likely mirrored down-path. This test
+    runs the REAL 9-source registry over many independent driftless random
+    walks and pins the mean near zero.
+    """
+    registry = build_default_registry()
+    n_paths = 30
+    beliefs = []
+    for seed in range(n_paths):
+        rng = np.random.default_rng(1000 + seed)
+        closes = 1900.0 + np.cumsum(rng.normal(0.0, 0.35, size=260))
+        reasoner = FastTierReasoner(registry, refit_interval=50)
+        trust = ToolTrust()
+        for i in range(200, 260, 6):
+            hyp = reasoner.hypothesis(closes[:i], None, trust)
+            beliefs.append(hyp.net_directional_belief)
+
+    beliefs = np.asarray(beliefs, dtype=np.float64)
+    mean_belief = float(beliefs.mean())
+    n_long = int((beliefs > 0).sum())
+    n_short = int((beliefs < 0).sum())
+    print(f"[SYNTHETIC][C1] n={len(beliefs)} mean_net_belief={mean_belief:.4f} "
+          f"long={n_long} short={n_short}")
+
+    assert abs(mean_belief) < 0.05, (
+        f"net_directional_belief is structurally biased on symmetric driftless data "
+        f"(mean={mean_belief:.4f}, long={n_long}, short={n_short}) -- some non-directional "
+        f"source is very likely casting a directional vote again"
+    )
+    # And the sign split must be roughly balanced, not overwhelmingly one-sided.
+    directional = n_long + n_short
+    assert directional > 0
+    assert 0.35 < n_long / directional < 0.65, (
+        f"LONG/SHORT split is lopsided ({n_long}/{n_short}) on symmetric data"
+    )
+
+
+def test_non_directional_sources_never_cast_a_directional_vote():
+    """The mechanism behind the test above, pinned directly: none of the five
+    non-directional registered sources may ever appear in
+    `load_bearing_sources` (the directional-vote record), while the
+    directional ones do."""
+    registry = build_default_registry()
+    non_directional = {
+        name for name, spec in registry.specs().items() if not spec.is_directional
+    }
+    assert non_directional == {
+        "multiscale_vol_ratio", "vol_regime_transition", "garch_conditional_variance",
+        "rolling_skew", "rolling_excess_kurtosis",
+    }
+
+    rng = np.random.default_rng(4242)
+    closes = 1900.0 + np.cumsum(rng.normal(0.05, 0.35, size=300))
+    reasoner = FastTierReasoner(registry, refit_interval=50)
+    trust = ToolTrust()
+    seen = set()
+    for i in range(200, 300, 10):
+        hyp = reasoner.hypothesis(closes[:i], None, trust)
+        seen.update(name for name, _bucket, _c in hyp.load_bearing_sources)
+    assert seen, "expected at least some load-bearing sources over this run"
+    assert not (seen & non_directional), (
+        f"non-directional sources cast a directional vote: {sorted(seen & non_directional)}"
+    )

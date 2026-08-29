@@ -74,10 +74,27 @@ correct, net of cost" is exactly `realized_pnl > 0.0`; no separate
 `execution_cost_total` subtraction is needed or correct (subtracting it
 again would double-charge cost, the same class of bug `engine.py`'s own
 whole-branch-review bugfix comment warns about). A realized_pnl of exactly
-0.0 counts as `agreed=False` (the thesis did not produce a positive
+0.0 counts as not-profitable (the thesis did not produce a positive
 realized outcome) -- ties are rare (never for a real fill) and this keeps
 the definition a strict "outcome favored the thesis's direction," not an
 "at least broke even" standard.
+
+PER-SOURCE, NOT PER-TRADE (whole-branch-review fix)
+-------------------------------------------------------------
+`realized_pnl > 0.0` is a property of the TRADE, not of any individual
+source. `Thesis.load_bearing_sources` is sign-agnostic (a source qualifies
+on `abs(contribution) >= load_bearing_floor`), so it routinely contains
+DISSENTERS -- sources whose own signed contribution pointed opposite to the
+net direction the trade was actually taken in. Applying the trade-level
+`profitable` flag uniformly to every load-bearing source therefore rewarded
+a dissenting source whenever the trade it argued against happened to win,
+which directly contradicts ToolTrust's own documented semantics ("this
+source's DIRECTIONAL SIGNAL agreed with the eventual realized outcome").
+`assign_trade_credit` now compares each source's OWN signed contribution
+against the trade's actual direction and credits `agreed = (aligned ==
+profitable)` -- so an agreeing source and a dissenting source on the same
+trade always receive OPPOSITE outcomes. See the inline comment there for
+the full four-case table.
 
 SCOPE: entry-decision credit only. The brief calls out exit decisions
 (Task 8's POLICY_EXIT reassessment signal) as "credited separately from
@@ -93,6 +110,7 @@ alike; a later task can add exit-signal credit as a genuine extension.
 """
 from __future__ import annotations
 
+import math
 from typing import Iterable, Optional
 
 from intelligence.fast_tier import ToolTrust
@@ -152,10 +170,50 @@ def assign_trade_credit(
     if thesis is None or not thesis.load_bearing_sources:
         return False
 
-    agreed = close_record.realized_pnl > 0.0
+    profitable = close_record.realized_pnl > 0.0
+
+    # The direction the trade was ACTUALLY taken in. `decide_record.action`
+    # is what simulator/replay.py handed open_position(), so it is the
+    # authoritative record of the direction that was actually put on and
+    # against which realized_pnl was computed -- more correct than
+    # re-deriving a sign from the entry Hypothesis's net belief, which is
+    # only the input that *proposed* that direction. Fall back to the
+    # thesis's entry_belief sign only if the action is somehow absent.
+    if decide_record.action == "LONG":
+        trade_sign = 1.0
+    elif decide_record.action == "SHORT":
+        trade_sign = -1.0
+    elif thesis.entry_belief != 0.0:
+        trade_sign = math.copysign(1.0, thesis.entry_belief)
+    else:
+        # No recoverable direction -- crediting anything here would be
+        # fabricated. Withhold all credit rather than guess.
+        return False
 
     credited = False
-    for source_name, context_bucket, _contribution in thesis.load_bearing_sources:
+    for source_name, context_bucket, contribution in thesis.load_bearing_sources:
+        if contribution == 0.0:
+            # Cast no directional vote -- nothing to validate or invalidate.
+            continue
+        source_sign = math.copysign(1.0, contribution)
+        aligned = source_sign == trade_sign
+        # ToolTrust's documented semantics is "this source's DIRECTIONAL
+        # SIGNAL agreed with the eventual realized outcome" -- which is a
+        # statement about THIS source's own call, not about whether the
+        # aggregate trade happened to profit.
+        #
+        #   aligned + profitable    -> its call was validated  (agreed)
+        #   aligned + unprofitable  -> its call was invalidated (not agreed)
+        #   dissent + unprofitable  -> the direction it argued AGAINST lost,
+        #                              i.e. it was right           (agreed)
+        #   dissent + profitable    -> the direction it argued against won,
+        #                              i.e. it was wrong       (not agreed)
+        #
+        # which is exactly `aligned == profitable`. The previous
+        # implementation applied `profitable` uniformly to every
+        # load-bearing source, rewarding a dissenter for an outcome it had
+        # argued against.
+        agreed = (aligned == profitable)
         trust.update(source_name, context_bucket, agreed)
         credited = True
     return credited

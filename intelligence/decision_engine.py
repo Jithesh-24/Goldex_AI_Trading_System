@@ -25,6 +25,17 @@ captured -- though in practice every bar produces exactly one DECIDE-or-
 MANAGE call); a later task wanting a guaranteed-unbroken closes history
 would still need `simulator.replay` to hand it the full window directly.
 
+PERFORMANCE NOTE -- the real per-bar cost is NOT decide()'s cost alone:
+Task 12's latency benchmark (tests/intelligence/test_fast_tier_performance.py)
+measures `decide()` in isolation, i.e. the flat-position decision path only.
+That number does NOT represent the composed system's full per-bar cost.
+`manage()` below calls `reasoner.hypothesis(...)` too -- the same evidence +
+applicability + aggregation work -- on essentially EVERY bar a position is
+held, not just on flat/DECIDE bars. So the reasoning cost is paid on every
+bar of a replay session; a held-position bar costs approximately the same
+order of magnitude as a DECIDE bar, not zero. Read Task 12's `decide()`
+p99 as "the per-bar cost", not "the cost of the occasional entry decision".
+
 DESIGN NOTE -- direction/threshold and EV/cost gate: see the two constants
 and `decide()`'s docstring below for the exact documented rule.
 

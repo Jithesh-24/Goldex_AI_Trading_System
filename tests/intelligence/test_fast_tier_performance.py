@@ -20,6 +20,23 @@ trivial stub), so the numbers reflect actual production cost:
      bootstrap combined), also across enough calls for refit caching to
      matter.
 
+BOUNDS: every assert below is set to roughly 2-3x the ACTUAL measured p99
+on this machine (compute_all ~460ms, cached hypothesis ~56ms, refit
+hypothesis ~134ms, decide ~40ms), not an arbitrary round number. An earlier
+version used 500_000/200_000/500_000us bounds that were 10-25x looser than
+the real measurements, so a genuine 10x regression would have passed
+silently. They are still multiples, not exact ceilings, so ordinary
+machine-load variance does not make them flaky.
+
+WHAT decide() LATENCY DOES *NOT* COVER: `decide()` is the FLAT-position
+path. `FastTierDecisionEngine.manage()` (Task 8) also calls
+`reasoner.hypothesis(...)` on essentially every bar a position is HELD, so
+the reasoning cost below is paid on every bar of a replay session, not only
+on flat bars. The true per-bar cost of the composed system during a held
+position is approximately the same order of magnitude as the `decide()`
+number measured here -- not zero. See intelligence/decision_engine.py's
+module docstring.
+
 Dataset size: matches Task 9's own judgment call -- 1,000-point closes
 history (comparable order of magnitude to test_replay_performance.py's
 N_MICROBENCH_ITERS=1000), enough for the recursive GARCH/Kalman sources
@@ -111,7 +128,12 @@ def test_evidence_registry_compute_all_latency():
 
     stats = _percentiles(per_call_us)
     _print_stats("EvidenceRegistry.compute_all (9 sources, fresh, no caching)", "us", stats, n_iters)
-    assert stats["p99"] < 500_000, "compute_all p99 should stay well under 500ms even synthetically"
+    # Bound tightened against Task 12's own measured baseline (see the
+    # module docstring's BOUNDS note): measured p99 ~= 460ms here, so ~2x
+    # that. The previous 500_000 bound was, ironically, *too tight* for this
+    # particular check (only ~1.1x the real measurement -> flaky), while
+    # every other bound in this file was 10-25x too loose.
+    assert stats["p99"] < 1_000_000, "compute_all p99 regressed past ~2x its measured baseline (~460ms)"
 
 
 def test_fast_tier_reasoner_hypothesis_latency():
@@ -151,8 +173,11 @@ def test_fast_tier_reasoner_hypothesis_latency():
     _print_stats("FastTierReasoner.hypothesis (cached GARCH/Kalman)", "us", cached_stats, len(cached_call_us))
     _print_stats("FastTierReasoner.hypothesis (refit-triggering call)", "us", refit_stats, len(refit_call_us))
 
-    assert cached_stats["p99"] < 200_000, "cached hypothesis() p99 should stay well under 200ms synthetically"
-    assert refit_stats["p99"] < 500_000, "refit-triggering hypothesis() p99 should stay well under 500ms synthetically"
+    # ~2.5-3x the measured baselines (cached p99 ~= 56ms, refit p99 ~= 134ms)
+    # -- tight enough that a real 10x regression fails, loose enough to
+    # tolerate ordinary machine-load variance. See the BOUNDS note above.
+    assert cached_stats["p99"] < 150_000, "cached hypothesis() p99 regressed past ~2.7x its measured baseline (~56ms)"
+    assert refit_stats["p99"] < 350_000, "refit hypothesis() p99 regressed past ~2.6x its measured baseline (~134ms)"
     # The whole point of the refit-caching mechanism (Task 5): a
     # refit-triggering call should be meaningfully more expensive than a
     # cached one, or the caching isn't buying anything. Report, don't hide,
@@ -200,7 +225,8 @@ def test_fast_tier_decision_engine_decide_latency():
     stats = _percentiles(per_call_us)
     _print_stats("FastTierDecisionEngine.decide (evidence+reasoning+gate+bootstrap, end-to-end)", "us", stats,
                  N_DECISION_POINTS)
-    assert stats["p99"] < 500_000, "decide() p99 should stay well under 500ms even synthetically"
+    # ~3x the measured baseline (p99 ~= 40ms). See the BOUNDS note above.
+    assert stats["p99"] < 120_000, "decide() p99 regressed past ~3x its measured baseline (~40ms)"
 
     # Phase 1's own measured per-bar budget reference point (see
     # tests/simulator/test_replay_performance.py):

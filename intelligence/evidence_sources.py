@@ -192,7 +192,45 @@ def _make_rolling_excess_kurtosis_compute(window: int = DIST_WINDOW):
 
 def build_default_registry() -> EvidenceRegistry:
     """Builds and returns an EvidenceRegistry with all 9 validated
-    representation functions registered as EvidenceSourceSpecs."""
+    representation functions registered as EvidenceSourceSpecs.
+
+    DIRECTIONALITY CLASSIFICATION (`is_directional`, see
+    intelligence/evidence.py for why the field exists):
+
+      Directional (sign == expected price direction):
+        - momentum_scalar          close[t] - close[t-lookback]: sign IS
+                                   "price went up / down".
+        - path_pca_projection      slope of the normalized price path: sign
+                                   IS "path sloping up / down".
+        - kalman_filtered_velocity filtered trend velocity: sign IS "trend
+                                   up / down".
+        - kalman_innovation        observation minus one-step-ahead
+                                   prediction: sign IS "price surprised to
+                                   the upside / downside".
+
+      NOT directional (sign means something else, or cannot be negative):
+        - multiscale_vol_ratio        std/std, non-negative BY CONSTRUCTION
+                                      -- can only ever vote "up".
+        - garch_conditional_variance  a variance, non-negative BY
+                                      CONSTRUCTION -- same permanent-long
+                                      failure mode.
+        - vol_regime_transition       signed, but the sign means "volatility
+                                      regime rose / fell", not "price rose /
+                                      fell" (see vol_regime_transition in
+                                      research/phase3a_representation_experiments.py:
+                                      it differences a quantile-binned
+                                      volatility series).
+        - rolling_skew                signed, but the sign means "returns
+                                      distribution is right/left tailed" --
+                                      a shape statistic, not a price call.
+        - rolling_excess_kurtosis     signed, but the sign means "fatter /
+                                      thinner tails than Gaussian".
+
+    The non-directional five are still computed, still applicability-gated,
+    and still feed `context_bucket()` (GARCH variance and Kalman velocity
+    magnitude are exactly what it conditions on) -- they simply never cast a
+    directional vote.
+    """
     registry = EvidenceRegistry()
 
     registry.register(EvidenceSourceSpec(
@@ -202,6 +240,10 @@ def build_default_registry() -> EvidenceRegistry:
         assumptions="Requires at least lookback+1 closes. Uses only closes up to and including the current index -- no look-ahead.",
         known_failure_conditions="Insufficient history (fewer than lookback+1 points) yields no finite value.",
         compute=_make_momentum_scalar_compute(),
+        is_directional=True,
+        computational_cost_hint=(
+            "Cheap: O(n) vectorized array subtraction. ~20us at 1,000 closes (Task 12 per-source measurement) -- effectively free next to the recursive sources."
+        ),
     ))
 
     registry.register(EvidenceSourceSpec(
@@ -221,6 +263,10 @@ def build_default_registry() -> EvidenceRegistry:
         ),
         known_failure_conditions="Insufficient history yields no finite value; degenerate windows (w[0]==0) fall back to an un-normalized slope.",
         compute=_make_path_pca_projection_compute(),
+        is_directional=True,
+        computational_cost_hint=(
+            "Moderate: O(n * window) Python-loop linear fit per bar. ~45ms at 1,000 closes (Task 12) -- the most expensive of the non-recursive sources."
+        ),
     ))
 
     registry.register(EvidenceSourceSpec(
@@ -234,6 +280,10 @@ def build_default_registry() -> EvidenceRegistry:
         assumptions="Requires at least max(windows)+1 closes. Only past returns are used for each window's rolling std -- no look-ahead.",
         known_failure_conditions="Insufficient history, or a zero/near-zero long-window vol causing a non-finite ratio.",
         compute=_make_multiscale_vol_ratio_compute(),
+        is_directional=False,
+        computational_cost_hint=(
+            "Moderate: O(n * max(window)) rolling std over 3 windows. ~35ms at 1,000 closes (Task 12)."
+        ),
     ))
 
     registry.register(EvidenceSourceSpec(
@@ -255,6 +305,10 @@ def build_default_registry() -> EvidenceRegistry:
         ),
         known_failure_conditions="Insufficient history for either the vol windows or the minimum bin population yields no finite value.",
         compute=_make_vol_regime_transition_compute(),
+        is_directional=False,
+        computational_cost_hint=(
+            "Moderate: dominated by the multiscale_vol_summary call it chains onto, plus an O(n log n) quantile. ~35ms at 1,000 closes (Task 12)."
+        ),
     ))
 
     registry.register(EvidenceSourceSpec(
@@ -281,6 +335,10 @@ def build_default_registry() -> EvidenceRegistry:
             "a stable stationary initial guess rather than an invalid estimate."
         ),
         compute=_make_garch_conditional_variance_compute(),
+        is_directional=False,
+        computational_cost_hint=(
+            "EXPENSIVE: O(n) full-history likelihood refit per call, and the single dominant cost in the registry -- ~260ms of compute_all's ~350ms mean at 1,000 closes (Task 12). Cached by FastTierReasoner every refit_interval=50 bars for exactly this reason."
+        ),
     ))
 
     registry.register(EvidenceSourceSpec(
@@ -301,6 +359,10 @@ def build_default_registry() -> EvidenceRegistry:
         ),
         known_failure_conditions="Insufficient history (fewer than 2 closes).",
         compute=_make_kalman_velocity_compute(),
+        is_directional=True,
+        computational_cost_hint=(
+            "EXPENSIVE (recursive): O(n) full-history forward filter per call, ~19ms at 1,000 closes (Task 12). Cached by FastTierReasoner every refit_interval=50 bars. Cheaper than GARCH but grows linearly with history, unlike the windowed sources."
+        ),
     ))
 
     registry.register(EvidenceSourceSpec(
@@ -318,6 +380,10 @@ def build_default_registry() -> EvidenceRegistry:
         ),
         known_failure_conditions="Insufficient history (fewer than 2 closes).",
         compute=_make_kalman_innovation_compute(),
+        is_directional=True,
+        computational_cost_hint=(
+            "EXPENSIVE (recursive): re-runs the same O(n) Kalman filter as kalman_filtered_velocity, ~19ms at 1,000 closes (Task 12). Cached by FastTierReasoner every refit_interval=50 bars."
+        ),
     ))
 
     registry.register(EvidenceSourceSpec(
@@ -332,6 +398,10 @@ def build_default_registry() -> EvidenceRegistry:
         assumptions="Requires at least window+1 closes (window=30). A zero-std trailing window yields a defined 0.0 rather than a division error.",
         known_failure_conditions="Insufficient history yields no finite value.",
         compute=_make_rolling_skew_compute(),
+        is_directional=False,
+        computational_cost_hint=(
+            "Moderate: O(n * window) rolling 3rd moment, ~23ms at 1,000 closes (Task 12)."
+        ),
     ))
 
     registry.register(EvidenceSourceSpec(
@@ -346,6 +416,10 @@ def build_default_registry() -> EvidenceRegistry:
         assumptions="Requires at least window+1 closes (window=30). A zero-std trailing window yields a defined 0.0 rather than a division error.",
         known_failure_conditions="Insufficient history yields no finite value.",
         compute=_make_rolling_excess_kurtosis_compute(),
+        is_directional=False,
+        computational_cost_hint=(
+            "Moderate: O(n * window) rolling 4th moment, ~23ms at 1,000 closes (Task 12)."
+        ),
     ))
 
     return registry
