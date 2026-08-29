@@ -71,7 +71,24 @@ from research.phase3a_representation_experiments import (
 from research.phase4_garch_volatility_mechanism import fit_garch11
 from research.phase4_kalman_trend_mechanism import kalman_level_trend_filter
 from research.phase4_distributional_mechanism import _rolling_moment, WINDOW as DIST_WINDOW
-from research.phase3_representation_research import analyze_return_autocorrelation
+
+
+def analyze_return_autocorrelation(closes, max_lag: int = 20) -> dict:
+    """Inlined from the archived research/phase3_representation_research.py
+    (GOLDEX foundation cleanup, 2026-08-29) -- this is the only function this
+    genesis-track script used from that file, and it has no dependency on
+    the archived candidates/ machinery the rest of that file imported."""
+    closes = np.asarray(closes, dtype=np.float64)
+    returns = np.diff(closes)
+    result = {}
+    for lag in range(1, max_lag + 1):
+        if len(returns) <= lag:
+            continue
+        a, b = returns[:-lag], returns[lag:]
+        corr = float(np.corrcoef(a, b)[0, 1]) if np.std(a) > 0 and np.std(b) > 0 else 0.0
+        result[f"lag_{lag}"] = corr
+    return result
+
 
 HORIZONS = (1, 5, 15, 30, 60, 120)
 CONFOUND_CLEAR_SIGMAS = 3.0
