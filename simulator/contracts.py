@@ -121,6 +121,17 @@ class Position:
     # (half-spread + slippage). Recorded so close_position can report the true
     # round-trip execution cost without charging it a second time.
     entry_cost_amount: float = 0.0
+    # Most recent mid price this position has been marked against (set at
+    # open, then updated on every mark_to_market/monitor step). None only
+    # before the position has ever been priced.
+    current_price: Optional[float] = None
+    # Cumulative round-trip execution cost: entry_cost_amount plus exit cost,
+    # once known. Equals entry_cost_amount alone while the position is still
+    # open (exit cost is not knowable until the exit fill happens).
+    execution_cost_total: float = 0.0
+    # Why the position closed. Structurally None while OPEN -- nothing has
+    # exited yet -- and set exactly once, at close_position() time.
+    exit_reason: Optional["PositionOutcome"] = None
 
     def unrealized_pnl(self, current_mid: float) -> float:
         direction = 1.0 if self.side == Side.LONG else -1.0
@@ -138,3 +149,10 @@ class PositionView:
     tp_price: Optional[float]
     unrealized_pnl: float
     bars_held: int
+    # NOTE: exit_reason is deliberately NOT exposed here. PositionView is the
+    # object handed to manage_fn on every MONITOR bar (see
+    # tests/simulator/test_leakage_extended.py::test_position_view_has_no_outcome_or_exit_fields)
+    # -- it must carry no field that could leak this position's own eventual
+    # exit outcome. exit_reason lives only on Position, set at close time.
+    current_price: Optional[float] = None
+    execution_cost_total: float = 0.0

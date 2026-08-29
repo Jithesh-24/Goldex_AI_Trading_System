@@ -150,7 +150,7 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
 
         if outcome is not None:
             net_pnl, cost_amount, cost_r, account = close_position(
-                market_state, account, position, exit_price, config
+                market_state, account, position, exit_price, config, exit_reason=outcome
             )
             close_record = ExperienceRecord(
                 environment_tag=environment_tag, timestamp=market_state.market_timestamp, event_type="POSITION_CLOSED",
@@ -179,7 +179,8 @@ def run_replay(df, decide_fn: DecideFn, manage_fn: ManageFn, config: SimulatedEx
         position_view = to_position_view(position, market_state.mid, bars_held)
         exit_price = exit_fill_price(position.side, market_state.mid, market_state.spread, config)
         net_pnl, cost_amount, cost_r, account = close_position(
-            market_state, account, position, exit_price, config
+            market_state, account, position, exit_price, config,
+            exit_reason=PositionOutcome.END_OF_REPLAY_FORCED_CLOSE,
         )
         close_record = ExperienceRecord(
             environment_tag=environment_tag, timestamp=market_state.market_timestamp, event_type="POSITION_CLOSED",

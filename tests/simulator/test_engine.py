@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from simulator.contracts import Side, AccountState, SimulatedExecutionConfig, Position
+from simulator.contracts import Side, AccountState, SimulatedExecutionConfig, Position, PositionOutcome
 from simulator.engine import (
     open_position, close_position, check_liquidation, to_position_view, mark_to_market,
 )
@@ -158,6 +158,65 @@ def test_realized_pnl_and_drawdown_track_across_sequence_of_trades():
     assert marked.realized_pnl_total == account.realized_pnl_total  # unrealized move, not realized
 
 
+def test_position_state_completeness_across_open_hold_close():
+    """Task 6: current_price updates on every monitor step, execution_cost_total
+    accumulates entry AND exit cost by close time, exit_reason is None while
+    OPEN and set correctly (and only) at close."""
+    config = SimulatedExecutionConfig(starting_balance=10000.0, leverage=100.0, risk_fraction_of_equity=0.01)
+    ts0 = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    account = AccountState.initial(config, ts0)
+    ms0 = _FakeMarketState(mid=1500.0, spread=0.2, market_timestamp=ts0)
+    position, account = open_position(ms0, account, Side.LONG, sl_price=1495.0, tp_price=None, config=config)
+
+    # OPEN: exit_reason must be absent (nothing has exited yet), current_price
+    # is known from entry, execution_cost_total is entry cost only so far.
+    assert position.exit_reason is None
+    assert position.current_price == position.entry_price
+    assert position.execution_cost_total == position.entry_cost_amount
+    entry_cost = position.entry_cost_amount
+    assert entry_cost > 0.0
+
+    # Hold across several bars: current_price must track each monitor step's
+    # mid, not stay frozen at entry.
+    mids = [1502.0, 1505.0, 1503.0, 1508.0]
+    for mid in mids:
+        account = mark_to_market(account, position, current_mid=mid)
+        view = to_position_view(position, current_mid=mid, bars_held=1)
+        assert position.current_price == mid
+        assert view.current_price == mid
+        # Still just entry cost while open -- no exit fill has happened yet.
+        assert position.execution_cost_total == entry_cost
+
+    # Close: exit_reason set, execution_cost_total reflects BOTH entry and
+    # exit cost with a concrete, checkable number.
+    ts1 = datetime(2020, 1, 1, 0, 40, tzinfo=timezone.utc)
+    ms1 = _FakeMarketState(mid=1509.5, spread=0.2, market_timestamp=ts1)
+    exit_price = 1509.5
+    net_pnl, cost_amount, cost_r, account = close_position(
+        ms1, account, position, exit_price, config, exit_reason=PositionOutcome.POLICY_EXIT
+    )
+
+    expected_exit_cost = (ms1.spread / 2.0 + ms1.spread * config.slippage_fraction_of_spread) * position.size
+    expected_total_cost = entry_cost + expected_exit_cost
+    assert abs(cost_amount - expected_total_cost) < 1e-9
+    assert position.execution_cost_total == cost_amount
+    assert abs(position.execution_cost_total - expected_total_cost) < 1e-9
+    # Genuinely BOTH components are present, not just entry or just exit alone.
+    assert position.execution_cost_total > entry_cost
+    assert position.execution_cost_total > expected_exit_cost
+
+    assert position.exit_reason == PositionOutcome.POLICY_EXIT
+    assert position.current_price == exit_price
+
+    close_view = to_position_view(position, current_mid=exit_price, bars_held=4)
+    # PositionView deliberately never carries exit_reason (leakage guard --
+    # see test_leakage_extended.py) even after close; Position is the source
+    # of truth for it.
+    assert not hasattr(close_view, "exit_reason")
+    assert close_view.execution_cost_total == position.execution_cost_total
+    assert close_view.current_price == exit_price
+
+
 def test_to_position_view_tracks_bars_held():
     ts = datetime(2020, 1, 1, tzinfo=timezone.utc)
     position = Position(position_id="p1", side=Side.LONG, entry_time=ts, entry_price=1500.0,
@@ -174,5 +233,6 @@ if __name__ == "__main__":
     test_check_liquidation_false_when_flat()
     test_mark_to_market_moves_equity_and_enables_liquidation()
     test_realized_pnl_and_drawdown_track_across_sequence_of_trades()
+    test_position_state_completeness_across_open_hold_close()
     test_to_position_view_tracks_bars_held()
     print("tests/simulator/test_engine.py: OK")
