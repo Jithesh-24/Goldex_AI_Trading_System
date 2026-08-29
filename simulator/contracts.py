@@ -52,7 +52,6 @@ class SimulatedExecutionConfig:
     # _default_currency above -- rather than hardcoded literals.
     leverage: float = field(default_factory=_default_leverage)
     slippage_fraction_of_spread: float = 0.5
-    latency_ms: float = 0.0
     margin_call_threshold: float = 0.5
     liquidation_threshold: float = 0.2
     risk_fraction_of_equity: float = 0.01
