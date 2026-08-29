@@ -77,6 +77,93 @@ def test_conditional_usefulness_not_fixed_weight():
     assert mean_c == pytest.approx(0.5)
 
 
+def _registry_with_context_sources(sigma2, velocity, test_value=1.0, test_conf=1.0):
+    """A registry carrying the two real state-space sources context_bucket()
+    reads (garch_conditional_variance, kalman_filtered_velocity) plus one
+    directional "test_source" -- lets a test drive FastTierReasoner.hypothesis()
+    end-to-end and land in a real, context_bucket()-computed bucket rather than
+    an integer literal."""
+    registry = EvidenceRegistry()
+    registry.register(EvidenceSourceSpec(
+        name="garch_conditional_variance", mathematical_formulation="stub",
+        required_inputs=["closes"], assumptions="stub", known_failure_conditions="none",
+        compute=lambda closes: EvidenceValue(sigma2, 1.0, "garch_conditional_variance"),
+    ))
+    registry.register(EvidenceSourceSpec(
+        name="kalman_filtered_velocity", mathematical_formulation="stub",
+        required_inputs=["closes"], assumptions="stub", known_failure_conditions="none",
+        compute=lambda closes: EvidenceValue(velocity, 1.0, "kalman_filtered_velocity"),
+    ))
+    registry.register(EvidenceSourceSpec(
+        name="test_source", mathematical_formulation="stub",
+        required_inputs=["closes"], assumptions="stub", known_failure_conditions="none",
+        compute=lambda closes: EvidenceValue(test_value, test_conf, "test_source"),
+    ))
+    return registry
+
+
+def test_conditional_usefulness_end_to_end_via_real_context_bucket():
+    """Integration-level version of property 1: drives hypothesis() twice
+    with evidence that lands in two genuinely different real buckets (via
+    context_bucket() itself, not hardcoded integers), trains "test_source"'s
+    trust asymmetrically per the actual buckets those scenarios produce, and
+    shows the same source's contribution differs between the two calls."""
+    closes = _synthetic_closes(n=200)
+    market_state = _market_state()
+
+    low_sigma2, low_velocity = 0.0, 0.0
+    high_sigma2, high_velocity = 1e8, 100.0
+
+    # Determine the real buckets these two scenarios land in via the actual
+    # context_bucket() function -- not asserted/assumed integers.
+    bucket_low = context_bucket({
+        "garch_conditional_variance": EvidenceValue(low_sigma2, 1.0, "garch_conditional_variance"),
+        "kalman_filtered_velocity": EvidenceValue(low_velocity, 1.0, "kalman_filtered_velocity"),
+    })
+    bucket_high = context_bucket({
+        "garch_conditional_variance": EvidenceValue(high_sigma2, 1.0, "garch_conditional_variance"),
+        "kalman_filtered_velocity": EvidenceValue(high_velocity, 1.0, "kalman_filtered_velocity"),
+    })
+    assert bucket_low != bucket_high  # precondition: the two scenarios are genuinely distinct contexts
+
+    trust = ToolTrust()
+    # test_source is trained to be reliable in the low-magnitude bucket and
+    # unreliable in the high-magnitude bucket.
+    for _ in range(30):
+        trust.update("test_source", bucket_low, agreed=True)
+    for _ in range(30):
+        trust.update("test_source", bucket_high, agreed=False)
+
+    reasoner_low = FastTierReasoner(
+        _registry_with_context_sources(low_sigma2, low_velocity), refit_interval=50,
+    )
+    hyp_low = reasoner_low.hypothesis(closes, market_state, trust)
+
+    reasoner_high = FastTierReasoner(
+        _registry_with_context_sources(high_sigma2, high_velocity), refit_interval=50,
+    )
+    hyp_high = reasoner_high.hypothesis(closes, market_state, trust)
+
+    contrib_low = next(c for (n, b, c) in hyp_low.load_bearing_sources if n == "test_source")
+    # test_source's weight collapsed in the high bucket, so it may or may not
+    # clear the load-bearing floor there -- check its raw posterior mean
+    # directly for the definitive comparison, and its Hypothesis-level
+    # presence/contribution as the end-to-end confirmation.
+    mean_low = trust.posterior_mean("test_source", bucket_low)
+    mean_high = trust.posterior_mean("test_source", bucket_high)
+    assert mean_low > mean_high
+
+    high_load_bearing = [c for (n, b, c) in hyp_high.load_bearing_sources if n == "test_source"]
+    # End-to-end proof: the same source, same directional evidence value,
+    # driven purely by real context_bucket() output, is load-bearing (net
+    # trusted contribution above the floor) in the bucket it was trained
+    # reliable in, and is NOT load-bearing in the bucket it was trained
+    # unreliable in -- genuinely conditional usefulness, observed through
+    # the full hypothesis() pipeline rather than asserted via literals.
+    assert contrib_low > 0.0
+    assert high_load_bearing == []
+
+
 def test_posterior_uncertainty_shrinks_with_more_observations():
     trust = ToolTrust()
     unc_prior = trust.posterior_uncertainty("rolling_skew", 0)
@@ -143,6 +230,52 @@ def test_contradiction_elevates_uncertainty_vs_agreement():
     # The net belief in the conflict case must not resolve to a confident
     # midpoint -- it should collapse toward 0, not just "small."
     assert abs(hyp_conflict.net_directional_belief) < abs(hyp_agree.net_directional_belief)
+
+
+def test_contradiction_graded_disagreement_is_continuous_not_capped_at_tie():
+    """Exercises the graded opposing_weight/total_weight path directly (an
+    unequal weight split), not just the exact-tie special case above. Also
+    guards the specific bug the review caught: disagreement must not be
+    capped at 0.5 except at an exact tie -- a near-tie split should already
+    read as strongly elevated, continuous with (not discontinuous from) the
+    exact-tie case."""
+    closes = _synthetic_closes(n=200)
+    market_state = _market_state()
+    bucket = context_bucket({})
+
+    # A 3-vs-1 trust split: source_a earns far more agreement (higher
+    # posterior mean -> higher weight) than source_b, but they still point
+    # in opposite directions. This produces an *unequal* weight split, so
+    # opposing_weight/total_weight lands strictly between 0 and 0.5 -- the
+    # exact segment of the formula finding 1 flagged as buggy.
+    registry = _fixed_registry(value_a=1.0, value_b=-1.0)
+    reasoner = FastTierReasoner(registry, refit_interval=50)
+    trust = ToolTrust()
+    _well_trusted(trust, "source_a", bucket, n=30)
+    _well_trusted(trust, "source_b", bucket, n=3)
+    hyp_unequal = reasoner.hypothesis(closes, market_state, trust)
+
+    # A near-50/50 split (both sources very similarly, highly trusted).
+    registry_tie_ish = _fixed_registry(value_a=1.0, value_b=-1.0)
+    reasoner_tie_ish = FastTierReasoner(registry_tie_ish, refit_interval=50)
+    trust_tie_ish = ToolTrust()
+    _well_trusted(trust_tie_ish, "source_a", bucket, n=30)
+    _well_trusted(trust_tie_ish, "source_b", bucket, n=29)
+    hyp_near_tie = reasoner_tie_ish.hypothesis(closes, market_state, trust_tie_ish)
+
+    # Both scenarios contradict, so both must show real elevated
+    # uncertainty (the graded path fires, not just "==1.0 at an exact tie").
+    assert hyp_unequal.aggregate_uncertainty > 0.0
+    assert hyp_near_tie.aggregate_uncertainty > 0.0
+    # A more unequal split must show LESS disagreement-driven uncertainty
+    # than a near-tie split -- proving the term is graded/continuous, not a
+    # step function that only distinguishes "tie" from "everything else."
+    assert hyp_near_tie.aggregate_uncertainty > hyp_unequal.aggregate_uncertainty
+    # Sanity: with a fixed variance component in both scenarios (same trust
+    # mechanics, just different sample counts), a bare average of the raw
+    # (uncapped) opposing/total ratio would top out at 0.5 for the near-tie
+    # case; the doubled, continuous formula must clear that.
+    assert hyp_near_tie.aggregate_uncertainty > 0.5
 
 
 # ---------------------------------------------------------------------------

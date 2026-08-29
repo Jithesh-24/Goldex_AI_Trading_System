@@ -90,6 +90,12 @@ def _evidence_scalar(evidence: dict[str, EvidenceValue], name: str) -> float:
     ev = evidence.get(name)
     if ev is None or ev.value is None or not math.isfinite(ev.value):
         return 0.0
+    # A source Task 4's applicability gate has zeroed out (confidence <= 0,
+    # e.g. insufficient history or invalid MarketState) must not steer
+    # bucket selection -- it's not trustworthy evidence of anything,
+    # including "how turbulent the market is right now."
+    if ev.confidence <= 0.0:
+        return 0.0
     return float(ev.value)
 
 
@@ -141,6 +147,24 @@ class FastTierReasoner:
         refit_interval: int = 50,
         load_bearing_floor: float = 0.05,
     ) -> None:
+        # NOTE on load_bearing_floor: a source's contribution magnitude is
+        # trust.posterior_mean(...) * ev.confidence. An unseen (source,
+        # bucket) pair starts at the Beta(1,1) prior mean of 0.5, and
+        # ev.confidence is typically 1.0 once applicability passes -- so
+        # essentially every applicable source clears a 0.05 floor by an
+        # order of magnitude on its very first observation, before any
+        # trust has actually been learned. At this default,
+        # `load_bearing_sources` is effectively "every applicable source,"
+        # not a meaningfully discriminating subset -- it does NOT yet
+        # distinguish a well-trusted source from a brand-new, untested one.
+        # A more meaningful floor (e.g. one set relative to the
+        # distribution of observed weights, or requiring a minimum number
+        # of prior observations before a source can be load-bearing at all)
+        # needs real data to calibrate and is explicitly deferred to
+        # Task 12's measurement pass / a later tuning task. Task 7's thesis
+        # memory should treat `load_bearing_sources` as "applicable and
+        # non-trivially weighted," not "proven reliable," until that
+        # tuning happens.
         self.registry = registry
         self.refit_interval = refit_interval
         self.load_bearing_floor = load_bearing_floor
@@ -215,11 +239,17 @@ class FastTierReasoner:
         net_belief = sum(c[0] for c in contributions) / total_weight
         weighted_trust_unc = sum(c[1] * c[2] for c in contributions) / total_weight
 
-        # Disagreement term: fraction of weight pointing the "wrong" way
-        # relative to the net sign. 0.0 when every contributing source
-        # agrees on direction; approaches 1.0 as opposing weight balances
-        # out the net -- this is what prevents contradictory sources from
-        # being silently averaged into a falsely confident midpoint.
+        # Disagreement term: twice the fraction of total weight pointing the
+        # "wrong" way relative to the net sign. Since net_sign is defined by
+        # whichever side holds the majority of weight, opposing_weight can
+        # never exceed half of total_weight by construction -- so the raw
+        # ratio opposing/total is capped at 0.5 and only reaches 1.0 exactly
+        # at a 50/50 tie, an artificial discontinuity (a 49/51 split would
+        # read as ~0.49, then a 50/50 split would jump straight to 1.0).
+        # Doubling it makes the term continuous and reach 1.0 exactly at the
+        # tie: 0.0 when every source agrees, up to 1.0 as the split
+        # approaches even -- this is what prevents contradictory sources
+        # from being silently averaged into a falsely confident midpoint.
         net_sign = math.copysign(1.0, net_belief) if net_belief != 0.0 else 0.0
         if net_sign == 0.0:
             disagreement = 1.0
@@ -228,7 +258,7 @@ class FastTierReasoner:
                 c[2] for c in contributions
                 if math.copysign(1.0, c[0]) != net_sign and c[0] != 0.0
             )
-            disagreement = opposing_weight / total_weight
+            disagreement = min(1.0, 2.0 * opposing_weight / total_weight)
 
         aggregate_uncertainty = min(1.0, weighted_trust_unc + disagreement)
 
