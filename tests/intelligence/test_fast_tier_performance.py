@@ -20,12 +20,19 @@ trivial stub), so the numbers reflect actual production cost:
      bootstrap combined), also across enough calls for refit caching to
      matter.
 
-BOUNDS: every assert below is set to roughly 2-3x the ACTUAL measured p99
-on this machine (compute_all ~460ms, cached hypothesis ~56ms, refit
-hypothesis ~134ms, decide ~40ms), not an arbitrary round number. An earlier
-version used 500_000/200_000/500_000us bounds that were 10-25x looser than
-the real measurements, so a genuine 10x regression would have passed
-silently. They are still multiples, not exact ceilings, so ordinary
+BOUNDS: every assert below is set to roughly 1.5-2x the ACTUAL measured p99
+on this machine AFTER the Task 1-4 hardening fixes (compute_all ~420ms,
+cached hypothesis ~17ms, refit hypothesis ~141ms, decide ~36ms), not an
+arbitrary round number -- re-measured and re-tightened by Task 5 (see
+docs/superpowers/reports/2026-09-02-goldex-phase2-hardening-latency-report.md).
+A prior version of this comment described a pre-hardening baseline
+(compute_all ~460ms, cached hypothesis ~56ms, refit hypothesis ~134ms,
+decide ~40ms) with looser 2-3x bounds; those numbers are now stale --
+Task 1-4 changed what "cached hypothesis" costs (down ~3x, from the 4
+newly-cached non-directional sources) even though compute_all and
+refit-triggering calls (which still pay full source cost) did not move
+much, since GARCH's Python-loop MLE dominates both and was not itself
+optimized. They are still multiples, not exact ceilings, so ordinary
 machine-load variance does not make them flaky.
 
 WHAT decide() LATENCY DOES *NOT* COVER: `decide()` is the FLAT-position
@@ -128,12 +135,10 @@ def test_evidence_registry_compute_all_latency():
 
     stats = _percentiles(per_call_us)
     _print_stats("EvidenceRegistry.compute_all (9 sources, fresh, no caching)", "us", stats, n_iters)
-    # Bound tightened against Task 12's own measured baseline (see the
-    # module docstring's BOUNDS note): measured p99 ~= 460ms here, so ~2x
-    # that. The previous 500_000 bound was, ironically, *too tight* for this
-    # particular check (only ~1.1x the real measurement -> flaky), while
-    # every other bound in this file was 10-25x too loose.
-    assert stats["p99"] < 1_000_000, "compute_all p99 regressed past ~2x its measured baseline (~460ms)"
+    # Bound tightened by Task 5 against the post-Task-1-4 measured baseline
+    # (see the module docstring's BOUNDS note): measured p99 ~= 402-426ms
+    # here (two runs), so ~1.75x the higher of those.
+    assert stats["p99"] < 750_000, "compute_all p99 regressed past ~1.75x its measured baseline (~426ms)"
 
 
 def test_fast_tier_reasoner_hypothesis_latency():
@@ -173,11 +178,12 @@ def test_fast_tier_reasoner_hypothesis_latency():
     _print_stats("FastTierReasoner.hypothesis (cached GARCH/Kalman)", "us", cached_stats, len(cached_call_us))
     _print_stats("FastTierReasoner.hypothesis (refit-triggering call)", "us", refit_stats, len(refit_call_us))
 
-    # ~2.5-3x the measured baselines (cached p99 ~= 56ms, refit p99 ~= 134ms)
-    # -- tight enough that a real 10x regression fails, loose enough to
-    # tolerate ordinary machine-load variance. See the BOUNDS note above.
-    assert cached_stats["p99"] < 150_000, "cached hypothesis() p99 regressed past ~2.7x its measured baseline (~56ms)"
-    assert refit_stats["p99"] < 350_000, "refit hypothesis() p99 regressed past ~2.6x its measured baseline (~134ms)"
+    # ~1.7-1.8x the post-Task-1-4 measured baselines (cached p99 ~= 17ms,
+    # refit p99 ~= 141ms) -- tight enough that a real regression fails,
+    # loose enough to tolerate ordinary machine-load variance. See the
+    # BOUNDS note above.
+    assert cached_stats["p99"] < 30_000, "cached hypothesis() p99 regressed past ~1.75x its measured baseline (~17ms)"
+    assert refit_stats["p99"] < 250_000, "refit hypothesis() p99 regressed past ~1.75x its measured baseline (~141ms)"
     # The whole point of the refit-caching mechanism (Task 5): a
     # refit-triggering call should be meaningfully more expensive than a
     # cached one, or the caching isn't buying anything. Report, don't hide,
@@ -225,8 +231,9 @@ def test_fast_tier_decision_engine_decide_latency():
     stats = _percentiles(per_call_us)
     _print_stats("FastTierDecisionEngine.decide (evidence+reasoning+gate+bootstrap, end-to-end)", "us", stats,
                  N_DECISION_POINTS)
-    # ~3x the measured baseline (p99 ~= 40ms). See the BOUNDS note above.
-    assert stats["p99"] < 120_000, "decide() p99 regressed past ~3x its measured baseline (~40ms)"
+    # ~1.8x the post-Task-1-4 measured baseline (p99 ~= 36ms). See the
+    # BOUNDS note above.
+    assert stats["p99"] < 65_000, "decide() p99 regressed past ~1.8x its measured baseline (~36ms)"
 
     # Phase 1's own measured per-bar budget reference point (see
     # tests/simulator/test_replay_performance.py):
