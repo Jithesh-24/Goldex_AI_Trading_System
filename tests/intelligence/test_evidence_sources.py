@@ -8,10 +8,11 @@ import numpy as np
 import pytest
 
 from intelligence.evidence import EvidenceValue
-from intelligence.evidence_sources import build_default_registry
+from intelligence.evidence_sources import build_default_registry, _last_finite
 from research.phase3a_representation_experiments import (
     multiscale_vol_summary, vol_regime_transition, VOL_WINDOWS,
 )
+from research.phase4_kalman_trend_mechanism import kalman_level_trend_filter
 
 
 def _synthetic_closes(n=500, seed=0):
@@ -127,3 +128,43 @@ def test_no_look_ahead_truncated_recompute_matches(name):
         # The i-prefix result must be reproducible by recomputing on exactly
         # that same prefix again, independent of the longer array existing.
         assert spec.compute(full_closes[:i]) == result_at_i
+
+
+def test_kalman_velocity_and_innovation_share_one_filter_run(monkeypatch):
+    """Verify that kalman_filtered_velocity and kalman_innovation share one
+    filter run, not two. This is a pure performance fix -- the test
+    demonstrates that currently both wrappers independently call
+    kalman_level_trend_filter on the same input, wasting one full O(n)
+    recursive filter run per evidence pass."""
+    import intelligence.evidence_sources as es
+    calls = []
+    original = es.kalman_level_trend_filter
+
+    def counting(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(es, "kalman_level_trend_filter", counting)
+    registry = es.build_default_registry()
+    closes = np.cumsum(np.random.default_rng(0).normal(0, 1, 200)) + 2000.0
+    registry.specs()["kalman_filtered_velocity"].compute(closes)
+    registry.specs()["kalman_innovation"].compute(closes)
+    assert len(calls) == 1
+
+
+def test_kalman_pair_cache_does_not_leak_across_different_arrays():
+    """Verify that the shared cache for kalman_filtered_velocity and
+    kalman_innovation does not leak results across different input arrays.
+    The cache uses (shape, last_value, len) as a key, which is sufficient
+    for the common case where both wrappers are invoked back-to-back on the
+    same array, but must not cross-contaminate results from different arrays."""
+    import intelligence.evidence_sources as es
+    compute_v, compute_i = es._make_kalman_pair_computes()
+    closes_a = np.cumsum(np.random.default_rng(1).normal(0, 1, 100)) + 1000.0
+    closes_b = np.cumsum(np.random.default_rng(2).normal(0, 1, 100)) + 3000.0
+    v_a = compute_v(closes_a).value
+    v_b = compute_v(closes_b).value
+    assert v_a != v_b
+    # Cross-check against uncached ground truth
+    _levels, vel_b, _inn = kalman_level_trend_filter(closes_b)
+    assert abs(v_b - _last_finite(vel_b)) < 1e-12

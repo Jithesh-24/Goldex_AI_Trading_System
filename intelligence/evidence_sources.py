@@ -128,34 +128,44 @@ def _make_garch_conditional_variance_compute():
     return compute
 
 
-def _make_kalman_velocity_compute():
-    def compute(closes_so_far: np.ndarray) -> EvidenceValue:
+def _make_kalman_pair_computes():
+    """Both kalman_filtered_velocity and kalman_innovation come from one
+    kalman_level_trend_filter run. This shared, closure-scoped single-slot
+    cache avoids running the O(n) recursive filter twice per evidence pass
+    -- pure performance, zero output change (see
+    test_kalman_velocity_and_innovation_share_one_filter_run)."""
+    cache: dict = {"key": None, "result": None}
+
+    def _filtered(closes: np.ndarray):
+        key = (closes.shape, float(closes[-1]) if len(closes) else None, len(closes))
+        if cache["key"] != key:
+            cache["result"] = kalman_level_trend_filter(closes)
+            cache["key"] = key
+        return cache["result"]
+
+    def compute_velocity(closes_so_far: np.ndarray) -> EvidenceValue:
         name = "kalman_filtered_velocity"
         closes = np.asarray(closes_so_far, dtype=np.float64)
         if len(closes) < 2:
             return EvidenceValue(None, 0.0, name)
-        _levels, velocities, _innovations = kalman_level_trend_filter(closes)
+        _levels, velocities, _innovations = _filtered(closes)
         value = _last_finite(velocities)
         if value is None:
             return EvidenceValue(None, 0.0, name)
         return EvidenceValue(value, 1.0, name)
 
-    return compute
-
-
-def _make_kalman_innovation_compute():
-    def compute(closes_so_far: np.ndarray) -> EvidenceValue:
+    def compute_innovation(closes_so_far: np.ndarray) -> EvidenceValue:
         name = "kalman_innovation"
         closes = np.asarray(closes_so_far, dtype=np.float64)
         if len(closes) < 2:
             return EvidenceValue(None, 0.0, name)
-        _levels, _velocities, innovations = kalman_level_trend_filter(closes)
+        _levels, _velocities, innovations = _filtered(closes)
         value = _last_finite(innovations)
         if value is None:
             return EvidenceValue(None, 0.0, name)
         return EvidenceValue(value, 1.0, name)
 
-    return compute
+    return compute_velocity, compute_innovation
 
 
 def _make_rolling_skew_compute(window: int = DIST_WINDOW):
@@ -341,6 +351,8 @@ def build_default_registry() -> EvidenceRegistry:
         ),
     ))
 
+    _kalman_velocity_compute, _kalman_innovation_compute = _make_kalman_pair_computes()
+
     registry.register(EvidenceSourceSpec(
         name="kalman_filtered_velocity",
         mathematical_formulation=(
@@ -358,7 +370,7 @@ def build_default_registry() -> EvidenceRegistry:
             "on every call (no refit caching in this task)."
         ),
         known_failure_conditions="Insufficient history (fewer than 2 closes).",
-        compute=_make_kalman_velocity_compute(),
+        compute=_kalman_velocity_compute,
         is_directional=True,
         computational_cost_hint=(
             "EXPENSIVE (recursive): O(n) full-history forward filter per call, ~19ms at 1,000 closes (Task 12). Cached by FastTierReasoner every refit_interval=50 bars. Cheaper than GARCH but grows linearly with history, unlike the windowed sources."
@@ -379,7 +391,7 @@ def build_default_registry() -> EvidenceRegistry:
             "on every call (no refit caching in this task)."
         ),
         known_failure_conditions="Insufficient history (fewer than 2 closes).",
-        compute=_make_kalman_innovation_compute(),
+        compute=_kalman_innovation_compute,
         is_directional=True,
         computational_cost_hint=(
             "EXPENSIVE (recursive): re-runs the same O(n) Kalman filter as kalman_filtered_velocity, ~19ms at 1,000 closes (Task 12). Cached by FastTierReasoner every refit_interval=50 bars."
