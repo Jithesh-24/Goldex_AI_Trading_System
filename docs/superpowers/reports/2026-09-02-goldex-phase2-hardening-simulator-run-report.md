@@ -224,7 +224,7 @@ perf-tuning task — no code fix is made here, since Task 5's caching/windowing 
 was already deliberately scoped and this reconciliation task's job is diagnosis, not
 further optimization.
 
-**Update (Task 11 fix round, commit TBD-FIX-COMMIT).** The root cause diagnosed above
+**Update (Task 11 fix round, commit `902869a`).** The root cause diagnosed above
 has now been fixed. `FastTierReasoner._compute_evidence` (`intelligence/fast_tier.py`)
 now computes the refit-cache fingerprint from `closes_so_far[0]` of the ORIGINAL array
 *before* the `max_history_window` truncation slice, instead of after it. Bar 0 of a
