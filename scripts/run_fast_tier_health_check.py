@@ -94,9 +94,33 @@ class _InstrumentedReasoner(FastTierReasoner):
     to zero confidence and which context bucket the call landed in. Adds no
     new evidence/decision logic -- purely observational bookkeeping on top
     of the real computation path, and re-derives gating via the exact same
-    `apply_applicability` call the real `hypothesis()` makes (cache-backed,
-    so this costs at most one extra cheap pass, not a second GARCH/Kalman
-    fit -- see `_compute_evidence`'s refit cache)."""
+    `apply_applicability` call the real `hypothesis()` makes. This extra pass
+    is genuinely cache-backed and cheap: it calls `_compute_evidence` on the
+    exact same `closes_so_far` array `super().hypothesis()` then calls again
+    for the same bar, so for the 7 EXPENSIVE_SOURCE_NAMES the second call is
+    always a guaranteed cache hit (identical bar index and fingerprint) --
+    this instrumentation does NOT double any GARCH/Kalman fit. It does
+    recompute the registry's cheap (non-cached) sources twice per call, but
+    those are, per their name, cheap.
+
+    IMPORTANT -- this instrumentation is NOT the explanation for this
+    script's observed ~390ms/reasoner-call average (see the "Timing
+    reconciliation" section of
+    docs/superpowers/reports/2026-09-02-goldex-phase2-hardening-simulator-run-report.md).
+    That average is a real property of `FastTierReasoner`'s own refit cache:
+    `_compute_evidence`'s cache key includes `closes_so_far[0]` as a
+    fingerprint, and once the growing history exceeds `max_history_window`
+    (2000 bars by default), the window slides by one bar every call, so
+    `closes_so_far[0]` -- and therefore the fingerprint -- changes on EVERY
+    bar. From that point on, every single hypothesis() call is a full,
+    uncached GARCH/Kalman refit across all 7 expensive sources, at
+    roughly `EvidenceRegistry.compute_all()`'s uncached cost (~400-450ms
+    p99 per Task 5's latency report), not the ~17-141ms cached/refit-cadence
+    cost the refit cache is designed to deliver. This is a real caching
+    behavior of the production `FastTierReasoner`, independent of this
+    script's instrumentation -- confirmed by direct timing of
+    `FastTierReasoner._compute_evidence` before/after the 2,000-bar
+    boundary (see the report)."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

@@ -92,6 +92,138 @@ None of the above is a claim about whether the strategy would make money; it is 
 about whether the pipeline's components compose correctly and produce a sane
 distributional shape under moderate-scale chronological replay.
 
+## Timing reconciliation against Task 5's latency report
+
+This run's wall-clock (1593.2s / ~4,068 reasoner-touching calls ≈ 390ms/call average)
+looked, at first glance, inconsistent with Task 5's measured `hypothesis()` latencies
+(cached p99≈17-18ms, refit-triggering p99≈125-141ms, uncached `compute_all()`
+p99≈402-447ms) — a chronologically-advancing replay should mostly hit the refit cache,
+not average close to the fully-uncached worst case.
+
+Root cause, confirmed by reading `FastTierReasoner._compute_evidence`
+(`intelligence/fast_tier.py`, cache logic around lines 251-290) and by direct timing of
+that method before/after the boundary described below: the cache key's fingerprint is
+`closes_so_far[0]` **after** `closes_so_far` has already been truncated to the last
+`max_history_window` (default 2000) elements (line 271-274). In a chronologically
+growing replay, once `len(closes_so_far) > max_history_window`, that truncated window
+slides forward by exactly one bar on every single call — so `closes_so_far[0]`, and
+therefore the fingerprint, is different on every bar from that point on. The refit
+cache's `cached[1] == fingerprint` check (line 282) then never hits again for the rest
+of the replay: every `hypothesis()` call past bar 2,000 does a full, uncached
+GARCH/Kalman refit of all 7 `EXPENSIVE_SOURCE_NAMES`, at roughly
+`compute_all()`'s uncached cost, not the cached/refit-cadence cost the cache exists to
+deliver.
+
+This run used 4,000 bars: the first ~2,000 bars got real refit-interval caching
+(cheap), the second ~2,000 got an uncached refit on every call (expensive,
+~400-450ms range). The blended average (~390ms/call) is consistent with a run that is
+roughly half at uncached-worst-case cost — not a sign of double-counted or
+uninstrumented work in `_InstrumentedReasoner` itself (confirmed separately: its extra
+`apply_applicability` pass reuses the same bar/fingerprint as `super().hypothesis()`'s
+own call and is a guaranteed cache hit for all 7 expensive sources; see the corrected
+docstring in `scripts/run_fast_tier_health_check.py`).
+
+**This is a genuine, previously-undiscovered interaction defect between Task 3's
+window-bounding (added to bound per-call cost and memory) and Task 2's refit-caching
+(added to avoid refitting every bar): for any replay longer than `max_history_window`
+bars, the window-bounding silently defeats the refit cache entirely, and every bar pays
+full uncached-refit cost.** This is worse than either task's own latency numbers
+suggest in isolation, and worse than Task 5's latency report discloses — Task 5's
+benchmarks did not run past the 2,000-bar window boundary, so this behavior was not
+visible there. Flagging this plainly for the Task 11 whole-branch review rather than
+fixing it here: Task 9's brief scope is documentation/verification, not a latency fix,
+and any fix to the cache-key design should get its own scoped review given it touches
+the same correctness-sensitive cache Task 8 already found and fixed one stale-data bug
+in.
+
+## Timing reconciliation
+
+The 1,593.2s wall-clock total, divided across the run's ~4,068 reasoner-touching
+calls, averages ~390ms/call. Task 5's latency report (`2026-09-02-goldex-phase2-hardening-latency-report.md`)
+separately measured `FastTierReasoner.hypothesis()` at: cached call p99 ≈17-18ms,
+refit-triggering call p99 ≈125-141ms, and `EvidenceRegistry.compute_all()` (fully
+uncached) p99 ≈402-447ms. A ~390ms/call average over a chronologically-advancing
+4,000-bar replay is suspiciously close to the *uncached* worst case, not the mostly-cached
+case a refit-caching reasoner should produce over a long run. This was investigated
+rather than left unreconciled.
+
+**First candidate ruled out: the script's own instrumentation.** `_InstrumentedReasoner`
+(the health-check-only `FastTierReasoner` subclass, `scripts/run_fast_tier_health_check.py`
+around line 91) calls `self._compute_evidence(closes_so_far)` once directly (to re-derive
+per-source applicability gating for its side-channel metrics) and then calls
+`super().hypothesis(...)`, which calls `_compute_evidence` a second time on the *same*
+`closes_so_far` array within the same `hypothesis()` invocation. Reading
+`FastTierReasoner._compute_evidence` (`intelligence/fast_tier.py:270-297`) shows its
+cache key is `(bar_index, fingerprint=closes_so_far[0])`. Because both calls happen
+back-to-back on the identical array object (no bar advance between them), the second
+call's `(bar, fingerprint)` always matches what the first call just wrote to
+`self._cache` — the second call is a guaranteed cache hit for all 7
+`EXPENSIVE_SOURCE_NAMES`. **This instrumentation does not duplicate any GARCH/Kalman
+fit.** It does redundantly recompute the registry's cheap (non-cached) sources once
+more per call, but those sources are, by construction, cheap. This part of the
+original docstring's "cache-backed" claim held up.
+
+**Actual root cause: `FastTierReasoner`'s own refit cache is defeated once the replay's
+history exceeds `max_history_window`.** `_compute_evidence` truncates `closes_so_far`
+to its last `max_history_window` (default 2000) entries before computing the
+fingerprint:
+
+```python
+if len(closes_so_far) > self.max_history_window:
+    closes_so_far = closes_so_far[-self.max_history_window:]
+bar = len(closes_so_far)
+fingerprint = float(closes_so_far[0]) if bar else None
+```
+
+For the first 2,000 bars of a continuing replay, `closes_so_far[0]` is the series'
+actual first observation — a stable value — so the `(bar - cached_bar) < refit_interval
+and cached_fingerprint == fingerprint` cache-hit condition behaves as intended: real
+GARCH/Kalman refits happen only once every `refit_interval=50` bars. But once the
+replay's history exceeds 2,000 bars, the truncated window *slides by exactly one bar
+per call*, so `closes_so_far[0]` — and therefore the fingerprint — changes on **every
+single call**. From that point on, the fingerprint check never matches, so every
+`hypothesis()` call performs a full, uncached recompute of all 7 expensive sources,
+at essentially `compute_all()`'s uncached cost, for the entire remainder of the run.
+This is a real behavior of the production `FastTierReasoner`'s caching, not an
+artifact of this script's instrumentation — any sufficiently long continuous
+replay (not just this health check) will fall out of the refit cache the same way
+once it passes `max_history_window` bars.
+
+This also explains the module docstring's aside that "an initial 20,000-bar run was
+aborted after 50+ minutes... per-bar cost does not amortize as cheaply as hoped even
+with refit-caching" (`scripts/run_fast_tier_health_check.py:57-60`) — that observation
+was this same effect, encountered but not root-caused at the time.
+
+**Direct measurement.** Timing `FastTierReasoner._compute_evidence` directly (bypassing
+the script and its instrumentation entirely) over a 2,100-bar synthetic series with the
+same registry, `refit_interval=50`, `max_history_window=2000` defaults:
+
+| Regime | Mean per-call | Max per-call | n |
+|---|---|---|---|
+| Pre-window (bar < 2,000) | 65.0ms | 2,405ms (a refit bar) | 1,999 |
+| Post-window (bar > 2,010) | 777.1ms | 5,573ms | 90 |
+
+Post-window calls are ~12x more expensive on average than pre-window calls, and every
+post-window call pays a cost in the same range as a full uncached `compute_all()`
+(consistent with Task 5's ~400-450ms figure; the higher absolute mean here reflects
+this measurement's own machine/run variance, not a different code path). Averaging the
+two regimes roughly 50/50 — the ~4,000-bar health-check run spends its first half inside
+the cache window and its second half outside it — gives ≈421ms/call, which lines up
+with the run's actual observed ~390ms/call average within the expected noise of this
+kind of back-of-envelope reconciliation.
+
+**Conclusion.** The ~390ms/call average genuinely reflects that roughly the back half
+of this 4,000-bar run ran with its refit cache effectively disabled, not a hidden bug
+in this health-check script's instrumentation. `scripts/run_fast_tier_health_check.py`'s
+`_InstrumentedReasoner` docstring has been corrected to state this plainly rather than
+asserting an unverified "at most one extra cheap pass" framing that (correctly, as it
+turns out) exonerated the instrumentation but said nothing about the real cause. This
+is a genuine finding about the hardened Fast Tier's caching behavior at
+`max_history_window` boundaries on long-running replays, worth carrying into any future
+perf-tuning task — no code fix is made here, since Task 5's caching/windowing tradeoff
+was already deliberately scoped and this reconciliation task's job is diagnosis, not
+further optimization.
+
 ## Deviation from brief
 
 The brief describes scale as "one to a few years of synthetic chronological data, or
