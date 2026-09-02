@@ -610,3 +610,43 @@ def test_windowed_garch_output_close_to_full_history_output():
     rel_diff = abs(sigma2_full[-1] - sigma2_win[-1]) / max(abs(sigma2_full[-1]), 1e-12)
     print(f"[TASK3][GARCH windowed-vs-full] rel_diff={rel_diff:.6f}")
     assert rel_diff < 0.5  # same order of magnitude, not identical
+
+
+# ---------------------------------------------------------------------------
+# Task 4: context_bucket calibration -- real measured magnitude distribution
+# ---------------------------------------------------------------------------
+
+def test_context_bucket_spreads_across_range_on_realistic_data():
+    from collections import Counter
+    from intelligence.evidence_sources import build_default_registry
+    from intelligence.fast_tier import FastTierReasoner, context_bucket
+    rng = np.random.default_rng(7)  # different seed from calibration -- held-out check
+    registry = build_default_registry()
+    reasoner = FastTierReasoner(registry)
+    # A single constant-sigma i.i.d. random walk starves GARCH conditional
+    # variance of real spread (same flaw fixed in calibrate_context_bucket.py's
+    # synthetic generator) -- GARCH is path-dependent/hysteretic under this
+    # branch's max_history_window bounding, so a held-out set drawn from one
+    # flat regime isn't a fair reachability check after recalibration. Mirror
+    # the fix here with a different segment length / sigma cycle than the
+    # calibration script so this remains a genuine held-out generator.
+    segment_len = 400
+    sigmas = [0.04, 0.2, 0.6]
+    steps = np.empty(3000)
+    for i in range(0, 3000, segment_len):
+        sigma = sigmas[(i // segment_len) % len(sigmas)]
+        end = min(i + segment_len, 3000)
+        steps[i:end] = rng.normal(0, sigma, end - i)
+    closes = np.cumsum(steps) + 2000.0
+    buckets = []
+    for bar in range(200, len(closes), 5):
+        evidence = reasoner._compute_evidence(closes[:bar])
+        buckets.append(context_bucket(evidence))
+    counts = Counter(buckets)
+    live_buckets = {b for b in counts if b >= 0}
+    # Not asserting a specific distribution shape (that would be fitting to
+    # this exact data) -- only that calibration is no longer collapsed to
+    # 1-2 buckets out of 5.
+    assert len(live_buckets) >= 3, f"only reached buckets {sorted(counts)}"
+    largest_share = max(counts[b] for b in live_buckets) / len(buckets)
+    assert largest_share < 0.70, f"one bucket still holds {largest_share:.0%} of decisions"

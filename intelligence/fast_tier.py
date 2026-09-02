@@ -73,16 +73,19 @@ GATED_OUT_CONTEXT_BUCKET = -1
 # squash the LOG of that magnitude, centered on a typical observed value,
 # so the sigmoid input is genuinely two-sided.
 #
-# MAGNITUDE_LOG_CENTER: log of a typical mid-regime magnitude. Measured
-# empirically over synthetic random-walk closes at this repo's XAUUSD price
-# scale (median raw magnitude ~0.15 across sampled decision points).
-# MAGNITUDE_LOG_SCALE: how many e-folds of magnitude span the bucket range.
-# At 1.0, roughly a factor-of-e change in magnitude moves one bucket over
-# the middle of the range, so magnitudes from ~0.02 (bucket 0) to ~1.0
-# (bucket 4) are all reachable -- a realistic quiet-to-turbulent span.
-# Both are documented round numbers, not fit to profitable data.
-MAGNITUDE_LOG_CENTER = math.log(0.15)
-MAGNITUDE_LOG_SCALE = 1.0
+# CALIBRATED (not hand-guessed) from scripts/calibrate_context_bucket.py
+# run against training-partition synthetic data (see that script's docstring
+# for why never the protected OOS split). The generator alternates
+# quiet/normal/turbulent noise-scale sub-windows (sigma 0.03/0.15/0.5) so
+# GARCH conditional variance genuinely varies across the run instead of
+# converging to one flat steady state: n=1160 samples, median=0.22554,
+# p10=0.00617, p90=0.22554. An earlier calibration run used a single
+# constant-sigma i.i.d. random walk, which made GARCH's conditional variance
+# converge to a near-flat plateau and starved this scale of real spread
+# (p10/p90 barely differed from the median) -- see the Phase 2 hardening
+# report for before/after histograms.
+MAGNITUDE_LOG_CENTER = math.log(0.22554)
+MAGNITUDE_LOG_SCALE = 1.19983
 
 
 class ToolTrust:
