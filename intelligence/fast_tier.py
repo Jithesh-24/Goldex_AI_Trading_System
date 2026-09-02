@@ -11,12 +11,19 @@ continuous scalar built from those two state-space outputs; there is no
 if/elif chain classifying "trend" vs "range" vs "breakout" anywhere in this
 module.
 
-`FastTierReasoner` owns the refit-cadence caching for the expensive
-recursive sources (GARCH, Kalman) that Task 3's wrappers deliberately do
-NOT cache (they always compute fresh from whatever array they're given).
-This reasoner calls the O(n) GARCH/Kalman wrappers only every
-`refit_interval` bars, reusing the last computed EvidenceValue between
-refits; cheap sources are recomputed every call as normal.
+`FastTierReasoner` owns the refit-cadence caching for expensive, pure-function
+sources: the recursive state-space bases (GARCH, Kalman) that Task 3's wrappers
+deliberately do NOT cache (they always compute fresh from whatever array they're
+given), plus 4 non-directional, context-inert rolling-window sources
+(`multiscale_vol_ratio`, `vol_regime_transition`, `rolling_skew`,
+`rolling_excess_kurtosis`) that are otherwise recomputed on every call despite
+being pure functions of `closes_so_far` with no side effects. This reasoner calls
+all 7 expensive sources only every `refit_interval` bars, reusing the last
+computed EvidenceValue between refits. Remaining cheap sources (currently
+`momentum_scalar` at ~20us and `path_pca_projection` at ~45ms) are recomputed
+every call as normal. All 7 cached sources are recomputed-but-safe tradeoff:
+they are all pure functions of `closes_so_far`, and the caching-staleness
+is uniform across all of them, regardless of directionality.
 """
 from __future__ import annotations
 
@@ -31,16 +38,14 @@ from contracts.market_state import MarketState
 from intelligence.applicability import apply_applicability
 from intelligence.evidence import EvidenceRegistry, EvidenceValue
 
-# The three registered source names (see intelligence/evidence_sources.py::
-# build_default_registry) backed by an O(n) recursive fit -- GARCH(1,1) and
-# the constant-velocity Kalman filter (velocity and innovation share one
-# underlying filter run). These are this task's refit-caching targets per
-# the controller ruling; every other registered source is cheap and is
-# recomputed fresh on every call, same as Task 3's wrappers already do.
 EXPENSIVE_SOURCE_NAMES = frozenset({
     "garch_conditional_variance",
     "kalman_filtered_velocity",
     "kalman_innovation",
+    "multiscale_vol_ratio",
+    "vol_regime_transition",
+    "rolling_skew",
+    "rolling_excess_kurtosis",
 })
 
 # Small, fixed number of continuous-valued context buckets. Not regime

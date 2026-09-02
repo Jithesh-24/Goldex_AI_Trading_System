@@ -374,6 +374,32 @@ def test_expensive_sources_not_recomputed_every_bar():
     assert call_counts["kalman"] >= 1
 
 
+def test_all_six_expensive_sources_are_refit_cached():
+    from intelligence.evidence_sources import build_default_registry
+    from intelligence.fast_tier import FastTierReasoner, EXPENSIVE_SOURCE_NAMES
+    assert EXPENSIVE_SOURCE_NAMES == frozenset({
+        "garch_conditional_variance",
+        "kalman_filtered_velocity",
+        "kalman_innovation",
+        "multiscale_vol_ratio",
+        "vol_regime_transition",
+        "rolling_skew",
+        "rolling_excess_kurtosis",
+    })
+
+
+def test_non_directional_sources_reuse_cached_value_between_refits(monkeypatch):
+    from intelligence.evidence_sources import build_default_registry
+    from intelligence.fast_tier import FastTierReasoner
+    registry = build_default_registry()
+    reasoner = FastTierReasoner(registry, refit_interval=50)
+    closes = np.cumsum(np.random.default_rng(3).normal(0, 1, 200)) + 2000.0
+    ev1 = reasoner._compute_evidence(closes[:120])
+    ev2 = reasoner._compute_evidence(closes[:121])  # 1 bar later, well within refit_interval
+    assert ev1["rolling_skew"].value == ev2["rolling_skew"].value
+    assert ev1["multiscale_vol_ratio"].value == ev2["multiscale_vol_ratio"].value
+
+
 # ---------------------------------------------------------------------------
 # context_bucket derives from continuous values, not hardcoded categories
 # ---------------------------------------------------------------------------
