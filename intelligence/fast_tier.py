@@ -249,26 +249,45 @@ class FastTierReasoner:
         self.refit_interval = refit_interval
         self.load_bearing_floor = load_bearing_floor
         self.max_history_window = max_history_window
-        # {source_name: (bar_index_at_last_refit, EvidenceValue)} -- only
-        # ever populated for EXPENSIVE_SOURCE_NAMES.
-        self._cache: dict[str, tuple[int, EvidenceValue]] = {}
+        # {source_name: (bar_index_at_last_refit, fingerprint_at_last_refit,
+        # EvidenceValue)} -- only ever populated for EXPENSIVE_SOURCE_NAMES.
+        #
+        # The fingerprint (closes_so_far[0], or None for an empty array) is a
+        # cheap, approximate identity check on the underlying series -- same
+        # reasoning as Task 1's Kalman-pair cache key: within one continuing
+        # replay, closes_so_far[0] is stable for many consecutive bars (Task
+        # 3's max_history_window slides slowly), so it doesn't defeat
+        # legitimate caching. Without it, a single FastTierReasoner reused
+        # across two DIFFERENT arrays of the same length within
+        # refit_interval bars of each other (e.g. a Monte Carlo / backtest
+        # sweep re-running the same reasoner over different candidate paths)
+        # gets a bar-index-only cache hit and silently reuses the FIRST
+        # series' stale GARCH/Kalman values for the second, unrelated series
+        # -- a stale-cache correctness bug found by adversarial testing (see
+        # test_reasoner_cache_does_not_leak_across_different_series_of_the_same_length).
+        self._cache: dict[str, tuple[int, Optional[float], EvidenceValue]] = {}
 
     def _compute_evidence(self, closes_so_far: np.ndarray) -> dict[str, EvidenceValue]:
         if len(closes_so_far) > self.max_history_window:
             closes_so_far = closes_so_far[-self.max_history_window:]
         bar = len(closes_so_far)
+        fingerprint = float(closes_so_far[0]) if bar else None
         results: dict[str, EvidenceValue] = {}
         for name, spec in self.registry.specs().items():
             if name in EXPENSIVE_SOURCE_NAMES:
                 cached = self._cache.get(name)
-                if cached is not None and (bar - cached[0]) < self.refit_interval:
-                    results[name] = cached[1]
+                if (
+                    cached is not None
+                    and (bar - cached[0]) < self.refit_interval
+                    and cached[1] == fingerprint
+                ):
+                    results[name] = cached[2]
                     continue
                 try:
                     value = spec.compute(closes_so_far)
                 except Exception:
                     value = EvidenceValue(None, 0.0, name)
-                self._cache[name] = (bar, value)
+                self._cache[name] = (bar, fingerprint, value)
                 results[name] = value
             else:
                 try:
@@ -325,12 +344,25 @@ class FastTierReasoner:
                 continue
             trust_mean = trust.posterior_mean(name, bucket)
             trust_unc = trust.posterior_uncertainty(name, bucket)
+            # Fold this source's OWN admitted confidence into its
+            # uncertainty contribution, not just the trust posterior's
+            # uncertainty. Previously, ev.confidence only entered as a
+            # multiplicative weight, which cancels out of net_belief's
+            # normalization when it's the sole contributing source -- so a
+            # near-zero-confidence lone source still produced full-magnitude
+            # belief with LOW aggregate_uncertainty (manufactured conviction
+            # from an admittedly-unreliable source), a gap found by
+            # adversarial testing. Combined via a probabilistic-OR-style
+            # clamp: a source that admits it's unreliable (low confidence)
+            # must genuinely discount how certain its contribution is,
+            # regardless of how well-trusted it's historically been.
+            combined_unc = min(1.0, trust_unc + (1.0 - ev.confidence))
             weight = trust_mean * ev.confidence
             if weight <= 0.0:
                 continue
             direction = math.copysign(1.0, ev.value) if ev.value != 0.0 else 0.0
             contribution = direction * weight
-            contributions.append((contribution, trust_unc, weight))
+            contributions.append((contribution, combined_unc, weight))
             if abs(contribution) >= self.load_bearing_floor:
                 load_bearing.append((name, bucket, contribution))
 

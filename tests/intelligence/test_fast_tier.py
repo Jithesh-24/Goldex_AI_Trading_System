@@ -362,8 +362,17 @@ def test_expensive_sources_not_recomputed_every_bar():
     market_state = _market_state()
 
     n_decision_points = 200
+    # A single genuinely-growing series (same seed, sliced to each bar's
+    # length) -- the realistic replay pattern this cache is designed for.
+    # Regenerating an UNRELATED random walk per bar (a different seed each
+    # iteration) would give each bar a different closes[0], which the
+    # Task 8 fingerprint fix correctly treats as a different underlying
+    # series and refuses to serve from cache -- that's the fix working as
+    # intended (see test_reasoner_cache_does_not_leak_across_different_series_of_the_same_length),
+    # not a regression in this test's throttling behavior.
+    full_closes = _synthetic_closes(n=n_decision_points, seed=0)
     for bar in range(1, n_decision_points + 1):
-        closes = _synthetic_closes(n=bar, seed=bar)
+        closes = full_closes[:bar]
         reasoner.hypothesis(closes, market_state, trust)
 
     # Expected refits roughly every 50 bars over 200 decision points -> ~4-5
@@ -650,3 +659,21 @@ def test_context_bucket_spreads_across_range_on_realistic_data():
     assert len(live_buckets) >= 3, f"only reached buckets {sorted(counts)}"
     largest_share = max(counts[b] for b in live_buckets) / len(buckets)
     assert largest_share < 0.70, f"one bucket still holds {largest_share:.0%} of decisions"
+
+
+# ---------------------------------------------------------------------------
+# Task 8 fix round: stale-cache correctness bug
+# ---------------------------------------------------------------------------
+
+def test_reasoner_cache_does_not_leak_across_different_series_of_the_same_length():
+    from intelligence.evidence_sources import build_default_registry
+    from intelligence.fast_tier import FastTierReasoner, ToolTrust
+    registry = build_default_registry()
+    reasoner = FastTierReasoner(registry)
+    trust = ToolTrust()
+    up = np.linspace(2000.0, 2100.0, 400)
+    down = np.linspace(2100.0, 2000.0, 400)
+    hyp_up = reasoner.hypothesis(up, market_state=None, trust=trust)
+    hyp_down = reasoner.hypothesis(down, market_state=None, trust=trust)
+    assert hyp_up.net_directional_belief > 0
+    assert hyp_down.net_directional_belief < 0
