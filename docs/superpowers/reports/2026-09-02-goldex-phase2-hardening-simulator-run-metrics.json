@@ -1,0 +1,57 @@
+{
+  "n_bars": 4000,
+  "noise_std": 0.35,
+  "wall_clock_total_seconds": 1593.1742273909622,
+  "wall_clock_replay_seconds": 1593.1722735409858,
+  "exceptions": [],
+  "n_exceptions": 0,
+  "total_records": 4068,
+  "total_decisions": 2249,
+  "action_counts": {
+    "NO_TRADE": 2059,
+    "LONG": 182,
+    "SHORT": 8
+  },
+  "no_trade_rate": 0.9155180080035571,
+  "n_long": 182,
+  "n_short": 8,
+  "n_rejected_entries": 0,
+  "n_closed_positions": 190,
+  "outcome_counts": {
+    "PositionOutcome.TP_HIT": 65,
+    "PositionOutcome.SL_HIT": 56,
+    "PositionOutcome.POLICY_EXIT": 68,
+    "PositionOutcome.END_OF_REPLAY_FORCED_CLOSE": 1
+  },
+  "n_policy_exit": 68,
+  "n_sl_tp_liquidation_exit": 121,
+  "n_forced_close_end_of_replay": 1,
+  "n_trade_durations_sampled": 190,
+  "avg_trade_duration_bars": 9.573684210526316,
+  "min_trade_duration_bars": 1,
+  "max_trade_duration_bars": 41,
+  "per_source_applicability_gate_rate": {
+    "momentum_scalar": 0.033522434244455904,
+    "path_pca_projection": 0.03481175863847344,
+    "multiscale_vol_ratio": 0.05673027333677153,
+    "vol_regime_transition": 0.06962351727694688,
+    "garch_conditional_variance": 0.043837029396596186,
+    "kalman_filtered_velocity": 0.043837029396596186,
+    "kalman_innovation": 0.043837029396596186,
+    "rolling_skew": 0.043837029396596186,
+    "rolling_excess_kurtosis": 0.043837029396596186
+  },
+  "context_bucket_distribution_per_hypothesis_call": {
+    "-1": 170,
+    "2": 3598,
+    "3": 110
+  },
+  "n_distinct_context_buckets_observed_per_call": 3,
+  "context_bucket_distribution_from_load_bearing_sources": {
+    "-1": 9,
+    "2": 708,
+    "3": 32
+  },
+  "n_distinct_context_buckets_observed_load_bearing": 3,
+  "ended_flat": false
+}
