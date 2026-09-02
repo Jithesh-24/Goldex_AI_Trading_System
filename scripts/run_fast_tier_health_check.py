@@ -120,7 +120,19 @@ class _InstrumentedReasoner(FastTierReasoner):
     behavior of the production `FastTierReasoner`, independent of this
     script's instrumentation -- confirmed by direct timing of
     `FastTierReasoner._compute_evidence` before/after the 2,000-bar
-    boundary (see the report)."""
+    boundary (see the report).
+
+    FIXED (Task 11 fix round, see the report's "Timing reconciliation"
+    update for the commit hash): `_compute_evidence` now takes its
+    fingerprint from `closes_so_far[0]` of the array as originally passed
+    in, before `max_history_window` truncation, rather than from the
+    truncated window's first element. That value is stable for the whole
+    life of one continuing replay, so the refit cache no longer gets
+    defeated past the 2,000-bar boundary; a regression test
+    (`test_refit_cache_stays_warm_past_max_history_window_within_refit_interval`
+    in `tests/intelligence/test_fast_tier.py`) proves the cache stays warm
+    there. The paragraph above is left as historical record of the
+    diagnosis."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

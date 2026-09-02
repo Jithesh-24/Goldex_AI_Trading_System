@@ -224,6 +224,21 @@ perf-tuning task — no code fix is made here, since Task 5's caching/windowing 
 was already deliberately scoped and this reconciliation task's job is diagnosis, not
 further optimization.
 
+**Update (Task 11 fix round, commit TBD-FIX-COMMIT).** The root cause diagnosed above
+has now been fixed. `FastTierReasoner._compute_evidence` (`intelligence/fast_tier.py`)
+now computes the refit-cache fingerprint from `closes_so_far[0]` of the ORIGINAL array
+*before* the `max_history_window` truncation slice, instead of after it. Bar 0 of a
+continuing replay never changes, so the fingerprint is now stable for the entire life
+of one replay — including past the point where the truncated window starts sliding —
+while still distinguishing two different series of the same length (the
+stale-cache-leak fix from commit `c9b776d`, regression-tested by
+`test_reasoner_cache_does_not_leak_across_different_series_of_the_same_length`, remains
+intact). A new regression test,
+`test_refit_cache_stays_warm_past_max_history_window_within_refit_interval` in
+`tests/intelligence/test_fast_tier.py`, proves the cache now hits within one
+`refit_interval` well past `max_history_window`. The diagnosis narrative above is left
+unchanged as the historical record of how this was found.
+
 ## Deviation from brief
 
 The brief describes scale as "one to a few years of synthetic chronological data, or

@@ -677,3 +677,53 @@ def test_reasoner_cache_does_not_leak_across_different_series_of_the_same_length
     hyp_down = reasoner.hypothesis(down, market_state=None, trust=trust)
     assert hyp_up.net_directional_belief > 0
     assert hyp_down.net_directional_belief < 0
+
+
+# ---------------------------------------------------------------------------
+# Task 11 fix round: fingerprint-slides-every-call cache defeat past
+# max_history_window
+# ---------------------------------------------------------------------------
+
+def test_refit_cache_stays_warm_past_max_history_window_within_refit_interval():
+    """Once a continuing replay exceeds max_history_window, the truncated
+    window (closes_so_far[-max_history_window:]) slides forward by one bar
+    on every subsequent call. Fingerprinting off the TRUNCATED window's first
+    element would make the fingerprint change every call from then on,
+    permanently defeating the refit cache -- exactly the scenario the cache
+    was built for on a long replay. Fingerprinting off the ORIGINAL
+    (pre-truncation) array's first element instead stays stable for the
+    whole life of one continuing replay (bar 0's price never changes), so
+    the cache should still hit within one refit_interval even long past
+    max_history_window."""
+    from intelligence.evidence_sources import build_default_registry
+    from intelligence.fast_tier import FastTierReasoner, EXPENSIVE_SOURCE_NAMES
+
+    registry = build_default_registry()
+    max_history_window = 100
+    refit_interval = 50
+    reasoner = FastTierReasoner(
+        registry, refit_interval=refit_interval, max_history_window=max_history_window,
+    )
+    closes = np.cumsum(np.random.default_rng(11).normal(0, 1, 2500)) + 2000.0
+
+    # Prime the cache well past max_history_window so the truncation window
+    # is actively sliding.
+    start_bar = max_history_window + 500
+    reasoner._compute_evidence(closes[:start_bar])
+    cache_snapshot = {
+        name: reasoner._cache[name] for name in EXPENSIVE_SOURCE_NAMES
+    }
+
+    # One bar later -- well within refit_interval, still past
+    # max_history_window, so the truncation window has shifted by one bar
+    # relative to the priming call.
+    ev_next = reasoner._compute_evidence(closes[: start_bar + 1])
+
+    for name in EXPENSIVE_SOURCE_NAMES:
+        assert ev_next[name].value == cache_snapshot[name][2].value, (
+            f"{name} was recomputed instead of served from cache -- the "
+            "refit cache is defeated past max_history_window"
+        )
+        # The cache entry itself must be untouched (same bar index) -- proof
+        # this was a genuine cache hit, not a coincidental equal recompute.
+        assert reasoner._cache[name][0] == cache_snapshot[name][0]
