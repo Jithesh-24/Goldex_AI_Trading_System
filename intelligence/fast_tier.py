@@ -211,6 +211,18 @@ class FastTierReasoner:
         registry: EvidenceRegistry,
         refit_interval: int = 50,
         load_bearing_floor: float = 0.05,
+        # Sources see at most the most recent `max_history_window` closes, never
+        # the full unbounded replay history. This bounds worst-case per-decision
+        # cost independent of how long a replay run has been going (previously,
+        # GARCH/Kalman refit over the ENTIRE history every refit_interval bars, so
+        # cost grew without bound over a multi-year replay even with caching).
+        # This is a genuine behavior change, not just a performance one: GARCH and
+        # Kalman now fit "the last N bars" rather than "everything ever observed."
+        # Documented, disclosed, not hidden -- see the hardening report for the
+        # before/after distributional comparison that justifies 2000 as a default
+        # (long enough to keep GARCH's likelihood well-conditioned, short enough to
+        # bound worst-case latency).
+        max_history_window: int = 2000,
     ) -> None:
         # NOTE on load_bearing_floor: a source's contribution magnitude is
         # trust.posterior_mean(...) * ev.confidence. An unseen (source,
@@ -233,11 +245,14 @@ class FastTierReasoner:
         self.registry = registry
         self.refit_interval = refit_interval
         self.load_bearing_floor = load_bearing_floor
+        self.max_history_window = max_history_window
         # {source_name: (bar_index_at_last_refit, EvidenceValue)} -- only
         # ever populated for EXPENSIVE_SOURCE_NAMES.
         self._cache: dict[str, tuple[int, EvidenceValue]] = {}
 
     def _compute_evidence(self, closes_so_far: np.ndarray) -> dict[str, EvidenceValue]:
+        if len(closes_so_far) > self.max_history_window:
+            closes_so_far = closes_so_far[-self.max_history_window:]
         bar = len(closes_so_far)
         results: dict[str, EvidenceValue] = {}
         for name, spec in self.registry.specs().items():

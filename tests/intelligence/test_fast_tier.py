@@ -574,3 +574,39 @@ def test_non_directional_sources_never_cast_a_directional_vote():
     assert not (seen & non_directional), (
         f"non-directional sources cast a directional vote: {sorted(seen & non_directional)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 3: bounded look-back window
+# ---------------------------------------------------------------------------
+
+def test_max_history_window_bounds_what_sources_see(monkeypatch):
+    from intelligence.evidence_sources import build_default_registry
+    from intelligence.fast_tier import FastTierReasoner
+    registry = build_default_registry()
+    reasoner = FastTierReasoner(registry, max_history_window=100)
+    seen_lengths = []
+    original_specs = registry.specs()
+    for name, spec in original_specs.items():
+        orig_compute = spec.compute
+        def wrapped(closes_so_far, orig_compute=orig_compute):
+            seen_lengths.append(len(closes_so_far))
+            return orig_compute(closes_so_far)
+        spec.compute = wrapped
+    closes = np.cumsum(np.random.default_rng(4).normal(0, 1, 5000)) + 2000.0
+    reasoner._compute_evidence(closes)
+    assert max(seen_lengths) <= 100
+
+
+def test_windowed_garch_output_close_to_full_history_output():
+    from research.phase4_garch_volatility_mechanism import fit_garch11
+    closes = np.cumsum(np.random.default_rng(5).normal(0, 1, 3000)) + 2000.0
+    returns_full = np.diff(closes, prepend=closes[0])
+    returns_windowed = np.diff(closes[-2000:], prepend=closes[-2000])
+    _params_full, sigma2_full = fit_garch11(returns_full)
+    _params_win, sigma2_win = fit_garch11(returns_windowed)
+    # Compare the LAST (most recent, decision-relevant) conditional variance --
+    # not the whole series, which legitimately differs by construction.
+    rel_diff = abs(sigma2_full[-1] - sigma2_win[-1]) / max(abs(sigma2_full[-1]), 1e-12)
+    print(f"[TASK3][GARCH windowed-vs-full] rel_diff={rel_diff:.6f}")
+    assert rel_diff < 0.5  # same order of magnitude, not identical
